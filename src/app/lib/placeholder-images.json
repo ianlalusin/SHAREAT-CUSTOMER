@@ -1,0 +1,29 @@
+
+{
+  "placeholderImages": [
+    {
+      "id": "item-cola",
+      "description": "Ice cold cola",
+      "imageUrl": "https://picsum.photos/seed/cola/200/200",
+      "imageHint": "cola drink"
+    },
+    {
+      "id": "item-fries",
+      "description": "Crispy golden fries",
+      "imageUrl": "https://picsum.photos/seed/fries/200/200",
+      "imageHint": "french fries"
+    },
+    {
+      "id": "item-water",
+      "description": "Sparkling mineral water",
+      "imageUrl": "https://picsum.photos/seed/water/200/200",
+      "imageHint": "mineral water"
+    },
+    {
+      "id": "item-bread",
+      "description": "Warm garlic bread",
+      "imageUrl": "https://picsum.photos/seed/bread/200/200",
+      "imageHint": "garlic bread"
+    }
+  ]
+}

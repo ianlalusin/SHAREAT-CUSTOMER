@@ -1,0 +1,22 @@
+
+{
+  "name": "SharEat Customer Hub",
+  "short_name": "SharEat",
+  "description": "Secure customer session portal for SharEat POS",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F0F2F5",
+  "theme_color": "#E00000",
+  "icons": [
+    {
+      "src": "https://picsum.photos/seed/shareat-icon/192/192",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://picsum.photos/seed/shareat-icon-512/512/512",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
