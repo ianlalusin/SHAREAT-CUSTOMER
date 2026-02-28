@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState, useEffect } from "react";
@@ -7,7 +6,7 @@ import { DashboardHeader } from "@/components/dashboard/Header";
 import { FastRefills } from "@/components/dashboard/FastRefills";
 import { ServiceActions } from "@/components/dashboard/ServiceActions";
 import { RequestHistory, RequestRecord } from "@/components/dashboard/RequestHistory";
-import { Loader2 } from "lucide-react";
+import { Loader2, History, UtensilsCrossed } from "lucide-react";
 
 export default function DashboardPage() {
   const [requests, setRequests] = useState<RequestRecord[]>([]);
@@ -25,17 +24,11 @@ export default function DashboardPage() {
     }
 
     // Load initial data
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       setIsLoaded(true);
     }, 800);
 
-    // Mock session polling
-    const interval = setInterval(() => {
-      // In real app, check /api/session-status
-      // If closed: router.push("/closed")
-    }, 5000);
-
-    return () => clearInterval(interval);
+    return () => clearTimeout(timer);
   }, [router]);
 
   const handleNewRequest = (item: string) => {
@@ -111,26 +104,5 @@ export default function DashboardPage() {
         </button>
       </nav>
     </main>
-  );
-}
-
-function UtensilsCrossed(props: any) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8" />
-      <path d="M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6l7.3 7.3a4.2 4.2 0 0 0 6 0L20 13.5" />
-      <line x1="9" x2="15" y1="21" y2="15" />
-    </svg>
   );
 }

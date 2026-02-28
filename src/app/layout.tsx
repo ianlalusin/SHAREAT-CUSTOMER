@@ -1,5 +1,4 @@
-
-import type {Metadata} from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 
@@ -7,13 +6,19 @@ export const metadata: Metadata = {
   title: 'SharEat Customer Hub',
   description: 'Manage your dining session with ease.',
   manifest: '/manifest.json',
-  themeColor: '#E00000',
-  viewport: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
     title: 'SharEat Hub',
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: '#E00000',
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({

@@ -29,7 +29,8 @@ export default function PinAccessPage() {
     setIsLoading(true);
     // Simulate server PIN validation
     setTimeout(() => {
-      if (pin === "123456") {
+      // Accepting the standard mock PIN and the requested dev PIN
+      if (pin === "123456" || pin === "040592") {
         document.cookie = "session_token=mock_session_active; path=/; max-age=3600";
         router.push("/dashboard");
       } else {
