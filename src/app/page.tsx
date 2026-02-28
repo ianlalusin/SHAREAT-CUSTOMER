@@ -32,7 +32,9 @@ export default function PinAccessPage() {
       // Accepting the standard mock PIN and the requested dev PIN
       if (pin === "123456" || pin === "040592") {
         document.cookie = "session_token=mock_session_active; path=/; max-age=3600";
-        router.push("/dashboard");
+        document.cookie = "session_table=B12; path=/; max-age=3600";
+        document.cookie = "session_customer=Johnathan; path=/; max-age=3600";
+        window.location.assign("/dashboard");
       } else {
         toast({
           variant: "destructive",
