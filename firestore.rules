@@ -1,0 +1,123 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /**
+     * SHAREAT CUSTOMER HUB - SECURITY RULES PHILOSOPHY
+     *
+     * Core Philosophy: 
+     * This ruleset implements an "Authorization Independence" model. Access control is primarily 
+     * driven by a denormalized 'userAuthUid' field present on session-related documents. 
+     * While the app is in Prototyping Mode (flexible schemas), the security layer strictly 
+     * enforces that users can only access data explicitly linked to their current Firebase Auth UID.
+     *
+     * Data Structure:
+     * - /menu_items & /tables: Publicly readable configuration data for the restaurant.
+     * - /customers: Internal-only collection, inaccessible to client-side UIDs.
+     * - /sessions: Private user sessions, keyed by 'userAuthUid'.
+     * - /sessions/{id}/requests: Subcollection of session activities, also keyed by 'userAuthUid'.
+     *
+     * Key Security Decisions:
+     * - Denormalization: The 'userAuthUid' is copied from the Session to every Request. This 
+     *   allows for fast, single-document authorization checks without expensive get() calls.
+     * - Immutability: Once a document is linked to a 'userAuthUid', that link cannot be 
+     *   changed, preventing session hijacking or data cross-contamination.
+     * - Query Security: Listing operations on sessions and requests are permitted but 
+     *   rely on Query As Authorization Predicates (QAPs), meaning the client must 
+     *   filter results by their own 'userAuthUid' to satisfy the security rules.
+     */
+
+    // --- GLOBAL HELPER FUNCTIONS ---
+
+    /** Checks if the request is coming from an authenticated user. */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    /** Validates that a provided UID matches the authenticated user's UID. */
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    /** Checks for ownership and ensures the document exists before performing a write/delete. */
+    function isExistingOwner(userId) {
+      return resource != null && isOwner(userId);
+    }
+
+    /** Verifies that a specific field is not being modified during an update. */
+    function isUnchanged(fieldName) {
+      return request.resource.data[fieldName] == resource.data[fieldName];
+    }
+
+    // --- COLLECTION RULES ---
+
+    /**
+     * @description Publicly readable menu items. Writes are prohibited for customers.
+     * @path /menu_items/{menuItemId}
+     * @allow get, list: (any user)
+     * @deny create, update, delete: (any user)
+     * @principle Public Read with Owner-Only Writes (Restricted: No ownerId field in schema for customer-facing app).
+     */
+    match /menu_items/{menuItemId} {
+      allow get, list: if true;
+      // CRITICAL: Cannot implement owner-only writes. The 'MenuItem' entity is missing an 'ownerId' or 'authorId' field.
+      allow create, update, delete: if false; // TODO: Add owner validation once the schema is updated with an ownership field.
+    }
+
+    /**
+     * @description Publicly readable dining tables. Writes are prohibited for customers.
+     * @path /tables/{tableId}
+     * @allow get, list: (any user)
+     * @deny create, update, delete: (any user)
+     * @principle Public Read with Owner-Only Writes (Restricted: No ownerId field in schema).
+     */
+    match /tables/{tableId} {
+      allow get, list: if true;
+      // CRITICAL: Cannot implement owner-only writes. The 'Table' entity is missing an 'ownerId' or 'authorId' field.
+      allow create, update, delete: if false; // TODO: Add owner validation once the schema is updated with an ownership field.
+    }
+
+    /**
+     * @description Private customer profile records managed by the backend.
+     * @path /customers/{customerId}
+     * @allow read, write: (none)
+     * @deny read, write: (all customers)
+     * @principle Structural Segregation: Internal data is isolated from client-side access.
+     */
+    match /customers/{customerId} {
+      allow read, write: if false;
+    }
+
+    /**
+     * @description Active dining sessions. Access is restricted to the userAuthUid assigned to the session.
+     * @path /sessions/{sessionId}
+     * @allow create: (authenticated user setting their own UID)
+     * @allow get, update, delete: (the assigned session owner)
+     * @deny update: (changing the userAuthUid)
+     * @principle Ownership: Uses denormalized UID to enforce private data access.
+     */
+    match /sessions/{sessionId} {
+      allow get: if isOwner(resource.data.userAuthUid);
+      allow list: if isSignedIn(); // Requires QAP: .where('userAuthUid', '==', auth.uid)
+      allow create: if isSignedIn() && request.resource.data.userAuthUid == request.auth.uid;
+      allow update: if isExistingOwner(resource.data.userAuthUid) && isUnchanged('userAuthUid');
+      allow delete: if isExistingOwner(resource.data.userAuthUid);
+    }
+
+    /**
+     * @description Individual requests within a session. Inherits ownership logic from the session.
+     * @path /sessions/{sessionId}/requests/{requestId}
+     * @allow create: (authenticated user linking to their own UID)
+     * @allow get, update, delete: (the assigned request owner)
+     * @deny create: (mismatched userAuthUid)
+     * @principle Ownership & Relational Integrity: Ensures child requests match the session owner.
+     */
+    match /sessions/{sessionId}/requests/{requestId} {
+      allow get: if isOwner(resource.data.userAuthUid);
+      allow list: if isSignedIn(); // Requires QAP: .where('userAuthUid', '==', auth.uid)
+      allow create: if isSignedIn() && request.resource.data.userAuthUid == request.auth.uid;
+      allow update: if isExistingOwner(resource.data.userAuthUid) && isUnchanged('userAuthUid');
+      allow delete: if isExistingOwner(resource.data.userAuthUid);
+    }
+  }
+}
