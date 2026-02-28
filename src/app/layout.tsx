@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
+import { FirebaseClientProvider } from '@/firebase/client-provider';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -34,12 +35,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
       <body className="font-body antialiased bg-zinc-900">
-        <div className="pwa-container">
-          {children}
-          <Toaster />
-        </div>
+        <FirebaseClientProvider>
+          <div className="pwa-container">
+            {children}
+            <Toaster />
+          </div>
+        </FirebaseClientProvider>
       </body>
     </html>
   );
