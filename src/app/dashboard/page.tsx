@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -12,8 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { CustomerRefillModal } from "@/components/customer/CustomerRefillModal";
 import { FastRefills } from "@/components/dashboard/FastRefills";
 import { ServiceActions } from "@/components/dashboard/ServiceActions";
-import { useFirebase } from "@/firebase";
-import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
+import { useFirebase, useMemoFirebase, useCollection } from "@/firebase";
+import { collection, orderBy, query, where } from "firebase/firestore";
 
 function getCookie(name: string) {
   if (typeof document === 'undefined') return "";
@@ -21,26 +22,18 @@ function getCookie(name: string) {
   return c.find((x) => x.startsWith(name + "="))?.split("=").slice(1).join("=") ?? "";
 }
 
-type RefillReq = {
-  id: string;
-  status: "preparing" | "served";
-  items: { refillName: string; flavorNames?: string[]; notes?: string | null }[];
-  createdAt?: any;
-};
-
 export default function DashboardPage() {
   const router = useRouter();
   const { firestore } = useFirebase();
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [isRefillOpen, setIsRefillOpen] = useState(false);
-  const [refills, setRefills] = useState<RefillReq[]>([]);
 
   const sessionToken = useMemo(() => getCookie("session_token"), []);
   const tableName = useMemo(() => decodeURIComponent(getCookie("session_table") || "B12"), []);
   const customerName = useMemo(() => decodeURIComponent(getCookie("session_customer") || "Customer"), []);
 
-  const storeId = useMemo(() => decodeURIComponent(getCookie("store_id") || "L5MExycvUOfQ96Y10FqF"), []);
+  const storeId = useMemo(() => decodeURIComponent(getCookie("store_id") || ""), []);
   const sessionId = useMemo(() => decodeURIComponent(getCookie("session_id") || "mock_session"), []);
   const packageOfferingId = useMemo(() => decodeURIComponent(getCookie("package_offering_id") || ""), []);
   const initialFlavorIds = useMemo(() => {
@@ -57,28 +50,17 @@ export default function DashboardPage() {
     return () => clearTimeout(t);
   }, [router, sessionToken]);
 
-  useEffect(() => {
-    if (!firestore) return;
-    const qy = query(
+  const refillQuery = useMemoFirebase(() => {
+    if (!firestore || !tableName) return null;
+    const tId = tableName.startsWith("T") ? tableName : `T${tableName.replace(/\D/g, "")}`;
+    return query(
       collection(firestore, "refillRequests"),
-      where("tableId", "==", tableName.startsWith("T") ? tableName : `T${tableName.replace(/\D/g, "")}`),
+      where("tableId", "==", tId),
       orderBy("createdAt", "desc")
     );
-
-    return onSnapshot(qy, (snap) => {
-      setRefills(
-        snap.docs.map((d) => {
-          const x = d.data() as any;
-          return {
-            id: d.id,
-            status: x.status === "served" ? "served" : "preparing",
-            items: Array.isArray(x.items) ? x.items : [],
-            createdAt: x.createdAt,
-          };
-        })
-      );
-    });
   }, [firestore, tableName]);
+
+  const { data: refills } = useCollection(refillQuery);
 
   if (!isLoaded) {
     return (
@@ -112,14 +94,14 @@ export default function DashboardPage() {
           <div className="xl:col-span-8 space-y-8">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
               <Button 
-                className="h-28 sm:h-32 rounded-[2.5rem] text-xl font-black shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all bg-primary border-4 border-white/20"
+                className="h-28 sm:h-36 rounded-[2.5rem] text-xl sm:text-2xl font-black shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all bg-primary border-4 border-white/20"
                 onClick={() => setIsRefillOpen(true)}
               >
                 <Plus className="mr-3 h-8 w-8" />
                 Order Refill
               </Button>
               <Button 
-                className="h-28 sm:h-32 rounded-[2.5rem] text-xl font-black shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all bg-white border-4 border-zinc-50" 
+                className="h-28 sm:h-36 rounded-[2.5rem] text-xl sm:text-2xl font-black shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all bg-white border-4 border-zinc-50" 
                 variant="outline" 
                 onClick={() => router.push("/catalog")}
               >
@@ -135,7 +117,7 @@ export default function DashboardPage() {
 
           {/* Sidebar Area - History */}
           <div className="xl:col-span-4 space-y-8">
-            <Card className="rounded-[3rem] border-none shadow-2xl overflow-hidden bg-white">
+            <Card className="rounded-[3rem] border-none shadow-2xl overflow-hidden bg-white sticky top-28">
               <CardHeader className="bg-zinc-50/50 flex flex-row items-center justify-between border-b px-8 py-8">
                 <div className="flex items-center gap-3">
                   <div className="bg-white p-2 rounded-2xl shadow-sm">
@@ -143,11 +125,13 @@ export default function DashboardPage() {
                   </div>
                   <CardTitle className="text-xl font-black tracking-tight">Activity Log</CardTitle>
                 </div>
-                <Badge variant="secondary" className="rounded-xl px-3 py-1 font-black bg-zinc-200 text-zinc-700">{refills.length}</Badge>
+                <Badge variant="secondary" className="rounded-xl px-3 py-1 font-black bg-zinc-200 text-zinc-700">
+                  {refills?.length || 0}
+                </Badge>
               </CardHeader>
               <CardContent className="p-0">
-                <div className="divide-y divide-zinc-50 max-h-[70vh] overflow-y-auto custom-scrollbar">
-                  {refills.map((r) => (
+                <div className="divide-y divide-zinc-50 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                  {refills?.map((r) => (
                     <div key={r.id} className="p-8 hover:bg-zinc-50/50 transition-colors">
                       <div className="flex items-start justify-between mb-4">
                         <div className="font-black text-[10px] uppercase tracking-[0.2em] text-zinc-400">Request Status</div>
@@ -157,7 +141,7 @@ export default function DashboardPage() {
                       </div>
 
                       <div className="space-y-3">
-                        {r.items.map((it: any, idx: number) => (
+                        {Array.isArray(r.items) && r.items.map((it: any, idx: number) => (
                           <div key={idx} className="flex flex-col bg-zinc-50 p-4 rounded-3xl border border-zinc-100 shadow-sm">
                             <div className="text-zinc-900 font-black text-lg">{it.refillName}</div>
                             {Array.isArray(it.flavorNames) && it.flavorNames.length ? (
@@ -177,7 +161,7 @@ export default function DashboardPage() {
                       )}
                     </div>
                   ))}
-                  {refills.length === 0 && (
+                  {(!refills || refills.length === 0) && (
                     <div className="p-20 text-center text-zinc-300">
                       <HistoryIcon className="h-16 w-16 mx-auto mb-6 opacity-5" />
                       <p className="text-sm font-black uppercase tracking-widest">No Recent Activity</p>
