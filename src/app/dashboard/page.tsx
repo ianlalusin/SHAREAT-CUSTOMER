@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Plus, Clock, History as HistoryIcon } from "lucide-react";
+import { Loader2, Plus, Clock, History as HistoryIcon, Utensils } from "lucide-react";
 
 import { DashboardHeader } from "@/components/dashboard/Header";
 import { Button } from "@/components/ui/button";
@@ -105,25 +105,26 @@ export default function DashboardPage() {
     <main className="min-h-screen pb-20 flex flex-col bg-zinc-50">
       <DashboardHeader customerName={customerName} tableName={tableName} />
 
-      <div className="container max-w-6xl mx-auto px-6 -mt-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="container max-w-7xl mx-auto px-4 sm:px-8 -mt-12 sm:-mt-16">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
           
           {/* Main Actions Area */}
-          <div className="md:col-span-2 space-y-6">
-            <div className="grid grid-cols-2 gap-4">
+          <div className="xl:col-span-8 space-y-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
               <Button 
-                className="h-24 rounded-[2rem] text-lg font-black shadow-lg hover:scale-[1.02] transition-transform bg-primary"
+                className="h-28 sm:h-32 rounded-[2.5rem] text-xl font-black shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all bg-primary border-4 border-white/20"
                 onClick={() => setIsRefillOpen(true)}
               >
-                <Plus className="mr-2 h-6 w-6" />
+                <Plus className="mr-3 h-8 w-8" />
                 Order Refill
               </Button>
               <Button 
-                className="h-24 rounded-[2rem] text-lg font-black shadow-lg hover:scale-[1.02] transition-transform" 
+                className="h-28 sm:h-32 rounded-[2.5rem] text-xl font-black shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all bg-white border-4 border-zinc-50" 
                 variant="outline" 
                 onClick={() => router.push("/catalog")}
               >
-                View Menu
+                <Utensils className="mr-3 h-7 w-7 text-primary" />
+                Browse Menu
               </Button>
             </div>
 
@@ -133,49 +134,53 @@ export default function DashboardPage() {
           </div>
 
           {/* Sidebar Area - History */}
-          <div className="space-y-6">
-            <Card className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-white">
-              <CardHeader className="bg-zinc-50/50 flex flex-row items-center justify-between border-b px-8 py-6">
-                <div className="flex items-center gap-2">
-                  <HistoryIcon className="h-5 w-5 text-zinc-400" />
-                  <CardTitle className="text-lg font-black">History</CardTitle>
+          <div className="xl:col-span-4 space-y-8">
+            <Card className="rounded-[3rem] border-none shadow-2xl overflow-hidden bg-white">
+              <CardHeader className="bg-zinc-50/50 flex flex-row items-center justify-between border-b px-8 py-8">
+                <div className="flex items-center gap-3">
+                  <div className="bg-white p-2 rounded-2xl shadow-sm">
+                    <HistoryIcon className="h-6 w-6 text-primary" />
+                  </div>
+                  <CardTitle className="text-xl font-black tracking-tight">Activity Log</CardTitle>
                 </div>
-                <Badge variant="secondary" className="rounded-xl px-3 font-bold">{refills.length}</Badge>
+                <Badge variant="secondary" className="rounded-xl px-3 py-1 font-black bg-zinc-200 text-zinc-700">{refills.length}</Badge>
               </CardHeader>
               <CardContent className="p-0">
-                <div className="divide-y max-h-[600px] overflow-y-auto">
+                <div className="divide-y divide-zinc-50 max-h-[70vh] overflow-y-auto custom-scrollbar">
                   {refills.map((r) => (
-                    <div key={r.id} className="p-6 hover:bg-zinc-50 transition-colors">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="font-black text-sm uppercase tracking-tight">Refill Request</div>
-                        <Badge className="rounded-xl px-3 py-1 font-black text-[10px]" variant={r.status === "served" ? "secondary" : "default"}>
-                          {r.status === "served" ? "SERVED" : "PREPARING"}
+                    <div key={r.id} className="p-8 hover:bg-zinc-50/50 transition-colors">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="font-black text-[10px] uppercase tracking-[0.2em] text-zinc-400">Request Status</div>
+                        <Badge className="rounded-xl px-4 py-1.5 font-black text-[10px] shadow-sm" variant={r.status === "served" ? "secondary" : "default"}>
+                          {r.status === "served" ? "SERVED" : "IN PREPARATION"}
                         </Badge>
                       </div>
 
-                      <div className="text-sm text-zinc-500 space-y-2">
+                      <div className="space-y-3">
                         {r.items.map((it: any, idx: number) => (
-                          <div key={idx} className="flex flex-col bg-zinc-100/50 p-3 rounded-2xl">
-                            <div className="text-zinc-900 font-bold">{it.refillName}</div>
+                          <div key={idx} className="flex flex-col bg-zinc-50 p-4 rounded-3xl border border-zinc-100 shadow-sm">
+                            <div className="text-zinc-900 font-black text-lg">{it.refillName}</div>
                             {Array.isArray(it.flavorNames) && it.flavorNames.length ? (
-                              <div className="text-xs mt-1">Flavors: {it.flavorNames.join(", ")}</div>
+                              <div className="text-xs mt-2 font-bold text-zinc-500 bg-white/50 px-3 py-1 rounded-full w-fit">
+                                {it.flavorNames.join(" • ")}
+                              </div>
                             ) : null}
                           </div>
                         ))}
                       </div>
                       
                       {r.createdAt && (
-                        <div className="mt-4 flex items-center gap-1.5 text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
-                          <Clock className="h-3 w-3" />
+                        <div className="mt-6 flex items-center gap-2 text-[10px] text-zinc-300 font-black uppercase tracking-widest">
+                          <Clock className="h-3.5 w-3.5" />
                           {new Date(r.createdAt?.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </div>
                       )}
                     </div>
                   ))}
                   {refills.length === 0 && (
-                    <div className="p-12 text-center text-zinc-400">
-                      <HistoryIcon className="h-12 w-12 mx-auto mb-4 opacity-10" />
-                      <p className="text-sm font-medium">No recent activity</p>
+                    <div className="p-20 text-center text-zinc-300">
+                      <HistoryIcon className="h-16 w-16 mx-auto mb-6 opacity-5" />
+                      <p className="text-sm font-black uppercase tracking-widest">No Recent Activity</p>
                     </div>
                   )}
                 </div>
