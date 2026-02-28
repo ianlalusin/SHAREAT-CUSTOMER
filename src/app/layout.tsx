@@ -36,9 +36,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={inter.variable} suppressHydrationWarning>
-      <body className="font-body antialiased bg-zinc-900">
+      <body className="font-body antialiased bg-zinc-50">
         <FirebaseClientProvider>
-          <div className="pwa-container">
+          <div className="main-content">
             {children}
             <Toaster />
           </div>

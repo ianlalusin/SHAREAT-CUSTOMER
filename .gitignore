@@ -45,3 +45,4 @@ firebase-debug.log
 firestore-debug.log.env
 .env
 .env
+.env.local

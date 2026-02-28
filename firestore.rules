@@ -2,31 +2,32 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    /**
-     * SHAREAT CUSTOMER HUB - SECURITY RULES
-     * Authentication has been removed. Access is currently permissive for prototyping.
-     */
+    function isSignedIn() { return request.auth != null; }
+    function staffPath() { return /databases/$(database)/documents/staff/$(request.auth.uid); }
+    function staffExists() { return isSignedIn() && exists(staffPath()); }
+    function staffData() { return get(staffPath()).data; }
+    function isActiveStaff() { return staffExists() && staffData().active == true; }
 
-    match /menu_items/{menuItemId} {
+    // Public catalog
+    match /catalogItems/{id} {
       allow read: if true;
+      allow create, update, delete: if isActiveStaff();
+    }
+
+    // Categories (public read, staff write)
+    match /categories/{id} {
+      allow read: if true;
+      allow create, update, delete: if isActiveStaff();
+    }
+
+    // Staff allowlist docs
+    match /staff/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
       allow write: if false;
     }
 
-    match /tables/{tableId} {
-      allow read: if true;
-      allow write: if false;
-    }
-
-    match /customers/{customerId} {
+    match /{document=**} {
       allow read, write: if false;
     }
-
-    match /sessions/{sessionId} {
-      allow read, write: if true;
-    }
-
-    match /sessions/{sessionId}/requests/{requestId} {
-      allow read, write: if true;
-    }
   }
-}
+} 

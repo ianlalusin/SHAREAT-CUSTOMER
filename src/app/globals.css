@@ -37,18 +37,9 @@
   }
 }
 
-.pwa-container {
-  max-width: 500px;
-  margin: 0 auto;
+.main-content {
   min-height: 100vh;
-  @apply bg-background shadow-xl relative overflow-x-hidden;
-}
-
-@media (max-width: 500px) {
-  .pwa-container {
-    max-width: 100%;
-    box-shadow: none;
-  }
+  @apply bg-background relative overflow-x-hidden;
 }
 
 @keyframes pulse-subtle {

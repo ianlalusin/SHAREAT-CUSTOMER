@@ -1,11 +1,9 @@
-
 "use client";
 
 import { useState } from "react";
 import Image from "next/image";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { RotateCcw, CheckCircle2 } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PlaceHolderImages } from "@/lib/placeholder-images";
 
@@ -44,42 +42,42 @@ export function FastRefills({ onRefillRequested }: { onRefillRequested: (item: s
   };
 
   return (
-    <section className="px-6 py-8">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-bold flex items-center gap-2">
+    <section className="py-8">
+      <div className="flex items-center justify-between mb-6">
+        <h3 className="text-xl font-black tracking-tight">
           Fast Refills
         </h3>
-        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tap to Order</span>
+        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest bg-zinc-100 px-3 py-1 rounded-full">Tap to Order</span>
       </div>
       
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
         {refillItems.map((item) => {
           const isOnCooldown = cooldowns[item.id] && (Date.now() - cooldowns[item.id] < REFILL_COOLDOWN);
           
           return (
             <Card 
               key={item.id} 
-              className="overflow-hidden border-none shadow-sm hover:shadow-md transition-all active:scale-[0.97] cursor-pointer group"
+              className="overflow-hidden border-none shadow-sm hover:shadow-xl transition-all active:scale-[0.97] cursor-pointer group rounded-[2rem] bg-white"
               onClick={() => handleRefill(item.id, item.name)}
             >
-              <div className="relative h-24 w-full">
+              <div className="relative h-32 md:h-40 w-full">
                 <Image 
                   src={item.image} 
                   alt={item.name} 
                   fill 
-                  className="object-cover transition-transform group-hover:scale-110"
+                  className="object-cover transition-transform duration-500 group-hover:scale-110"
                   data-ai-hint="food drink"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
                 {isOnCooldown && (
-                   <div className="absolute inset-0 bg-black/40 flex items-center justify-center backdrop-blur-[1px]">
-                     <RotateCcw className="text-white w-8 h-8 animate-spin-slow opacity-80" />
+                   <div className="absolute inset-0 bg-black/40 flex items-center justify-center backdrop-blur-[2px]">
+                     <RotateCcw className="text-white w-10 h-10 animate-spin-slow" />
                    </div>
                 )}
+                <div className="absolute bottom-3 left-0 right-0 px-3">
+                  <p className="font-black text-white text-sm md:text-base truncate drop-shadow-md">{item.name}</p>
+                </div>
               </div>
-              <CardContent className="p-3 text-center">
-                <p className="font-bold text-sm truncate">{item.name}</p>
-              </CardContent>
             </Card>
           );
         })}

@@ -2,142 +2,196 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Loader2, Plus, Clock, History as HistoryIcon } from "lucide-react";
+
 import { DashboardHeader } from "@/components/dashboard/Header";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+
+import { CustomerRefillModal } from "@/components/customer/CustomerRefillModal";
 import { FastRefills } from "@/components/dashboard/FastRefills";
 import { ServiceActions } from "@/components/dashboard/ServiceActions";
-import { RequestHistory, RequestRecord } from "@/components/dashboard/RequestHistory";
-import { Loader2, History, UtensilsCrossed } from "lucide-react";
+import { useFirebase } from "@/firebase";
+import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
 
-type LatestItem = {
-  id: string;
-  message?: string;
-  status?: string;
-  source?: string;
-  table?: string;
-  sessionId?: string;
-  createdAt?: { _seconds?: number; _nanoseconds?: number };
-};
-
-function formatTimeFromFirestore(ts?: LatestItem["createdAt"]) {
-  const sec = ts?._seconds;
-  if (!sec) return "";
-  const d = new Date(sec * 1000);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+function getCookie(name: string) {
+  if (typeof document === 'undefined') return "";
+  const c = document.cookie.split(";").map((v) => v.trim());
+  return c.find((x) => x.startsWith(name + "="))?.split("=").slice(1).join("=") ?? "";
 }
 
-export default function DashboardPage() {
-  const [requests, setRequests] = useState<RequestRecord[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const router = useRouter();
-  const [customerName, setCustomerName] = useState("Customer");
-  const [tableName, setTableName] = useState("B12");
+type RefillReq = {
+  id: string;
+  status: "preparing" | "served";
+  items: { refillName: string; flavorNames?: string[]; notes?: string | null }[];
+  createdAt?: any;
+};
 
-  // Optional: allow /dashboard?table=T12
-  const table = useMemo(() => {
-    try {
-      const sp = new URLSearchParams(window.location.search);
-      return (sp.get("table") ?? "B12").trim() || "B12";
-    } catch {
-      return "B12";
-    }
+export default function DashboardPage() {
+  const router = useRouter();
+  const { firestore } = useFirebase();
+
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [isRefillOpen, setIsRefillOpen] = useState(false);
+  const [refills, setRefills] = useState<RefillReq[]>([]);
+
+  const sessionToken = useMemo(() => getCookie("session_token"), []);
+  const tableName = useMemo(() => decodeURIComponent(getCookie("session_table") || "B12"), []);
+  const customerName = useMemo(() => decodeURIComponent(getCookie("session_customer") || "Customer"), []);
+
+  const storeId = useMemo(() => decodeURIComponent(getCookie("store_id") || "L5MExycvUOfQ96Y10FqF"), []);
+  const sessionId = useMemo(() => decodeURIComponent(getCookie("session_id") || "mock_session"), []);
+  const packageOfferingId = useMemo(() => decodeURIComponent(getCookie("package_offering_id") || ""), []);
+  const initialFlavorIds = useMemo(() => {
+    const raw = decodeURIComponent(getCookie("initial_flavor_ids") || "");
+    return raw ? raw.split(",").filter(Boolean) : [];
   }, []);
 
   useEffect(() => {
-    // Check session cookie (your existing logic)
-    const cookies = document.cookie.split(";");
-    const sessionToken = cookies.find((c) => c.trim().startsWith("session_token="));
-
     if (!sessionToken) {
       router.push("/");
       return;
     }
-
-    const timer = setTimeout(() => setIsLoaded(true), 400);
-    return () => clearTimeout(timer);
-  }, [router]);
+    const t = setTimeout(() => setIsLoaded(true), 250);
+    return () => clearTimeout(t);
+  }, [router, sessionToken]);
 
   useEffect(() => {
-    let alive = true;
+    if (!firestore) return;
+    const qy = query(
+      collection(firestore, "refillRequests"),
+      where("tableId", "==", tableName.startsWith("T") ? tableName : `T${tableName.replace(/\D/g, "")}`),
+      orderBy("createdAt", "desc")
+    );
 
-    async function pull() {
-      try {
-        const res = await fetch("/api/customer/latest", { cache: "no-store" });
-        const data = await res.json().catch(() => ({}));
-        if (!alive) return;
-
-        const items: LatestItem[] = Array.isArray(data?.items) ? data.items : [];
-        const mapped: RequestRecord[] = items.map((it) => ({
-          id: it.id,
-          item: `${it.table ? `[${it.table}] ` : ""}${it.message ?? ""}`.trim(),
-          timestamp: formatTimeFromFirestore(it.createdAt),
-          status: (it.status as any) ?? "queued",
-        }));
-
-        setRequests(mapped);
-      } catch {
-        // ignore; keep last known list
-      }
-    }
-
-    // initial + poll
-    pull();
-    const iv = setInterval(pull, 1500);
-
-    return () => {
-      alive = false;
-      clearInterval(iv);
-    };
-  }, []);
-
-  const handleNewRequest = (_item: string) => {
-    // No local simulation now.
-    // ServiceActions/FastRefills already POST to /api/customer.
-    // Poller will pick up the new entry.
-  };
+    return onSnapshot(qy, (snap) => {
+      setRefills(
+        snap.docs.map((d) => {
+          const x = d.data() as any;
+          return {
+            id: d.id,
+            status: x.status === "served" ? "served" : "preparing",
+            items: Array.isArray(x.items) ? x.items : [],
+            createdAt: x.createdAt,
+          };
+        })
+      );
+    });
+  }, [firestore, tableName]);
 
   if (!isLoaded) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="w-10 h-10 text-primary animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <Loader2 className="w-12 h-12 text-primary animate-spin" />
       </div>
     );
   }
 
+  const session = {
+    id: sessionId,
+    storeId,
+    tableId: tableName.startsWith("T") ? tableName : `T${tableName.replace(/\D/g, "")}`,
+    tableDisplayName: `Table ${tableName.replace(/\D/g, "") || tableName}`,
+    tableNumber: tableName.replace(/\D/g, "") || tableName,
+    packageOfferingId,
+    initialFlavorIds,
+    sessionMode: "package_dinein",
+    status: "active",
+    packageSnapshot: { name: "" },
+  };
+
   return (
-    <main className="min-h-screen pb-10 flex flex-col">
+    <main className="min-h-screen pb-20 flex flex-col bg-zinc-50">
       <DashboardHeader customerName={customerName} tableName={tableName} />
 
-      <div className="flex-1 bg-background">
-        <FastRefills onRefillRequested={handleNewRequest} />
+      <div className="container max-w-6xl mx-auto px-6 -mt-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          
+          {/* Main Actions Area */}
+          <div className="md:col-span-2 space-y-6">
+            <div className="grid grid-cols-2 gap-4">
+              <Button 
+                className="h-24 rounded-[2rem] text-lg font-black shadow-lg hover:scale-[1.02] transition-transform bg-primary"
+                onClick={() => setIsRefillOpen(true)}
+              >
+                <Plus className="mr-2 h-6 w-6" />
+                Order Refill
+              </Button>
+              <Button 
+                className="h-24 rounded-[2rem] text-lg font-black shadow-lg hover:scale-[1.02] transition-transform" 
+                variant="outline" 
+                onClick={() => router.push("/catalog")}
+              >
+                View Menu
+              </Button>
+            </div>
 
-        <div className="px-6 py-2">
-          <div className="h-px bg-zinc-200 w-full" />
+            <ServiceActions onServiceRequested={(a) => console.log(a)} />
+
+            <FastRefills onRefillRequested={(it) => console.log(it)} />
+          </div>
+
+          {/* Sidebar Area - History */}
+          <div className="space-y-6">
+            <Card className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-white">
+              <CardHeader className="bg-zinc-50/50 flex flex-row items-center justify-between border-b px-8 py-6">
+                <div className="flex items-center gap-2">
+                  <HistoryIcon className="h-5 w-5 text-zinc-400" />
+                  <CardTitle className="text-lg font-black">History</CardTitle>
+                </div>
+                <Badge variant="secondary" className="rounded-xl px-3 font-bold">{refills.length}</Badge>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="divide-y max-h-[600px] overflow-y-auto">
+                  {refills.map((r) => (
+                    <div key={r.id} className="p-6 hover:bg-zinc-50 transition-colors">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="font-black text-sm uppercase tracking-tight">Refill Request</div>
+                        <Badge className="rounded-xl px-3 py-1 font-black text-[10px]" variant={r.status === "served" ? "secondary" : "default"}>
+                          {r.status === "served" ? "SERVED" : "PREPARING"}
+                        </Badge>
+                      </div>
+
+                      <div className="text-sm text-zinc-500 space-y-2">
+                        {r.items.map((it: any, idx: number) => (
+                          <div key={idx} className="flex flex-col bg-zinc-100/50 p-3 rounded-2xl">
+                            <div className="text-zinc-900 font-bold">{it.refillName}</div>
+                            {Array.isArray(it.flavorNames) && it.flavorNames.length ? (
+                              <div className="text-xs mt-1">Flavors: {it.flavorNames.join(", ")}</div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                      
+                      {r.createdAt && (
+                        <div className="mt-4 flex items-center gap-1.5 text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
+                          <Clock className="h-3 w-3" />
+                          {new Date(r.createdAt?.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {refills.length === 0 && (
+                    <div className="p-12 text-center text-zinc-400">
+                      <HistoryIcon className="h-12 w-12 mx-auto mb-4 opacity-10" />
+                      <p className="text-sm font-medium">No recent activity</p>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
         </div>
-
-        <ServiceActions onServiceRequested={handleNewRequest} />
-
-        <div className="px-6 py-2">
-          <div className="h-px bg-zinc-200 w-full" />
-        </div>
-
-        <RequestHistory requests={requests} />
       </div>
 
-      <nav className="fixed bottom-0 left-0 right-0 max-w-[500px] mx-auto bg-white/80 backdrop-blur-md border-t border-zinc-100 px-6 h-20 flex items-center justify-around z-50">
-        <button className="flex flex-col items-center gap-1 text-primary">
-          <div className="bg-primary/10 p-2 rounded-xl">
-            <UtensilsCrossed className="h-6 w-6" />
-          </div>
-          <span className="text-[10px] font-bold uppercase tracking-widest">Home</span>
-        </button>
-
-        <button className="flex flex-col items-center gap-1 text-muted-foreground" onClick={() => {}}>
-          <div className="p-2">
-            <History className="h-6 w-6" />
-          </div>
-          <span className="text-[10px] font-bold uppercase tracking-widest">History</span>
-        </button>
-      </nav>
+      <CustomerRefillModal
+        open={isRefillOpen}
+        onOpenChange={setIsRefillOpen}
+        session={session as any}
+        sessionIsLocked={false}
+      />
     </main>
   );
 }
