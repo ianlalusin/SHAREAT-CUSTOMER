@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
 import {
   addDoc,
   collection,
@@ -46,6 +47,23 @@ export default function AdminItemsPage() {
   const { toast } = useToast();
   const { firestore, storage } = useFirebase();
 
+
+  const [authReady, setAuthReady] = useState(false);
+  const [isAuthed, setIsAuthed] = useState(false);
+
+  useEffect(() => {
+    const auth = getAuth();
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      setAuthReady(true);
+      if (!user) {
+        setIsAuthed(false);
+        router.replace("/admin/login");
+        return;
+      }
+      setIsAuthed(true);
+    });
+    return () => unsub();
+  }, [router]);
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
 
@@ -67,6 +85,7 @@ export default function AdminItemsPage() {
   const [editImageFile, setEditImageFile] = useState<File | null>(null);
 
   useEffect(() => {
+    if (!authReady || !isAuthed) return;
     const q = query(collection(firestore, "catalogItems"), orderBy("name", "asc"));
     return onSnapshot(q, (snap) => {
       setItems(
@@ -86,6 +105,7 @@ export default function AdminItemsPage() {
   }, [firestore]);
 
   useEffect(() => {
+    if (!authReady || !isAuthed) return;
     const q = query(
       collection(firestore, "categories"),
       where("isActive", "==", true),
@@ -219,7 +239,15 @@ export default function AdminItemsPage() {
           </Button>
           <h1 className="text-2xl font-bold">Catalog Admin</h1>
         </div>
-        <Button variant="outline" onClick={() => router.push("/")}>Exit Admin</Button>
+        <Button
+          variant="outline"
+          onClick={async () => {
+            try { await signOut(getAuth()); } catch {}
+            router.push("/");
+          }}
+        >
+          Exit Admin
+        </Button>
       </div>
 
       <div className="flex items-center justify-between">

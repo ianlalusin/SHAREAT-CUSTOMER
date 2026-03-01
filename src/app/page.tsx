@@ -7,15 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
 import { Lock, UtensilsCrossed, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { doc, getDoc } from "firebase/firestore";
-import { useFirebase } from "@/firebase";
+import { getAuth, signInWithCustomToken } from "firebase/auth";
 
 export default function PinAccessPage() {
   const [pin, setPin] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
-  const { firestore } = useFirebase();
 
   const handlePinChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.replace(/[^0-9A-Z]/gi, "").toUpperCase();
@@ -24,29 +22,31 @@ export default function PinAccessPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pin.length < 4) return;
+    const cleanPin = pin.trim().toUpperCase();
+    if (cleanPin.length < 4) return;
+
+    // Admin shortcut PIN
+    if (cleanPin === "000000") {
+      router.push("/admin/login");
+      return;
+    }
+
+    // Customer PIN must be 6 chars
+    if (cleanPin.length !== 6) {
+      toast({
+        variant: "destructive",
+        title: "Invalid PIN",
+        description: "Customer PINs must be 6 characters.",
+      });
+      return;
+    }
 
     setIsLoading(true);
     try {
-      // 1. Check if this is an Admin PIN in the 'users' collection
-      const userDoc = await getDoc(doc(firestore, "users", pin));
-      if (userDoc.exists() && userDoc.data()?.role === "admin") {
-        toast({ title: "Admin Authenticated", description: `Welcome back, ${userDoc.data()?.name || "Admin"}` });
-        router.push("/admin/items");
-        return;
-      }
-
-      // 2. Otherwise, treat as a Customer PIN
-      if (pin.length !== 6) {
-        toast({ variant: "destructive", title: "Invalid PIN", description: "Customer PINs must be 6 characters." });
-        setIsLoading(false);
-        return;
-      }
-
       const res = await fetch("/api/customer/exchange-pin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin }),
+        body: JSON.stringify({ pin: cleanPin }),
       });
 
       const json = (await res.json().catch(() => ({}))) as any;
@@ -61,7 +61,12 @@ export default function PinAccessPage() {
         return;
       }
 
-      // Store session in cookies
+      // IMPORTANT: Firestore rules rely on Firebase Auth, not cookies.
+      // Sign in using the custom token so requests have request.auth != null
+      const auth = getAuth();
+      await signInWithCustomToken(auth, String(json.token || ""));
+
+      // Store session in cookies (for app routing/session context)
       const setCookie = (k: string, v: string) => {
         document.cookie = `${k}=${encodeURIComponent(v)}; path=/; max-age=21600; SameSite=Lax`;
       };
@@ -69,7 +74,7 @@ export default function PinAccessPage() {
       setCookie("customer_token", String(json.token || ""));
       setCookie("store_id", String(json.storeId || ""));
       setCookie("session_id", String(json.sessionId || ""));
-      setCookie("pin", pin);
+      setCookie("pin", cleanPin);
 
       router.push("/dashboard");
     } catch (err: any) {
@@ -90,14 +95,16 @@ export default function PinAccessPage() {
             <UtensilsCrossed className="w-12 h-12 text-white" />
           </div>
           <h1 className="text-4xl font-black text-primary tracking-tight">SharEat</h1>
-          <p className="text-zinc-400 font-black uppercase tracking-[0.3em] text-[10px] mt-1">Customer Hub</p>
+          <p className="text-zinc-400 font-black uppercase tracking-[0.3em] text-[10px] mt-1">
+            Customer Hub
+          </p>
         </div>
 
         <Card className="w-full max-w-md border-none shadow-2xl rounded-[3rem] bg-white overflow-hidden p-4 sm:p-8">
           <CardHeader className="text-center space-y-4 pb-8">
             <CardTitle className="text-3xl font-black text-zinc-900">Welcome!</CardTitle>
             <CardDescription className="text-base text-zinc-500 font-medium">
-              Enter your Table PIN or Admin Code to continue.
+              Welcome please enter your PIN
             </CardDescription>
           </CardHeader>
           <CardContent>
