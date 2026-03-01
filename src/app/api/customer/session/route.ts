@@ -32,9 +32,14 @@ export async function GET(req: Request) {
 
     const s = snap.data() as any;
 
-    // OPTIONAL: enforce customer access window server-side too
-    if (s.customerAccessEnabled !== true) return bad("Customer access disabled.", 403);
-    if (Number(s.customerAccessExpiresAtMs || 0) <= Date.now()) return bad("Customer access expired.", 403);
+    // Customer access window:
+    // Some POS setups don't project these fields yet, so we only enforce when present.
+    if (Object.prototype.hasOwnProperty.call(s, "customerAccessEnabled") && s.customerAccessEnabled !== true) {
+      return bad("Customer access disabled.", 403);
+    }
+    if (Object.prototype.hasOwnProperty.call(s, "customerAccessExpiresAtMs") && Number(s.customerAccessExpiresAtMs || 0) <= Date.now()) {
+      return bad("Customer access expired.", 403);
+    }
 
     return NextResponse.json({
       ok: true,

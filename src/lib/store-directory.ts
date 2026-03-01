@@ -10,9 +10,9 @@ export const STORE_DIRECTORY: Record<string, string> = {
   // demo / local
   store_demo: "Demo Store",
 
-  // Add real storeIds here, example:
-  // "pVHSvbG8UsBXuVEBALtz": "SharEat Lipa",
-  // "L5MExycvUOfQ96Y10FqF": "SharEat Malvar",
+  // production defaults (will show even if localStorage is cleared)
+  "L5MExycvUOfQ96Y10FqF": "SharEat Lipa",
+  "pVHSvbG8UsBXuVEBALtz": "SharEat Malvar",
 };
 
 const LS_KEY = "shareat_store_directory_v1";
