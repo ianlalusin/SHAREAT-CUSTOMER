@@ -31,6 +31,7 @@ async function loadSessionProjection(db: any, sessionId: string) {
 }
 
 export async function POST(req: Request) {
+  try {
   let body: Body;
   try {
     body = (await req.json()) as Body;
@@ -87,4 +88,7 @@ export async function POST(req: Request) {
     packageName: projection?.packageName ?? projection?.packageSnapshot?.name ?? null,
     initialFlavorIds: Array.isArray(projection?.initialFlavorIds) ? projection.initialFlavorIds : [],
   });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
+  }
 }
