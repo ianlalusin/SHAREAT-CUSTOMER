@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
-import { Lock, UtensilsCrossed, Loader2 } from "lucide-react";
+import { Lock, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getAuth, signInWithCustomToken } from "firebase/auth";
 
@@ -98,8 +98,8 @@ export default function PinAccessPage() {
     <div className="flex flex-col items-center justify-center min-h-screen px-6 py-12 bg-zinc-50">
       <div className="container max-w-4xl mx-auto flex flex-col items-center">
         <div className="mb-12 flex flex-col items-center">
-          <div className="bg-primary p-5 rounded-full mb-4 shadow-xl ring-8 ring-primary/10">
-            <UtensilsCrossed className="w-12 h-12 text-white" />
+          <div className="bg-white p-3 rounded-full mb-4 shadow-xl">
+            <img src="/icons/logo.png" alt="SharEat" className="w-28 h-28 rounded-full object-contain" />
           </div>
           <h1 className="text-5xl font-extrabold text-primary tracking-tight font-logo">SharEat</h1>
           <p className="text-zinc-400 font-black uppercase tracking-[0.3em] text-[10px] mt-1">
