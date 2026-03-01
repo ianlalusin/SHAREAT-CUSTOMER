@@ -111,7 +111,7 @@ export default function PinAccessPage() {
           <CardHeader className="text-center space-y-4 pb-8">
             <CardTitle className="text-3xl font-black text-zinc-900">Welcome!</CardTitle>
             <CardDescription className="text-base text-zinc-500 font-medium">
-              Enter your Table PIN or Admin Code to continue.
+              Enter your PIN to continue.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -142,7 +142,7 @@ export default function PinAccessPage() {
 
         <div className="mt-12 text-center">
           <p className="text-[10px] font-black text-zinc-300 uppercase tracking-widest">
-            © 2024 SharEat POS Systems
+            © Developed by Ian Lalusin 2026
           </p>
         </div>
       </div>
