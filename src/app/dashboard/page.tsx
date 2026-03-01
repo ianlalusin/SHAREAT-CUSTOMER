@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -87,21 +86,21 @@ export default function DashboardPage() {
     <main className="min-h-screen pb-20 flex flex-col bg-zinc-50">
       <DashboardHeader customerName={customerName} tableName={tableName} />
 
-      <div className="container max-w-7xl mx-auto px-4 sm:px-8 -mt-12 sm:-mt-16">
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
+      <div className="container max-w-7xl mx-auto px-4 sm:px-8 -mt-12 sm:-mt-16 relative z-10">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           
           {/* Main Actions Area */}
-          <div className="xl:col-span-8 space-y-8">
+          <div className="lg:col-span-8 space-y-8">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
               <Button 
-                className="h-28 sm:h-36 rounded-[2.5rem] text-xl sm:text-2xl font-black shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all bg-primary border-4 border-white/20"
+                className="h-28 sm:h-40 rounded-[2.5rem] text-xl sm:text-2xl font-black shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all bg-primary border-4 border-white/20"
                 onClick={() => setIsRefillOpen(true)}
               >
                 <Plus className="mr-3 h-8 w-8" />
                 Order Refill
               </Button>
               <Button 
-                className="h-28 sm:h-36 rounded-[2.5rem] text-xl sm:text-2xl font-black shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all bg-white border-4 border-zinc-50" 
+                className="h-28 sm:h-40 rounded-[2.5rem] text-xl sm:text-2xl font-black shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all bg-white text-zinc-900 border-4 border-zinc-100 hover:bg-zinc-50" 
                 variant="outline" 
                 onClick={() => router.push("/catalog")}
               >
@@ -116,8 +115,8 @@ export default function DashboardPage() {
           </div>
 
           {/* Sidebar Area - History */}
-          <div className="xl:col-span-4 space-y-8">
-            <Card className="rounded-[3rem] border-none shadow-2xl overflow-hidden bg-white sticky top-28">
+          <div className="lg:col-span-4 space-y-8">
+            <Card className="rounded-[3rem] border-none shadow-2xl overflow-hidden bg-white lg:sticky lg:top-28">
               <CardHeader className="bg-zinc-50/50 flex flex-row items-center justify-between border-b px-8 py-8">
                 <div className="flex items-center gap-3">
                   <div className="bg-white p-2 rounded-2xl shadow-sm">
@@ -130,13 +129,13 @@ export default function DashboardPage() {
                 </Badge>
               </CardHeader>
               <CardContent className="p-0">
-                <div className="divide-y divide-zinc-50 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                <div className="divide-y divide-zinc-50 max-h-[60vh] lg:max-h-[70vh] overflow-y-auto custom-scrollbar">
                   {refills?.map((r) => (
                     <div key={r.id} className="p-8 hover:bg-zinc-50/50 transition-colors">
                       <div className="flex items-start justify-between mb-4">
                         <div className="font-black text-[10px] uppercase tracking-[0.2em] text-zinc-400">Request Status</div>
                         <Badge className="rounded-xl px-4 py-1.5 font-black text-[10px] shadow-sm" variant={r.status === "served" ? "secondary" : "default"}>
-                          {r.status === "served" ? "SERVED" : "IN PREPARATION"}
+                          {r.status === "served" ? "SERVED" : "PREPARING"}
                         </Badge>
                       </div>
 
