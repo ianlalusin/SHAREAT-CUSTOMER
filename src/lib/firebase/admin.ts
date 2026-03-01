@@ -9,7 +9,10 @@ function ensureAdmin() {
         ? cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY))
         : applicationDefault();
 
-      initializeApp({ credential });
+      initializeApp({
+        credential,
+        projectId: process.env.GCLOUD_PROJECT || process.env.FIREBASE_PROJECT_ID || "shareat-hub-v2",
+      });
     } catch (e) {
       console.warn(
         "Firebase Admin failed to initialize. Falling back to public SDK where possible."
