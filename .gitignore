@@ -46,3 +46,11 @@ firestore-debug.log.env
 .env
 .env
 .env.local
+
+# secrets
+.env.local
+serviceAccountKey.json
+scripts/*.key*.json
+
+# local scripts
+scripts/

@@ -28,8 +28,8 @@ export default function DashboardPage() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [isRefillOpen, setIsRefillOpen] = useState(false);
 
-  const sessionToken = useMemo(() => getCookie("session_token"), []);
-  const tableName = useMemo(() => decodeURIComponent(getCookie("session_table") || "B12"), []);
+  const sessionToken = useMemo(() => getCookie("customer_token") || getCookie("session_token"), []);
+  const tableName = useMemo(() => decodeURIComponent(getCookie("session_table") || getCookie("pin") || "B12"), []);
   const customerName = useMemo(() => decodeURIComponent(getCookie("session_customer") || "Customer"), []);
 
   const storeId = useMemo(() => decodeURIComponent(getCookie("store_id") || ""), []);
@@ -86,25 +86,25 @@ export default function DashboardPage() {
     <main className="min-h-screen pb-20 flex flex-col bg-zinc-50">
       <DashboardHeader customerName={customerName} tableName={tableName} />
 
-      <div className="container max-w-7xl mx-auto px-4 sm:px-8 -mt-12 sm:-mt-16 relative z-10">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      <div className="container max-w-7xl mx-auto px-4 sm:px-8 -mt-16 sm:-mt-20 relative z-10">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           
           {/* Main Actions Area */}
           <div className="lg:col-span-8 space-y-8">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">
               <Button 
-                className="h-28 sm:h-40 rounded-[2.5rem] text-xl sm:text-2xl font-black shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all bg-primary border-4 border-white/20"
+                className="h-32 sm:h-48 rounded-[3rem] text-2xl sm:text-3xl font-black shadow-2xl hover:scale-[1.03] active:scale-[0.98] transition-all bg-primary border-8 border-white/20"
                 onClick={() => setIsRefillOpen(true)}
               >
-                <Plus className="mr-3 h-8 w-8" />
+                <Plus className="mr-3 h-10 w-10 stroke-[3]" />
                 Order Refill
               </Button>
               <Button 
-                className="h-28 sm:h-40 rounded-[2.5rem] text-xl sm:text-2xl font-black shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all bg-white text-zinc-900 border-4 border-zinc-100 hover:bg-zinc-50" 
+                className="h-32 sm:h-48 rounded-[3rem] text-2xl sm:text-3xl font-black shadow-2xl hover:scale-[1.03] active:scale-[0.98] transition-all bg-white text-zinc-900 border-8 border-zinc-100 hover:bg-zinc-50" 
                 variant="outline" 
                 onClick={() => router.push("/catalog")}
               >
-                <Utensils className="mr-3 h-7 w-7 text-primary" />
+                <Utensils className="mr-3 h-10 w-10 text-primary stroke-[3]" />
                 Browse Menu
               </Button>
             </div>
@@ -115,21 +115,21 @@ export default function DashboardPage() {
           </div>
 
           {/* Sidebar Area - History */}
-          <div className="lg:col-span-4 space-y-8">
-            <Card className="rounded-[3rem] border-none shadow-2xl overflow-hidden bg-white lg:sticky lg:top-28">
+          <div className="lg:col-span-4 lg:sticky lg:top-28">
+            <Card className="rounded-[3rem] border-none shadow-2xl overflow-hidden bg-white">
               <CardHeader className="bg-zinc-50/50 flex flex-row items-center justify-between border-b px-8 py-8">
                 <div className="flex items-center gap-3">
-                  <div className="bg-white p-2 rounded-2xl shadow-sm">
+                  <div className="bg-white p-3 rounded-2xl shadow-sm">
                     <HistoryIcon className="h-6 w-6 text-primary" />
                   </div>
-                  <CardTitle className="text-xl font-black tracking-tight">Activity Log</CardTitle>
+                  <CardTitle className="text-2xl font-black tracking-tight">Recent Orders</CardTitle>
                 </div>
-                <Badge variant="secondary" className="rounded-xl px-3 py-1 font-black bg-zinc-200 text-zinc-700">
+                <Badge variant="secondary" className="rounded-xl px-4 py-1.5 font-black text-sm bg-zinc-200 text-zinc-700">
                   {refills?.length || 0}
                 </Badge>
               </CardHeader>
               <CardContent className="p-0">
-                <div className="divide-y divide-zinc-50 max-h-[60vh] lg:max-h-[70vh] overflow-y-auto custom-scrollbar">
+                <div className="divide-y divide-zinc-50 max-h-[50vh] lg:max-h-[60vh] overflow-y-auto custom-scrollbar">
                   {refills?.map((r) => (
                     <div key={r.id} className="p-8 hover:bg-zinc-50/50 transition-colors">
                       <div className="flex items-start justify-between mb-4">
@@ -163,7 +163,7 @@ export default function DashboardPage() {
                   {(!refills || refills.length === 0) && (
                     <div className="p-20 text-center text-zinc-300">
                       <HistoryIcon className="h-16 w-16 mx-auto mb-6 opacity-5" />
-                      <p className="text-sm font-black uppercase tracking-widest">No Recent Activity</p>
+                      <p className="text-sm font-black uppercase tracking-widest">No Activity Yet</p>
                     </div>
                   )}
                 </div>

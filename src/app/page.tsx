@@ -5,14 +5,17 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
-import { Lock, UtensilsCrossed } from "lucide-react";
+import { Lock, UtensilsCrossed, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { doc, getDoc } from "firebase/firestore";
+import { useFirebase } from "@/firebase";
 
 export default function PinAccessPage() {
   const [pin, setPin] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
+  const { firestore } = useFirebase();
 
   const handlePinChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.replace(/[^0-9A-Z]/gi, "").toUpperCase();
@@ -21,16 +24,25 @@ export default function PinAccessPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pin.length !== 6) return;
-
-    // Admin PINs: 000000 or the specific dev pin 040592
-    if (pin === "000000" || pin === "040592") {
-      router.push("/admin/items");
-      return;
-    }
+    if (pin.length < 4) return;
 
     setIsLoading(true);
     try {
+      // 1. Check if this is an Admin PIN in the 'users' collection
+      const userDoc = await getDoc(doc(firestore, "users", pin));
+      if (userDoc.exists() && userDoc.data()?.role === "admin") {
+        toast({ title: "Admin Authenticated", description: `Welcome back, ${userDoc.data()?.name || "Admin"}` });
+        router.push("/admin/items");
+        return;
+      }
+
+      // 2. Otherwise, treat as a Customer PIN
+      if (pin.length !== 6) {
+        toast({ variant: "destructive", title: "Invalid PIN", description: "Customer PINs must be 6 characters." });
+        setIsLoading(false);
+        return;
+      }
+
       const res = await fetch("/api/customer/exchange-pin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -42,14 +54,14 @@ export default function PinAccessPage() {
       if (!res.ok || !json?.ok) {
         toast({
           variant: "destructive",
-          title: "Invalid PIN",
-          description: json?.error ?? "Please check the PIN on your table placard.",
+          title: "Access Denied",
+          description: json?.error ?? "Invalid PIN. Please check your table placard.",
         });
         setIsLoading(false);
         return;
       }
 
-      // store in cookies so middleware/client can read
+      // Store session in cookies
       const setCookie = (k: string, v: string) => {
         document.cookie = `${k}=${encodeURIComponent(v)}; path=/; max-age=21600; SameSite=Lax`;
       };
@@ -85,7 +97,7 @@ export default function PinAccessPage() {
           <CardHeader className="text-center space-y-4 pb-8">
             <CardTitle className="text-3xl font-black text-zinc-900">Welcome!</CardTitle>
             <CardDescription className="text-base text-zinc-500 font-medium">
-              Enter the 6-character PIN provided at your table to start your session.
+              Enter your Table PIN or Admin Code to continue.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -93,7 +105,7 @@ export default function PinAccessPage() {
               <div className="relative">
                 <Input
                   type="text"
-                  placeholder="6-DIGIT PIN"
+                  placeholder="ENTER PIN"
                   value={pin}
                   onChange={handlePinChange}
                   disabled={isLoading}
@@ -106,9 +118,9 @@ export default function PinAccessPage() {
               <Button
                 type="submit"
                 className="w-full h-16 text-xl font-black rounded-2xl shadow-lg shadow-primary/20 transition-all active:scale-[0.97] bg-primary hover:bg-primary/90"
-                disabled={pin.length !== 6 || isLoading}
+                disabled={pin.length < 4 || isLoading}
               >
-                {isLoading ? "Validating..." : "Enter Session"}
+                {isLoading ? <Loader2 className="animate-spin mr-2" /> : "Enter Session"}
               </Button>
             </form>
           </CardContent>

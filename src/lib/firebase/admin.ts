@@ -1,7 +1,8 @@
 import { getApps, initializeApp, applicationDefault, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { getAuth } from "firebase-admin/auth";
 
-export function adminDb() {
+function ensureAdmin() {
   if (!getApps().length) {
     try {
       const credential = process.env.FIREBASE_SERVICE_ACCOUNT_KEY
@@ -10,13 +11,29 @@ export function adminDb() {
 
       initializeApp({ credential });
     } catch (e) {
-      console.warn("Firebase Admin failed to initialize. Falling back to public SDK where possible.");
+      console.warn(
+        "Firebase Admin failed to initialize. Falling back to public SDK where possible."
+      );
     }
   }
+}
+
+export function adminDb() {
+  ensureAdmin();
   try {
     return getFirestore();
   } catch (e) {
     console.error("Firestore Admin access failed.");
     throw e;
   }
+}
+
+// Backward-compatible named exports expected by API routes
+export function getAdminDb() {
+  return adminDb();
+}
+
+export function getAdminAuth() {
+  ensureAdmin();
+  return getAuth();
 }
