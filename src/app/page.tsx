@@ -2,8 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { doc, getDoc } from "firebase/firestore";
-import { useFirebase } from "@/firebase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
@@ -14,16 +12,11 @@ export default function PinAccessPage() {
   const [pin, setPin] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
-  const { firestore } = useFirebase();
   const { toast } = useToast();
 
   const handlePinChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.replace(/[^0-9A-Z]/gi, "").toUpperCase();
     if (val.length <= 6) setPin(val);
-  };
-
-  const setCookie = (k: string, v: string) => {
-    document.cookie = `${k}=${encodeURIComponent(v)}; path=/; max-age=21600; SameSite=Lax`;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -38,45 +31,33 @@ export default function PinAccessPage() {
 
     setIsLoading(true);
     try {
-      const ref = doc(firestore, "customerPins", pin);
-      const snap = await getDoc(ref);
+      const res = await fetch("/api/customer/exchange-pin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin }),
+      });
 
-      if (!snap.exists()) {
+      const json = (await res.json().catch(() => ({}))) as any;
+
+      if (!res.ok || !json?.ok) {
         toast({
           variant: "destructive",
           title: "Invalid PIN",
-          description: "Please check the PIN on your table placard.",
+          description: json?.error ?? "Please check the PIN on your table placard.",
         });
         setIsLoading(false);
         return;
       }
 
-      const x = snap.data() as any;
+      // store in cookies so middleware/client can read
+      const setCookie = (k: string, v: string) => {
+        document.cookie = `${k}=${encodeURIComponent(v)}; path=/; max-age=21600; SameSite=Lax`;
+      };
 
-      const storeId = String(x.storeId ?? "");
-      const sessionId = String(x.sessionId ?? pin);
-      const tableDisplayName = String(x.tableDisplayName ?? "");
-      const tableId = String(x.tableId ?? "");
-      const packageOfferingId = String(x.packageOfferingId ?? "");
-      const initialFlavorIds = Array.isArray(x.initialFlavorIds) ? x.initialFlavorIds : [];
-
-      if (!storeId || !sessionId) {
-        toast({
-          variant: "destructive",
-          title: "Invalid PIN data",
-          description: "Missing store/session reference.",
-        });
-        setIsLoading(false);
-        return;
-      }
-
-      setCookie("session_token", "customer_active");
-      setCookie("store_id", storeId);
-      setCookie("session_id", sessionId);
-      setCookie("session_table", tableDisplayName || tableId);
-      setCookie("package_offering_id", packageOfferingId);
-      setCookie("initial_flavor_ids", initialFlavorIds.join(","));
-      setCookie("session_customer", String(x.customerName ?? "Customer"));
+      setCookie("customer_token", String(json.token || ""));
+      setCookie("store_id", String(json.storeId || ""));
+      setCookie("session_id", String(json.sessionId || ""));
+      setCookie("pin", pin);
 
       router.push("/dashboard");
     } catch (err: any) {
@@ -134,7 +115,9 @@ export default function PinAccessPage() {
         </Card>
 
         <div className="mt-12 text-center">
-          <p className="text-[10px] font-black text-zinc-300 uppercase tracking-widest">© 2024 SharEat POS Systems</p>
+          <p className="text-[10px] font-black text-zinc-300 uppercase tracking-widest">
+            © 2024 SharEat POS Systems
+          </p>
         </div>
       </div>
     </div>
