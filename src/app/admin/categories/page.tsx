@@ -8,7 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Trash2, EyeOff, Eye, ArrowLeft } from "lucide-react";
+import { Loader2, Trash2, EyeOff, Eye, ArrowLeft, Pencil, X } from "lucide-react";
 
 type Category = {
   id: string;
@@ -24,8 +24,12 @@ export default function AdminCategoriesPage() {
 
   const [cats, setCats] = useState<Category[]>([]);
   const [name, setName] = useState("");
-  const [sortOrder, setSortOrder] = useState("0");
+  const [sortOrder, setSortOrder] = useState("1000");
   const [isBusy, setIsBusy] = useState(false);
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editSortOrder, setEditSortOrder] = useState("1000");
 
   useEffect(() => {
     const q = query(collection(firestore, "categories"), orderBy("sortOrder", "asc"), orderBy("name", "asc"));
@@ -56,10 +60,40 @@ export default function AdminCategoriesPage() {
         updatedAt: serverTimestamp(),
       });
       setName("");
-      setSortOrder("0");
+      setSortOrder("1000");
       toast({ title: "Category added" });
     } catch (e: any) {
       toast({ title: "Add failed", description: e?.message ?? "Check rules.", variant: "destructive" });
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  function openEdit(c: Category) {
+    setEditingId(c.id);
+    setEditName(c.name);
+    setEditSortOrder(String(c.sortOrder ?? 1000));
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditName("");
+    setEditSortOrder("1000");
+  }
+
+  async function saveEdit(c: Category) {
+    setIsBusy(true);
+    try {
+      const so = Number(editSortOrder || 0);
+      await updateDoc(doc(firestore, "categories", c.id), {
+        name: editName.trim(),
+        sortOrder: Number.isFinite(so) ? so : 1000,
+        updatedAt: serverTimestamp(),
+      });
+      toast({ title: "Saved" });
+      cancelEdit();
+    } catch (e: any) {
+      toast({ title: "Save failed", description: (e && e.message) ? e.message : "Check rules.", variant: "destructive" });
     } finally {
       setIsBusy(false);
     }
@@ -119,19 +153,54 @@ export default function AdminCategoriesPage() {
           <CardTitle>List</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {cats.map((c) => (
-            <div key={c.id} className="flex items-center justify-between border rounded-xl p-3 gap-3">
-              <div className="min-w-0">
-                <div className="font-semibold truncate">{c.name}</div>
-                <div className="text-sm text-muted-foreground">Sort: {c.sortOrder} • {c.isActive ? "Active" : "Hidden"}</div>
+          {cats.map((c) => (<div key={c.id} className="flex items-center justify-between border rounded-xl p-3 gap-3">
+              <div className="min-w-0 flex-1">
+                {editingId === c.id ? (
+                  <div className="grid gap-2">
+                    <Input value={editName} onChange={(e) => setEditName(e.target.value)} disabled={isBusy} />
+                    <Input
+                      value={editSortOrder}
+                      onChange={(e) => setEditSortOrder(e.target.value.replace(/[^\d]/g, ""))}
+                      disabled={isBusy}
+                      placeholder="Sort order"
+                    />
+                    <div className="text-xs text-muted-foreground">Current: {c.name} • Sort: {c.sortOrder}</div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="font-semibold truncate">{c.name}</div>
+                    <div className="text-sm text-muted-foreground">Sort: {c.sortOrder} • {c.isActive ? "Active" : "Hidden"}</div>
+                  </>
+                )}
               </div>
+
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="icon" onClick={() => toggleActive(c)} disabled={isBusy} aria-label={c.isActive ? "Hide" : "Show"}>
-                  {c.isActive ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-                <Button variant="destructive" size="icon" onClick={() => remove(c)} disabled={isBusy} aria-label="Delete">
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                {editingId === c.id ? (
+                  <>
+                    <Button
+                      onClick={() => saveEdit(c)}
+                      disabled={isBusy || !editName.trim()}
+                      className="rounded-xl"
+                    >
+                      {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+                    </Button>
+                    <Button variant="outline" size="icon" onClick={cancelEdit} disabled={isBusy} aria-label="Cancel edit">
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button variant="outline" size="icon" onClick={() => openEdit(c)} disabled={isBusy} aria-label="Edit">
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button variant="outline" size="icon" onClick={() => toggleActive(c)} disabled={isBusy} aria-label={c.isActive ? "Hide" : "Show"}>
+                      {c.isActive ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                    <Button variant="destructive" size="icon" onClick={() => remove(c)} disabled={isBusy} aria-label="Delete">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           ))}
