@@ -5,8 +5,8 @@ import { getAuth } from "firebase-admin/auth";
 function ensureAdmin() {
   if (!getApps().length) {
     try {
-      const credential = process.env.FIREBASE_SERVICE_ACCOUNT_KEY
-        ? cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY))
+      const credential = process.env.SERVICE_ACCOUNT_KEY_JSON
+        ? cert(JSON.parse(process.env.SERVICE_ACCOUNT_KEY_JSON))
         : applicationDefault();
 
       initializeApp({

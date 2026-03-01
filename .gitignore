@@ -54,3 +54,6 @@ scripts/*.key*.json
 
 # local scripts
 scripts/
+
+# secrets
+shareat-hub-v2-adminsdk.json
