@@ -4,278 +4,77 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Customer",
       "type": "object",
-      "description": "Represents a customer using the SharEat Customer Hub during a dining session. This entity stores basic customer identification for personalized greetings and session management.",
+      "description": "Represents a customer using the SharEat Customer Hub.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the Customer entity."
-        },
-        "name": {
-          "type": "string",
-          "description": "The full name of the customer."
-        }
+        "id": { "type": "string" },
+        "name": { "type": "string" }
       },
-      "required": [
-        "id",
-        "name"
-      ]
+      "required": ["id", "name"]
     },
     "Table": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "Table",
       "type": "object",
-      "description": "Represents a dining table within the restaurant where a customer's session is active. This helps link customer requests to a specific physical location.",
+      "description": "Represents a physical dining table.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the Table entity."
-        },
-        "tableNumber": {
-          "type": "string",
-          "description": "The unique number or identifier assigned to the dining table."
-        },
-        "section": {
-          "type": "string",
-          "description": "The section of the restaurant where the table is located (e.g., 'Main Dining', 'Patio', 'Bar Area')."
-        }
+        "id": { "type": "string" },
+        "tableNumber": { "type": "string" },
+        "section": { "type": "string" }
       },
-      "required": [
-        "id",
-        "tableNumber"
-      ]
+      "required": ["id", "tableNumber"]
     },
     "MenuItem": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "MenuItem",
       "type": "object",
-      "description": "Defines an item available on the restaurant's menu, specifically those eligible for 'Fast Refill Ordering'. It includes details pertinent to refill eligibility and cooldown periods.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the MenuItem entity."
-        },
-        "name": {
-          "type": "string",
-          "description": "The name of the menu item (e.g., 'Coca-Cola', 'Iced Tea')."
-        },
-        "description": {
-          "type": "string",
-          "description": "A brief description of the menu item."
-        },
-        "category": {
-          "type": "string",
-          "description": "The category the menu item belongs to (e.g., 'Beverages', 'Appetizers')."
-        },
-        "isRefillable": {
-          "type": "boolean",
-          "description": "Indicates whether this menu item is available for a 'Fast Refill' request."
-        },
-        "refillCooldownMinutes": {
-          "type": "number",
-          "description": "The minimum number of minutes a customer must wait between refill requests for this specific item, to prevent abuse."
-        }
-      },
-      "required": [
-        "id",
-        "name",
-        "category",
-        "isRefillable",
-        "refillCooldownMinutes"
-      ]
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "category": { "type": "string" },
+        "isAvailable": { "type": "boolean" }
+      }
     },
-    "Session": {
+    "CustomerPin": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Session",
+      "title": "CustomerPin",
       "type": "object",
-      "description": "Represents an active customer session, established after successful PIN authentication. It links a customer to a specific table and maintains session-specific details and status.",
+      "description": "Mapping of 6-digit PINs to active store sessions.",
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the Session entity."
-        },
-        "customerId": {
-          "type": "string",
-          "description": "Reference to the Customer associated with this session. (Relationship: Customer 1:1 Session)"
-        },
-        "tableId": {
-          "type": "string",
-          "description": "Reference to the Table where this session is taking place. (Relationship: Table 1:1 Session)"
-        },
-        "startTime": {
-          "type": "string",
-          "description": "The date and time when the customer session officially started.",
-          "format": "date-time"
-        },
-        "endTime": {
-          "type": "string",
-          "description": "The date and time when the session ended or was closed. Null if the session is still active.",
-          "format": "date-time"
-        },
-        "status": {
-          "type": "string",
-          "description": "The current operational status of the session (e.g., 'active', 'closed', 'pending_checkout')."
-        },
-        "welcomeMessage": {
-          "type": "string",
-          "description": "A personalized welcome message displayed to the customer at the start of their session."
-        }
-      },
-      "required": [
-        "id",
-        "customerId",
-        "tableId",
-        "startTime",
-        "status",
-        "welcomeMessage"
-      ]
-    },
-    "Request": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "title": "Request",
-      "type": "object",
-      "description": "Tracks all customer-initiated requests during a session, including 'Fast Refills', 'Call Server', and 'Request Add-ons'. Each request records its type, status, and associated details.",
-      "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the Request entity."
-        },
-        "sessionId": {
-          "type": "string",
-          "description": "Reference to the Session during which this request was made. (Relationship: Session 1:N Request)"
-        },
-        "type": {
-          "type": "string",
-          "description": "The category of the request (e.g., 'refill', 'call_server', 'add_on_inquiry')."
-        },
-        "status": {
-          "type": "string",
-          "description": "The current status of the request, indicating its progression (e.g., 'queued', 'accepted', 'preparing', 'served', 'rejected')."
-        },
-        "requestTime": {
-          "type": "string",
-          "description": "The date and time when the customer initiated this request.",
-          "format": "date-time"
-        },
-        "fulfillmentTime": {
-          "type": "string",
-          "description": "The date and time when the request was ultimately fulfilled (served or rejected) by staff.",
-          "format": "date-time"
-        },
-        "menuItemId": {
-          "type": "string",
-          "description": "Reference to the MenuItem if the request type is 'refill'. Null for 'call_server' or 'add_on_inquiry' requests. (Relationship: MenuItem 1:N Request)"
-        },
-        "quantity": {
-          "type": "number",
-          "description": "The quantity of the MenuItem requested, applicable primarily for 'refill' requests."
-        },
-        "notes": {
-          "type": "string",
-          "description": "Any additional notes or specific instructions provided by the customer for this request."
-        }
-      },
-      "required": [
-        "id",
-        "sessionId",
-        "type",
-        "status",
-        "requestTime"
-      ]
+        "pin": { "type": "string" },
+        "storeId": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "tableId": { "type": "string" },
+        "customerName": { "type": "string" }
+      }
     }
   },
   "auth": {
-    "providers": [
-      "password",
-      "anonymous"
-    ]
+    "providers": ["anonymous"]
   },
   "firestore": {
     "structure": [
       {
-        "path": "/menu_items/{menuItemId}",
+        "path": "/catalogItems/{itemId}",
         "definition": {
           "entityName": "MenuItem",
-          "schema": {
-            "$ref": "#/backend/entities/MenuItem"
-          },
-          "description": "Globally accessible collection of menu items available for 'Fast Refill Ordering'. These documents are primarily read-only for customers. No authorization dependencies. Includes fields like `id`, `name`, `description`, `category`, `isRefillable`, `refillCooldownMinutes`.",
-          "params": [
-            {
-              "name": "menuItemId",
-              "description": "Unique identifier for a menu item."
-            }
-          ]
+          "description": "Public menu items available for viewing."
         }
       },
       {
-        "path": "/tables/{tableId}",
+        "path": "/customerPins/{pin}",
         "definition": {
-          "entityName": "Table",
-          "schema": {
-            "$ref": "#/backend/entities/Table"
-          },
-          "description": "Globally accessible collection of dining tables. These documents are primarily read-only for customers. No authorization dependencies. Includes fields like `id`, `tableNumber`, `section`.",
-          "params": [
-            {
-              "name": "tableId",
-              "description": "Unique identifier for a dining table."
-            }
-          ]
+          "entityName": "CustomerPin",
+          "description": "PIN registry for customer login."
         }
       },
       {
-        "path": "/customers/{customerId}",
-        "definition": {
-          "entityName": "Customer",
-          "schema": {
-            "$ref": "#/backend/entities/Customer"
-          },
-          "description": "Backend-managed collection of customer profiles. This collection is not directly accessible by the authenticated customer's `request.auth.uid` in the SharEat Customer Hub. Customer-facing details like `name` are denormalized into `Session` documents for Authorization Independence.",
-          "params": [
-            {
-              "name": "customerId",
-              "description": "Unique identifier for a customer profile."
-            }
-          ]
-        }
-      },
-      {
-        "path": "/sessions/{sessionId}",
-        "definition": {
-          "entityName": "Session",
-          "schema": {
-            "$ref": "#/backend/entities/Session"
-          },
-          "description": "Stores active customer session details. This collection is central to customer authorization. It includes `userAuthUid` (the Firebase `uid` assigned to the authenticated user for this session, CRITICAL for authorization independence), `customerName` (denormalized from Customer for UI display), `tableNumber`, and `tableSection` (denormalized from Table for UI display). Accessible only by the `userAuthUid` tied to the session, ensuring Authorization Independence and QAP support.",
-          "params": [
-            {
-              "name": "sessionId",
-              "description": "Unique identifier for an active customer session."
-            }
-          ]
-        }
-      },
-      {
-        "path": "/sessions/{sessionId}/requests/{requestId}",
+        "path": "/refillRequests/{requestId}",
         "definition": {
           "entityName": "Request",
-          "schema": {
-            "$ref": "#/backend/entities/Request"
-          },
-          "description": "Stores individual customer-initiated requests made during a session. This subcollection relies on its parent session. It includes `userAuthUid` (denormalized from the parent Session's `userAuthUid`, CRITICAL for Authorization Independence and QAP support), `customerName` (denormalized from Session/Customer), `tableNumber` (denormalized from Session/Table), and `menuItemName` (if `menuItemId` is present, denormalized from MenuItem) for display purposes and to avoid `get()` calls in rules. Accessible only by the `userAuthUid` tied to the parent session.",
-          "params": [
-            {
-              "name": "sessionId",
-              "description": "Unique identifier of the parent customer session."
-            },
-            {
-              "name": "requestId",
-              "description": "Unique identifier for a specific customer request."
-            }
-          ]
+          "description": "Customer-initiated refill and service requests."
         }
       }
-    ],
-    "reasoning": "The Firestore structure is designed to be secure, scalable, and debuggable, adhering strictly to the provided CORE DESIGN PRINCIPLES and DESIGN STRATEGY MANDATES. \n\n**Authorization Independence (CRITICAL) & QAPs:**\nTo ensure Authorization Independence and enable secure Query As Authorization Predicates (QAPs), the primary authorization field, `userAuthUid` (representing `request.auth.uid`), is denormalized into both the `Session` and `Request` documents. When a customer successfully authenticates with a PIN, a temporary Firebase `uid` is assigned to their active session. This `userAuthUid` is stored directly within the `/sessions/{sessionId}` document. Crucially, for all subcollection documents (like `/sessions/{sessionId}/requests/{requestId}`), this `userAuthUid` is further denormalized into each `Request` document. This eliminates the need for `get()` operations in security rules to check parent session ownership, allowing atomic writes and simplifying rule logic to a direct comparison: `request.auth.uid == resource.data.userAuthUid`. This denormalization also directly supports QAPs for listing requests, as clients can query `db.collection('sessions/{sessionId}/requests').where('userAuthUid', '==', request.auth.uid)` with security rules safely enforcing this predicate.\n\n**Structural Segregation & Access Modeling:**\nCollections are segregated based on their security posture. `/menu_items` and `/tables` are designed for public read access (to authenticated users generally, assuming staff might also read, but primarily for customer display). The `/customers` collection is intended for backend management and internal linking; customer-facing details like `name` and `tableNumber` are denormalized into the `Session` document to avoid dependencies for the customer UI. \n\nUser-specific data follows a hierarchical path-based ownership model, starting with `/sessions/{sessionId}`. Each `Session` document directly contains the `userAuthUid` of the authenticated customer, making it a private document for that specific user. `Request` entities, which are 1:N to a `Session`, are stored as a subcollection `/sessions/{sessionId}/requests/{requestId}`. This maintains a clear logical hierarchy while the denormalized `userAuthUid` in each `Request` document ensures independent authorization.\n\n**DBAC & Invariants:**\nRoles are implicitly managed by the presence of `userAuthUid` in session-specific documents, signifying the user's role as an 'active session participant'. This avoids custom claims and relies solely on `request.auth.uid`. Invariants like ownership, timestamps (`startTime`, `requestTime`), and denormalized data (`customerName`, `tableNumber`, `menuItemName`) are explicitly maintained within the relevant documents, ensuring data integrity and reducing client-side joins.\n\n**Data Clarity and Predictability:**\nExplicit `status` fields are used in both `Session` and `Request` documents to model state clearly. Semantic naming conventions are strictly followed (e.g., `userAuthUid`, `customerId`, `tableId`, `{sessionId}`, `{requestId}`). Dynamic keys are avoided, and all authorization-relevant fields are consistent across documents."
+    ]
   }
 }

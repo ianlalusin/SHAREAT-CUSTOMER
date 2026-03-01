@@ -1,8 +1,8 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow public access to all collections for prototyping and development
-    // This resolves the "Missing or insufficient permissions" errors
+    // Prototype Access: Allow all reads and writes to facilitate rapid testing
+    // without Firebase Authentication dependencies.
     match /{document=**} {
       allow read, write: if true;
     }
