@@ -9,6 +9,27 @@ function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
 }
 
+async function loadSessionProjection(db: any, sessionId: string) {
+  // Try common collection names (no breaking if you rename later)
+  const candidates = [
+    "activeSessionProjections",
+    "activeSessionProjection",
+    "activeSessionsProjection",
+    "activeSessionsProjections",
+    "sessionProjections",
+    "activeSessions",
+    "sessions",
+  ];
+
+  for (const col of candidates) {
+    try {
+      const snap = await db.doc(`${col}/${sessionId}`).get();
+      if (snap.exists) return { id: snap.id, ...(snap.data() as any) };
+    } catch {}
+  }
+  return null;
+}
+
 export async function POST(req: Request) {
   let body: Body;
   try {
@@ -25,12 +46,10 @@ export async function POST(req: Request) {
 
   const pinRef = db.doc(`pinRegistry/${pinRaw}`);
   const pinSnap = await pinRef.get();
-
   if (!pinSnap.exists) return bad("Invalid PIN.", 404);
 
   const data = pinSnap.data() as any;
 
-  // Required fields
   const storeId = String(data.storeId || "");
   const sessionId = String(data.sessionId || "");
   const status = String(data.status || "");
@@ -40,8 +59,9 @@ export async function POST(req: Request) {
   if (status !== "active") return bad("PIN is not active.", 403);
   if (!expiresAtMs || expiresAtMs <= Date.now()) return bad("PIN expired.", 403);
 
-  // Mint custom token with claims
-  // We use a "synthetic uid" so customers are isolated from staff accounts.
+  // Pull projection so the client has correct table/package/flavors immediately
+  const projection = await loadSessionProjection(db, sessionId);
+
   const customerUid = `cust_${pinRaw}_${sessionId}`;
 
   const token = await auth.createCustomToken(customerUid, {
@@ -57,5 +77,14 @@ export async function POST(req: Request) {
     storeId,
     sessionId,
     expiresAtMs,
+
+    // session projection fields (best-effort)
+    customerName: projection?.customerName ?? null,
+    tableId: projection?.tableId ?? null,
+    tableNumber: projection?.tableNumber ?? null,
+    tableDisplayName: projection?.tableDisplayName ?? null,
+    packageOfferingId: projection?.packageOfferingId ?? null,
+    packageName: projection?.packageName ?? projection?.packageSnapshot?.name ?? null,
+    initialFlavorIds: Array.isArray(projection?.initialFlavorIds) ? projection.initialFlavorIds : [],
   });
 }

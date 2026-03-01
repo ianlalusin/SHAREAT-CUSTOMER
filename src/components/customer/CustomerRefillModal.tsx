@@ -9,22 +9,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Loader2, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useToast } from "@/hooks/use-toast";
 
-import {
-  addDoc,
-  collection,
-  doc,
-  getDocs,
-  onSnapshot,
-  orderBy,
-  query,
-  where,
-  serverTimestamp,
-} from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 import { useFirebase } from "@/firebase";
 
 type StoreRefill = {
@@ -132,8 +122,7 @@ function CustomerRefillContent({
   onClose: () => void;
 }) {
   const { toast } = useToast();
-  const { firestore } = useFirebase();
-
+  
   const [storeRefills, setStoreRefills] = useState<StoreRefill[]>([]);
   const [globalRefills, setGlobalRefills] = useState<Refill[]>([]);
   const [storeFlavors, setStoreFlavors] = useState<StoreFlavor[]>([]);
@@ -145,63 +134,57 @@ function CustomerRefillContent({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!session?.storeId) {
-      setIsLoading(false);
-      return;
+    let cancelled = false;
+
+    async function load() {
+      try {
+        if (!session?.storeId) {
+          setIsLoading(false);
+          return;
+        }
+
+        setIsLoading(true);
+
+        const user = getAuth().currentUser;
+        if (!user) {
+          setIsLoading(false);
+          return;
+        }
+
+        const idToken = await user.getIdToken();
+        const res = await fetch("/api/customer/refill-options", {
+          method: "GET",
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+
+        const json = (await res.json().catch(() => ({}))) as any;
+        if (!res.ok || !json?.ok) {
+          throw new Error(json?.error || "Failed to load refill options.");
+        }
+
+        if (cancelled) return;
+
+        setStoreRefills(Array.isArray(json.storeRefills) ? json.storeRefills : []);
+        setGlobalRefills(Array.isArray(json.refills) ? json.refills : []);
+        setStoreFlavors(Array.isArray(json.storeFlavors) ? json.storeFlavors : []);
+        setCurrentPackage(json.currentPackage ?? null);
+        setIsLoading(false);
+      } catch (e: any) {
+        if (cancelled) return;
+        setIsLoading(false);
+        toast({
+          title: "Unable to load refills",
+          description: e?.message ?? "Please approach our staff.",
+          variant: "destructive",
+        });
+      }
     }
 
-    const unsubs: (() => void)[] = [];
-
-    const storeRefillsQuery = query(
-      collection(firestore, "stores", session.storeId, "storeRefills"),
-      where("isEnabled", "==", true),
-      orderBy("sortOrder", "asc")
-    );
-    unsubs.push(
-      onSnapshot(storeRefillsQuery, (snap) => {
-        setStoreRefills(
-          snap.docs.map((d) => {
-            const data = d.data() as any;
-            return { ...data, id: d.id, refillId: d.id };
-          })
-        );
-      })
-    );
-
-    const globalRefillsQuery = query(collection(firestore, "refills"), where("isActive", "==", true));
-    unsubs.push(
-      onSnapshot(globalRefillsQuery, (snap) => {
-        setGlobalRefills(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })));
-      })
-    );
-
-    const flavorsQuery = query(
-      collection(firestore, "stores", session.storeId, "storeFlavors"),
-      where("isEnabled", "==", true)
-    );
-    unsubs.push(
-      onSnapshot(flavorsQuery, (snap) => {
-        setStoreFlavors(
-          snap.docs.map((d) => {
-            const data = d.data() as any;
-            return { ...data, id: d.id, flavorId: d.id };
-          })
-        );
-      })
-    );
-
-    if (session.packageOfferingId) {
-      const pkgRef = doc(firestore, "stores", session.storeId, "storePackages", session.packageOfferingId);
-      unsubs.push(
-        onSnapshot(pkgRef, (docSnap) => {
-          if (docSnap.exists()) setCurrentPackage(docSnap.data() as any);
-        })
-      );
-    }
-
-    Promise.all([getDocs(storeRefillsQuery), getDocs(flavorsQuery)]).finally(() => setIsLoading(false));
-    return () => unsubs.forEach((u) => u());
-  }, [firestore, session.storeId, session.packageOfferingId]);
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [session.storeId, session.packageOfferingId]);
 
   const filteredRefills = useMemo(() => {
     let available = storeRefills;
@@ -244,14 +227,17 @@ function CustomerRefillContent({
   const initialFlavorIdSet = useMemo(() => new Set(session.initialFlavorIds || []), [session.initialFlavorIds]);
 
   const handleSelectRefill = (refill: StoreRefill) => {
+    const id = refill.refillId;
+
     setCart((prev) => {
       const next = new Map(prev);
-      if (!next.has(refill.refillId)) {
-        next.set(refill.refillId, { refill, flavorIds: [], notes: "" });
-      }
+      if (next.has(id)) next.delete(id);
+      else next.set(id, { refill, flavorIds: [], notes: "" });
       return next;
     });
-    setActiveRefillId(refill.refillId);
+
+    // toggle active panel: if you tapped the active one again, close it
+    setActiveRefillId((cur) => (cur === id ? null : id));
   };
 
   const handleFlavorToggle = (flavorId: string) => {
@@ -323,93 +309,49 @@ function CustomerRefillContent({
 
     setIsSubmitting(true);
     try {
-      const payloadItems = Array.from(cart.values()).map((item) => {
+      const user = getAuth().currentUser;
+      if (!user) throw new Error("Session expired. Please re-enter your PIN.");
+
+      const idToken = await user.getIdToken();
+
+      const items = Array.from(cart.values()).map((item) => {
         const flavorNames = item.flavorIds
-          .map((id) => storeFlavors.find((f) => f.flavorId === id)?.flavorName || id)
-          .filter(Boolean);
+          .map((id) => storeFlavors.find((f) => f.flavorId === id)?.flavorName)
+          .filter(Boolean) as string[];
+
+        const flavorNote = flavorNames.length ? `Flavors: ${flavorNames.join(", ")}` : "";
+        const notes = [item.notes.trim(), flavorNote].filter(Boolean).join(" | ");
 
         return {
+          // server accepts itemId/itemName too (it will fallback to refillId/refillName)
+          itemId: item.refill.refillId,
+          itemName: item.refill.refillName,
           refillId: item.refill.refillId,
           refillName: item.refill.refillName,
-          flavorIds: item.flavorIds,
-          flavorNames,
-          notes: item.notes.trim() || null,
+
+          kitchenLocationId: item.refill.kitchenLocationId || "",
+          kitchenLocationName: item.refill.kitchenLocationName || "Kitchen",
+
+          qty: 1,
+          notes,
         };
       });
 
-      await addDoc(collection(firestore, "refillRequests"), {
-        storeId: session.storeId,
-        sessionId: session.id,
-        tableId: session.tableId,
-        tableDisplayName: session.tableDisplayName || null,
-        status: "preparing", // customer hub lifecycle
-        requestedBy: "customer",
-        createdAt: serverTimestamp(),
-        servedAt: null,
-        packageOfferingId: session.packageOfferingId,
-        packageName: currentPackage?.packageName || currentPackage?.name || session.packageSnapshot?.name || null,
-        items: payloadItems,
+      const res = await fetch("/api/customer/submit-refill", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ items }),
       });
 
-      toast({ title: `Sent ${cart.size} refill(s).`, description: "Status: Preparing" });
+      const json = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "Failed to submit refill.");
+
+      toast({ title: `Sent ${items.length} refill(s).`, description: "Status: Preparing" });
       setCart(new Map());
       setActiveRefillId(null);
-      onClose();
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Failed", description: e?.message ?? "Unknown error" });
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
-  async function repeatFirstOrder() {
-    if (sessionIsLocked) {
-      toast({ variant: "destructive", title: "Session Locked", description: "Refills are disabled." });
-      return;
-    }
-    if (!currentPackage) {
-      toast({ variant: "destructive", title: "No Package", description: "Package info not found." });
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const allowed = new Set(currentPackage.refillsAllowed || []);
-      const refillsToOrder = storeRefills.filter((sr) => sr.isEnabled && allowed.has(sr.refillId));
-
-      if (refillsToOrder.length === 0) {
-        toast({ variant: "destructive", title: "No Refills", description: "No refills enabled for this package." });
-        return;
-      }
-
-      const flavorIds = session.initialFlavorIds || [];
-      const flavorNames = flavorIds
-        .map((id) => storeFlavors.find((f) => f.flavorId === id)?.flavorName || id)
-        .filter(Boolean);
-
-      await addDoc(collection(firestore, "refillRequests"), {
-        storeId: session.storeId,
-        sessionId: session.id,
-        tableId: session.tableId,
-        tableDisplayName: session.tableDisplayName || null,
-        status: "preparing",
-        requestedBy: "customer",
-        createdAt: serverTimestamp(),
-        servedAt: null,
-        packageOfferingId: session.packageOfferingId,
-        packageName: currentPackage?.packageName || currentPackage?.name || session.packageSnapshot?.name || null,
-        items: [
-          {
-            refillId: "REFILL_PACKAGE_FIRST_ORDER",
-            refillName: `REFILL - ${(currentPackage as any)?.packageName || (currentPackage as any)?.name || "Package"}`,
-            flavorIds,
-            flavorNames,
-            notes: flavorNames.length ? `Flavors: ${flavorNames.join(", ")}` : null,
-          },
-        ],
-      });
-
-      toast({ title: "Sent first order refill.", description: defaultFlavorNames ? `Flavors: ${defaultFlavorNames}` : undefined });
       onClose();
     } catch (e: any) {
       toast({ variant: "destructive", title: "Failed", description: e?.message ?? "Unknown error" });
@@ -426,29 +368,6 @@ function CustomerRefillContent({
 
   return (
     <div className="h-[70vh] flex flex-col">
-      <div className="p-4 border-b">
-        <div className="flex items-start sm:items-center gap-4 flex-col sm:flex-row">
-          <Button
-            variant="destructive"
-            onClick={repeatFirstOrder}
-            disabled={isSubmitting || !!sessionIsLocked}
-            className="flex-shrink-0"
-          >
-            <RefreshCw className="mr-2 h-4 w-4" /> Repeat First Order
-          </Button>
-          <div className="text-xs text-muted-foreground">
-            <p>Sends all refills allowed by the package with the default flavors.</p>
-            {defaultFlavorNames ? (
-              <p>
-                <span className="font-semibold">Default Flavors:</span>{" "}
-                <span className="text-destructive font-medium">{defaultFlavorNames}</span>
-              </p>
-            ) : null}
-          </div>
-        </div>
-        <Separator className="mt-2 mb-0" />
-      </div>
-
       <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 p-4 overflow-y-auto">
         {/* Left: refills list */}
         <div className="md:col-span-1 border-r pr-4 flex flex-col">
@@ -458,20 +377,27 @@ function CustomerRefillContent({
               {isLoading ? (
                 <Loader2 className="mx-auto my-16 animate-spin" />
               ) : (
-                filteredRefills.map((refill) => (
-                  <button
-                    key={refill.refillId}
-                    onClick={() => handleSelectRefill(refill)}
-                    className={cn(
-                      "w-full text-left p-2 border rounded-md hover:bg-muted/50 transition-colors",
-                      cart.has(refill.refillId) && "bg-muted font-semibold",
-                      activeRefillId === refill.refillId &&
-                        "bg-destructive/10 text-destructive border-destructive font-bold"
-                    )}
-                  >
-                    {refill.refillName}
-                  </button>
-                ))
+                filteredRefills.map((refill) => {
+                  const selected = cart.has(refill.refillId);
+                  return (
+                    <button
+                      key={refill.refillId}
+                      onClick={() => handleSelectRefill(refill)}
+                      className={cn(
+                        "w-full text-left rounded-2xl px-4 py-3 border transition-all",
+                        "hover:shadow-sm active:scale-[0.99]",
+                        selected
+                          ? "bg-primary text-white border-primary"
+                          : "bg-white text-primary border-primary/30"
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="font-black text-lg">{refill.refillName}</div>
+                        {selected ? <Check className="h-5 w-5 text-white" /> : null}
+                      </div>
+                    </button>
+                  );
+                })
               )}
               {filteredRefills.length === 0 && !isLoading && (
                 <p className="text-center text-sm text-muted-foreground py-10">No refills available for this package.</p>

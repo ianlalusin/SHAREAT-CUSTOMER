@@ -1,210 +1,124 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { collection, onSnapshot, orderBy, query, limit } from "firebase/firestore";
-import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
-import { useFirebase } from "@/firebase";
-
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Loader2, LogOut, Package, KeyRound, RefreshCw } from "lucide-react";
+import { Loader2, Shield } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  GoogleAuthProvider,
+  signInWithPopup,
+} from "firebase/auth";
 
-type PinRow = {
-  id: string; // PIN itself (doc id)
-  storeId?: string;
-  sessionId?: string;
-  status?: string;
-  expiresAtMs?: number;
-};
-
-function fmtDate(ms?: number) {
-  if (!ms) return "-";
-  try {
-    return new Date(ms).toLocaleString();
-  } catch {
-    return String(ms);
-  }
-}
-
-export default function AdminHomePage() {
+export default function AdminLoginPage() {
   const router = useRouter();
-  const { firestore } = useFirebase();
+  const { toast } = useToast();
 
-  const [authReady, setAuthReady] = useState(false);
-  const [isAuthed, setIsAuthed] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isBusy, setIsBusy] = useState(false);
 
-  const [pins, setPins] = useState<PinRow[]>([]);
-  const [isLoadingPins, setIsLoadingPins] = useState(true);
+  async function loginEmail(e: React.FormEvent) {
+    e.preventDefault();
+    setIsBusy(true);
+    try {
+      const auth = getAuth();
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+      router.replace("/admin");
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Login failed",
+        description: err?.message ?? "Invalid credentials.",
+      });
+      setIsBusy(false);
+    }
+  }
 
-  useEffect(() => {
-    const auth = getAuth();
-    const unsub = onAuthStateChanged(auth, (user) => {
-      setAuthReady(true);
-      if (!user) {
-        setIsAuthed(false);
-        router.replace("/admin/login");
-        return;
-      }
-      setIsAuthed(true);
-    });
-    return () => unsub();
-  }, [router]);
-
-  const now = Date.now();
-
-  const activeCount = useMemo(() => {
-    return pins.filter((p) => (p.status === "active") && (p.expiresAtMs ?? 0) > now).length;
-  }, [pins, now]);
-
-  const expiredCount = useMemo(() => pins.length - activeCount, [pins.length, activeCount]);
-
-  useEffect(() => {
-    if (!authReady || !isAuthed) return;
-
-    setIsLoadingPins(true);
-
-    // Show latest 200 pins (enough for admin table)
-    const q = query(collection(firestore, "pinRegistry"), orderBy("expiresAtMs", "desc"), limit(200));
-
-    return onSnapshot(
-      q,
-      (snap) => {
-        const list: PinRow[] = snap.docs.map((d) => {
-          const x = d.data() as any;
-          return {
-            id: d.id,
-            storeId: x.storeId,
-            sessionId: x.sessionId,
-            status: x.status,
-            expiresAtMs: Number(x.expiresAtMs || 0),
-          };
-        });
-        setPins(list);
-        setIsLoadingPins(false);
-      },
-      () => {
-        setPins([]);
-        setIsLoadingPins(false);
-      }
-    );
-  }, [authReady, isAuthed, firestore]);
-
-  if (!authReady) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-zinc-50">
-        <Loader2 className="h-10 w-10 animate-spin text-primary" />
-      </div>
-    );
+  async function loginGoogle() {
+    setIsBusy(true);
+    try {
+      const auth = getAuth();
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+      router.replace("/admin");
+    } catch (err: any) {
+      toast({
+        variant: "destructive",
+        title: "Google sign-in failed",
+        description: err?.message ?? "Could not sign in with Google.",
+      });
+      setIsBusy(false);
+    }
   }
 
   return (
-    <main className="min-h-screen p-6 max-w-[1100px] mx-auto space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-black">Admin</h1>
-          <p className="text-sm text-zinc-500 font-medium">Catalog + PIN monitoring</p>
-        </div>
-
-        <Button
-          variant="outline"
-          onClick={async () => {
-            try { await signOut(getAuth()); } catch {}
-            router.push("/");
-          }}
-          className="gap-2"
-        >
-          <LogOut className="h-4 w-4" />
-          Exit
-        </Button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Button
-          onClick={() => router.push("/admin/items")}
-          className="h-16 rounded-2xl font-black text-lg gap-3"
-        >
-          <Package className="h-5 w-5" />
-          Manage Items
-        </Button>
-
-        <Button
-          onClick={() => router.push("/admin/pins")}
-          variant="outline"
-          className="h-16 rounded-2xl font-black text-lg gap-3"
-        >
-          <KeyRound className="h-5 w-5" />
-          Pins Page (soon)
-        </Button>
-      </div>
-
-      <Card className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-white">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div className="space-y-1">
-            <CardTitle className="text-xl font-black">PIN Registry</CardTitle>
-            <div className="flex items-center gap-2">
-              <Badge className="rounded-xl" variant="default">Active: {activeCount}</Badge>
-              <Badge className="rounded-xl" variant="secondary">Expired: {expiredCount}</Badge>
-            </div>
+    <main className="min-h-screen flex items-center justify-center p-6 bg-zinc-50">
+      <Card className="w-full max-w-md rounded-[2rem] border-none shadow-2xl">
+        <CardHeader className="text-center space-y-3">
+          <div className="mx-auto bg-primary/10 text-primary p-3 rounded-2xl w-fit">
+            <Shield className="h-7 w-7" />
           </div>
-
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => router.refresh()}
-            aria-label="Refresh"
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
+          <CardTitle className="text-2xl font-black">Admin Login</CardTitle>
+          <CardDescription>Sign in with your staff account.</CardDescription>
         </CardHeader>
 
-        <CardContent className="p-0">
-          {isLoadingPins ? (
-            <div className="p-10 flex items-center justify-center gap-2 text-zinc-500">
-              <Loader2 className="h-5 w-5 animate-spin" /> Loading pins...
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-zinc-50 text-zinc-600">
-                  <tr>
-                    <th className="text-left px-5 py-3 font-black">PIN</th>
-                    <th className="text-left px-5 py-3 font-black">Store</th>
-                    <th className="text-left px-5 py-3 font-black">Session</th>
-                    <th className="text-left px-5 py-3 font-black">Status</th>
-                    <th className="text-left px-5 py-3 font-black">Expires</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {pins.map((p) => {
-                    const expired = (p.expiresAtMs ?? 0) <= Date.now();
-                    const isActive = p.status === "active" && !expired;
-                    return (
-                      <tr key={p.id} className="hover:bg-zinc-50/60">
-                        <td className="px-5 py-3 font-black tracking-widest">{p.id}</td>
-                        <td className="px-5 py-3">{p.storeId || "-"}</td>
-                        <td className="px-5 py-3">{p.sessionId || "-"}</td>
-                        <td className="px-5 py-3">
-                          <Badge className="rounded-xl" variant={isActive ? "default" : "secondary"}>
-                            {isActive ? "ACTIVE" : "EXPIRED"}
-                          </Badge>
-                        </td>
-                        <td className="px-5 py-3 text-zinc-500">{fmtDate(p.expiresAtMs)}</td>
-                      </tr>
-                    );
-                  })}
-                  {pins.length === 0 && (
-                    <tr>
-                      <td className="px-5 py-10 text-center text-zinc-400" colSpan={5}>
-                        No pins found in pinRegistry.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
+        <CardContent className="space-y-4">
+          <form onSubmit={loginEmail} className="space-y-3">
+            <Input
+              type="email"
+              placeholder="Email"
+              value={email}
+              disabled={isBusy}
+              onChange={(e) => setEmail(e.target.value)}
+              className="h-12 rounded-2xl"
+              autoComplete="email"
+            />
+            <Input
+              type="password"
+              placeholder="Password"
+              value={password}
+              disabled={isBusy}
+              onChange={(e) => setPassword(e.target.value)}
+              className="h-12 rounded-2xl"
+              autoComplete="current-password"
+            />
+
+            <Button
+              type="submit"
+              className="w-full h-12 rounded-2xl font-black"
+              disabled={isBusy || !email.trim() || !password}
+            >
+              {isBusy ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : null}
+              Sign in
+            </Button>
+          </form>
+
+          <div className="text-center text-xs text-zinc-400 font-bold">OR</div>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full h-12 rounded-2xl font-black"
+            disabled={isBusy}
+            onClick={loginGoogle}
+          >
+            Continue with Google
+          </Button>
+
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full rounded-2xl"
+            disabled={isBusy}
+            onClick={() => router.push("/")}
+          >
+            Back to Customer
+          </Button>
         </CardContent>
       </Card>
     </main>

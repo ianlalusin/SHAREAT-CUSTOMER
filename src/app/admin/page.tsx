@@ -6,10 +6,12 @@ import { collection, onSnapshot, orderBy, query, limit } from "firebase/firestor
 import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
 import { useFirebase } from "@/firebase";
 
+import { STORE_DIRECTORY, getStoreName } from "@/lib/store-directory";
+import { StoreDirectoryModal } from "@/components/admin/StoreDirectoryModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, LogOut, Package, KeyRound, RefreshCw } from "lucide-react";
+import { Loader2, LogOut, Package, KeyRound, RefreshCw, Settings } from "lucide-react";
 
 type PinRow = {
   id: string; // PIN itself (doc id)
@@ -37,6 +39,8 @@ export default function AdminHomePage() {
 
   const [pins, setPins] = useState<PinRow[]>([]);
   const [isLoadingPins, setIsLoadingPins] = useState(true);
+  const [dirOpen, setDirOpen] = useState(false);
+  const [dirBump, setDirBump] = useState(0);
 
   useEffect(() => {
     const auth = getAuth();
@@ -65,14 +69,8 @@ export default function AdminHomePage() {
 
     setIsLoadingPins(true);
 
-    // Get directly from pinRegistry. 
-    // Sort by status 'asc' ("active" < "expired") then expiresAtMs 'desc' (recent first)
-    const q = query(
-      collection(firestore, "pinRegistry"), 
-      orderBy("status", "asc"), 
-      orderBy("expiresAtMs", "desc"), 
-      limit(200)
-    );
+    // Show latest 200 pins (enough for admin table)
+    const q = query(collection(firestore, "pinRegistry"), orderBy("expiresAtMs", "desc"), limit(200));
 
     return onSnapshot(
       q,
@@ -90,8 +88,7 @@ export default function AdminHomePage() {
         setPins(list);
         setIsLoadingPins(false);
       },
-      (err) => {
-        console.error("Failed to fetch pins:", err);
+      () => {
         setPins([]);
         setIsLoadingPins(false);
       }
@@ -159,10 +156,7 @@ export default function AdminHomePage() {
           <Button
             variant="outline"
             size="icon"
-            onClick={() => {
-              setIsLoadingPins(true);
-              router.refresh();
-            }}
+            onClick={() => router.refresh()}
             aria-label="Refresh"
           >
             <RefreshCw className="h-4 w-4" />
@@ -171,9 +165,8 @@ export default function AdminHomePage() {
 
         <CardContent className="p-0">
           {isLoadingPins ? (
-            <div className="p-10 flex flex-col items-center justify-center gap-4 text-zinc-500">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="font-black text-xs uppercase tracking-widest">Loading Pin Registry...</p>
+            <div className="p-10 flex items-center justify-center gap-2 text-zinc-500">
+              <Loader2 className="h-5 w-5 animate-spin" /> Loading pins...
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -192,23 +185,23 @@ export default function AdminHomePage() {
                     const expired = (p.expiresAtMs ?? 0) <= Date.now();
                     const isActive = p.status === "active" && !expired;
                     return (
-                      <tr key={p.id} className="hover:bg-zinc-50/60 transition-colors">
+                      <tr key={p.id} className="hover:bg-zinc-50/60">
                         <td className="px-5 py-3 font-black tracking-widest">{p.id}</td>
-                        <td className="px-5 py-3">{p.storeId || "-"}</td>
+                        <td className="px-5 py-3">{getStoreName(p.storeId) /* dirBump keeps rerenders */}{dirBump ? '' : ''}</td>
                         <td className="px-5 py-3">{p.sessionId || "-"}</td>
                         <td className="px-5 py-3">
                           <Badge className="rounded-xl" variant={isActive ? "default" : "secondary"}>
                             {isActive ? "ACTIVE" : "EXPIRED"}
                           </Badge>
                         </td>
-                        <td className="px-5 py-3 text-zinc-500 font-medium">{fmtDate(p.expiresAtMs)}</td>
+                        <td className="px-5 py-3 text-zinc-500">{fmtDate(p.expiresAtMs)}</td>
                       </tr>
                     );
                   })}
                   {pins.length === 0 && (
                     <tr>
                       <td className="px-5 py-10 text-center text-zinc-400" colSpan={5}>
-                        No pins found in Pin Registry.
+                        No pins found in pinRegistry.
                       </td>
                     </tr>
                   )}
@@ -218,6 +211,23 @@ export default function AdminHomePage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Gear (bottom-right) */}
+      <button
+        onClick={() => setDirOpen(true)}
+        className="fixed bottom-6 right-6 z-50 h-12 w-12 rounded-full bg-white shadow-xl border flex items-center justify-center hover:bg-zinc-50"
+        aria-label="Store directory"
+      >
+        <Settings className="h-5 w-5 text-zinc-700" />
+      </button>
+
+      <StoreDirectoryModal
+        open={dirOpen}
+        onOpenChange={setDirOpen}
+        storeIds={pins.map((p) => String(p.storeId || "")).filter(Boolean)}
+        defaults={STORE_DIRECTORY}
+        onChanged={() => setDirBump((x) => x + 1)}
+      />
     </main>
   );
 }

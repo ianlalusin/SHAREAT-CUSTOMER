@@ -102,7 +102,7 @@ export default function AdminItemsPage() {
         })
       );
     });
-  }, [firestore]);
+  }, [firestore, authReady, isAuthed]);
 
   useEffect(() => {
     if (!authReady || !isAuthed) return;
@@ -128,7 +128,7 @@ export default function AdminItemsPage() {
         setEditCategory((cur) => (cur ? cur : list[0].name));
       }
     });
-  }, [firestore]);
+  }, [firestore, authReady, isAuthed]);
 
   async function uploadImage(file: File, itemId: string) {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -234,7 +234,7 @@ export default function AdminItemsPage() {
     <main className="min-h-screen p-6 max-w-[980px] mx-auto space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" onClick={() => router.push("/")} aria-label="Home">
+          <Button variant="outline" size="icon" onClick={() => { if (window.history.length > 1) router.back(); else router.push("/admin"); }} aria-label="Back">
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <h1 className="text-2xl font-bold">Catalog Admin</h1>

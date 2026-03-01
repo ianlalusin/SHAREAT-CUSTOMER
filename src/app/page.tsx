@@ -76,6 +76,13 @@ export default function PinAccessPage() {
       setCookie("session_id", String(json.sessionId || ""));
       setCookie("pin", cleanPin);
 
+      // session details from projection (so dashboard + refill modal have correct scope)
+      setCookie("session_customer", String(json.customerName || "Customer"));
+      setCookie("session_table", String(json.tableDisplayName || json.tableId || ""));
+      setCookie("package_offering_id", String(json.packageOfferingId || ""));
+      setCookie("initial_flavor_ids", Array.isArray(json.initialFlavorIds) ? json.initialFlavorIds.join(",") : "");
+      setCookie("package_name", String(json.packageName || ""));
+
       router.push("/dashboard");
     } catch (err: any) {
       toast({
@@ -94,7 +101,7 @@ export default function PinAccessPage() {
           <div className="bg-primary p-5 rounded-full mb-4 shadow-xl ring-8 ring-primary/10">
             <UtensilsCrossed className="w-12 h-12 text-white" />
           </div>
-          <h1 className="text-4xl font-black text-primary tracking-tight">SharEat</h1>
+          <h1 className="text-5xl font-extrabold text-primary tracking-tight font-logo">SharEat</h1>
           <p className="text-zinc-400 font-black uppercase tracking-[0.3em] text-[10px] mt-1">
             Customer Hub
           </p>
@@ -104,7 +111,7 @@ export default function PinAccessPage() {
           <CardHeader className="text-center space-y-4 pb-8">
             <CardTitle className="text-3xl font-black text-zinc-900">Welcome!</CardTitle>
             <CardDescription className="text-base text-zinc-500 font-medium">
-              Welcome please enter your PIN
+              Enter your Table PIN or Admin Code to continue.
             </CardDescription>
           </CardHeader>
           <CardContent>
