@@ -66,6 +66,8 @@ type CartItem = {
   notes: string;
 };
 
+const OTHER_REFILLS_ID = "__OTHER_REFILLS__";
+
 export function CustomerRefillModal(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -132,6 +134,8 @@ function CustomerRefillContent({
   const [cart, setCart] = useState<Map<string, CartItem>>(new Map());
   const [activeRefillId, setActiveRefillId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [otherRiceQty, setOtherRiceQty] = useState(0);
+  const [otherCheeseQty, setOtherCheeseQty] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -240,6 +244,10 @@ function CustomerRefillContent({
     setActiveRefillId((cur) => (cur === id ? null : id));
   };
 
+  const handleSelectOtherRefills = () => {
+    setActiveRefillId((cur) => (cur === OTHER_REFILLS_ID ? null : OTHER_REFILLS_ID));
+  };
+
   const handleFlavorToggle = (flavorId: string) => {
     if (!activeRefillId) return;
     setCart((prev) => {
@@ -288,7 +296,8 @@ function CustomerRefillContent({
       toast({ variant: "destructive", title: "Session Locked", description: "Refills are disabled." });
       return;
     }
-    if (cart.size === 0) {
+    const hasOther = otherRiceQty > 0 || otherCheeseQty > 0;
+    if (cart.size === 0 && !hasOther) {
       toast({ variant: "destructive", title: "Empty", description: "Select at least one refill." });
       return;
     }
@@ -337,6 +346,20 @@ function CustomerRefillContent({
         };
       });
 
+      if (hasOther) {
+        items.push({
+          itemId: "OTHER_REFILLS",
+          itemName: "OTHER REFILLS",
+          refillId: "OTHER_REFILLS",
+          refillName: "OTHER REFILLS",
+          kitchenLocationId: items[0]?.kitchenLocationId || "",
+          kitchenLocationName: items[0]?.kitchenLocationName || "Kitchen",
+          qty: 1,
+          notes: "",
+          refillRequest: { rice: otherRiceQty, cheese: otherCheeseQty },
+        } as any);
+      }
+
       const res = await fetch("/api/customer/submit-refill", {
         method: "POST",
         headers: {
@@ -352,6 +375,8 @@ function CustomerRefillContent({
       toast({ title: `Sent ${items.length} refill(s).`, description: "Status: Preparing" });
       setCart(new Map());
       setActiveRefillId(null);
+      setOtherRiceQty(0);
+      setOtherCheeseQty(0);
       onClose();
     } catch (e: any) {
       toast({ variant: "destructive", title: "Failed", description: e?.message ?? "Unknown error" });
@@ -363,6 +388,8 @@ function CustomerRefillContent({
   function closeAndReset() {
     setCart(new Map());
     setActiveRefillId(null);
+    setOtherRiceQty(0);
+    setOtherCheeseQty(0);
     onClose();
   }
 
@@ -399,6 +426,24 @@ function CustomerRefillContent({
                   );
                 })
               )}
+
+              <button
+                type="button"
+                onClick={handleSelectOtherRefills}
+                className={cn(
+                  "w-full text-left rounded-2xl px-4 py-3 border transition-all",
+                  "hover:shadow-sm active:scale-[0.99]",
+                  activeRefillId === OTHER_REFILLS_ID
+                    ? "bg-primary text-white border-primary"
+                    : "bg-white text-primary border-primary/30"
+                )}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-black text-lg">Other Refills</div>
+                  {(otherRiceQty > 0 || otherCheeseQty > 0) ? <Check className="h-5 w-5 text-white" /> : null}
+                </div>
+              </button>
+
               {filteredRefills.length === 0 && !isLoading && (
                 <p className="text-center text-sm text-muted-foreground py-10">No refills available for this package.</p>
               )}
@@ -410,7 +455,43 @@ function CustomerRefillContent({
         <div className="md:col-span-2 flex flex-col gap-4">
           <h3 className="font-semibold">2. Customize Selection</h3>
 
-          {activeCartItem ? (
+          {activeRefillId === OTHER_REFILLS_ID ? (
+            <div className="flex-1 flex flex-col gap-4">
+              <div className="border rounded-lg">
+                <div className="p-4 space-y-4">
+                  <h3 className="font-semibold">Other Refills</h3>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium">Rice</p>
+                      <p className="text-xs text-muted-foreground">Quantity</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button type="button" variant="outline" size="icon" onClick={() => setOtherRiceQty(v => Math.max(0, v - 1))}>-</Button>
+                      <div className="w-10 text-center font-mono">{otherRiceQty}</div>
+                      <Button type="button" variant="outline" size="icon" onClick={() => setOtherRiceQty(v => v + 1)}>+</Button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-medium">Cheese</p>
+                      <p className="text-xs text-muted-foreground">Quantity</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button type="button" variant="outline" size="icon" onClick={() => setOtherCheeseQty(v => Math.max(0, v - 1))}>-</Button>
+                      <div className="w-10 text-center font-mono">{otherCheeseQty}</div>
+                      <Button type="button" variant="outline" size="icon" onClick={() => setOtherCheeseQty(v => v + 1)}>+</Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex-1 flex items-center justify-center text-center text-muted-foreground bg-muted/50 rounded-lg">
+                <p>These refills are always available and optional.</p>
+              </div>
+            </div>
+          ) : activeCartItem ? (
             <div className="flex-1 flex flex-col gap-4">
               <div className={cn("border rounded-lg", !needsFlavors && "bg-muted/50")}>
                 <div className="p-4 space-y-2">
@@ -464,7 +545,7 @@ function CustomerRefillContent({
 
       <div className="p-4 border-t flex justify-end gap-2">
         <Button variant="ghost" onClick={closeAndReset}>Cancel</Button>
-        <Button onClick={submitCart} disabled={isSubmitting || !!sessionIsLocked || cart.size === 0}>
+        <Button onClick={submitCart} disabled={isSubmitting || !!sessionIsLocked || (cart.size === 0 && otherRiceQty === 0 && otherCheeseQty === 0)}>
           {isSubmitting ? <Loader2 className="animate-spin" /> : `Send ${cart.size} Item(s)`}
         </Button>
       </div>

@@ -138,6 +138,18 @@ export default function AdminItemsPage() {
     return await getDownloadURL(r);
   }
 
+  async function rebuildGlobalCatalogCache() {
+    try {
+      const user = getAuth().currentUser;
+      if (!user) return;
+      const idToken = await user.getIdToken();
+      await fetch("/api/admin/rebuild-global-catalog-cache", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+    } catch {}
+  }
+
   async function createItem() {
     setIsBusy(true);
     try {
@@ -165,6 +177,7 @@ export default function AdminItemsPage() {
       setImageFile(null);
       setIsAddOpen(false);
       toast({ title: "Added" });
+      await rebuildGlobalCatalogCache();
     } catch (e: any) {
       toast({ title: "Create failed", description: e?.message, variant: "destructive" });
     } finally {
@@ -179,6 +192,7 @@ export default function AdminItemsPage() {
         isAvailable: !it.isAvailable,
         updatedAt: serverTimestamp(),
       });
+      await rebuildGlobalCatalogCache();
     } catch (e: any) {
       toast({ title: "Update failed", description: e?.message, variant: "destructive" });
     } finally {
@@ -190,6 +204,7 @@ export default function AdminItemsPage() {
     setIsBusy(true);
     try {
       await deleteDoc(doc(firestore, "catalogItems", it.id));
+      await rebuildGlobalCatalogCache();
     } catch (e: any) {
       toast({ title: "Delete failed", description: e?.message, variant: "destructive" });
     } finally {
@@ -223,6 +238,7 @@ export default function AdminItemsPage() {
       await updateDoc(doc(firestore, "catalogItems", editItem.id), updates);
       setEditOpen(false);
       toast({ title: "Saved" });
+      await rebuildGlobalCatalogCache();
     } catch (e: any) {
       toast({ title: "Save failed", description: e?.message, variant: "destructive" });
     } finally {
