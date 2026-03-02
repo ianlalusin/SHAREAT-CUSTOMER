@@ -103,24 +103,6 @@ export default function DashboardPage() {
     );
   }
 
-  const deviceLabel = useMemo(() => {
-    try {
-      const ua = navigator.userAgent || "";
-      const platform = (navigator as any).userAgentData?.platform || navigator.platform || "";
-      const model = (navigator as any).userAgentData?.model || "";
-      const isiPhone = /iPhone/i.test(ua);
-      const isiPad = /iPad/i.test(ua);
-      const isAndroid = /Android/i.test(ua);
-      const isMobile = /Mobi|Android|iPhone|iPad/i.test(ua);
-
-      const deviceName = isiPhone ? "iPhone" : isiPad ? "iPad" : isAndroid ? "Android" : isMobile ? "Mobile" : "Desktop";
-      const parts = [deviceName, model || platform].filter(Boolean);
-      return parts.join(" • ");
-    } catch {
-      return "Device";
-    }
-  }, []);
-
   return (
     <main className="min-h-screen pb-16 flex flex-col bg-zinc-50">
       <DashboardHeader
@@ -137,12 +119,7 @@ export default function DashboardPage() {
             onClick={() => setIsRefillOpen(true)}
           >
             <Plus className="mr-3 h-8 w-8" />
-            <span className="flex flex-col items-start leading-none">
-              <span>Order Refill</span>
-              <span className="text-[11px] sm:text-xs font-semibold opacity-80 mt-1">
-                {deviceLabel}
-              </span>
-            </span>
+            Order Refill
           </Button>
         </div>
 
