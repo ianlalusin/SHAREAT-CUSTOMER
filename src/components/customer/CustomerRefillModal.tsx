@@ -200,7 +200,12 @@ function CustomerRefillContent({
     return available;
   }, [storeRefills, currentPackage]);
 
-  const otherRefills = useMemo(() => filteredRefills.filter(r => !!r.isOther), [filteredRefills]);
+  const otherRefills = useMemo(() => {
+    return (storeRefills || [])
+      .filter(r => !!r.isOther && r.isEnabled !== false)
+      .sort((x, y) => (Number(x.sortOrder || 0) - Number(y.sortOrder || 0)) || String(x.refillName||"").localeCompare(String(y.refillName||"")));
+  }, [storeRefills]);
+
   const mainRefills = useMemo(() => filteredRefills.filter(r => !r.isOther), [filteredRefills]);
 
   const activeCartItem = activeRefillId ? cart.get(activeRefillId) : null;
@@ -353,21 +358,33 @@ function CustomerRefillContent({
       const otherStation = otherRefills.find((r) => !!r.kitchenLocationId) || otherRefills[0];
 
       if (hasOther) {
-        items.push({
-          itemId: "OTHER_REFILLS",
-          itemName: "OTHER REFILLS",
-          refillId: "OTHER_REFILLS",
-          refillName: "OTHER REFILLS",
-          kitchenLocationId: otherStation?.kitchenLocationId || "",
-          kitchenLocationName: otherStation?.kitchenLocationName || "Kitchen",
-          qty: 1,
-          notes: "",
-          refillRequest: Object.fromEntries(
-            Object.entries(otherQty)
-              .map(([k, v]) => [k, Number(v || 0)])
-              .filter(([, v]) => Number(v) > 0)
-          ),
-        } as any);
+        const byStation = new Map<string, { name?: string | null; entries: Array<[string, number]> }>();
+
+        for (const r of otherRefills) {
+          const qty = Number(otherQty[r.refillId] || 0);
+          if (qty <= 0) continue;
+          const stationId = String(r.kitchenLocationId || "");
+          if (!stationId) continue;
+
+          const bucket = byStation.get(stationId) || { name: r.kitchenLocationName, entries: [] };
+          bucket.name = bucket.name || r.kitchenLocationName;
+          bucket.entries.push([r.refillName, qty]);
+          byStation.set(stationId, bucket);
+        }
+
+        for (const [stationId, bucket] of byStation.entries()) {
+          items.push({
+            itemId: "OTHER_REFILLS",
+            itemName: "OTHER REFILLS",
+            refillId: "OTHER_REFILLS",
+            refillName: "OTHER REFILLS",
+            kitchenLocationId: stationId,
+            kitchenLocationName: bucket.name || "Kitchen",
+            qty: 1,
+            notes: "",
+            refillRequest: Object.fromEntries(bucket.entries),
+          } as any);
+        }
       }
 
       const res = await fetch("/api/customer/submit-refill", {

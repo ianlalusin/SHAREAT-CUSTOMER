@@ -49,6 +49,7 @@ export async function GET(req: Request) {
         id: d.id,
         refillId: d.id,
         refillName: String(x.refillName || x.name || ""),
+        isOther: !!(x.isOther ?? x.isother ?? x.is_other ?? x.isOtherRefill ?? x.other),
         kitchenLocationId: x.kitchenLocationId ?? null,
         kitchenLocationName: x.kitchenLocationName ?? null,
         isEnabled: x.isEnabled !== false,
