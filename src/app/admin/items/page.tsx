@@ -87,8 +87,8 @@ export default function AdminItemsPage() {
         });
         const data = await res.json();
         const list = Array.isArray(data?.stores) ? data.stores : [];
-        const ids = list.map((x) => String(x.storeId || "")).filter(Boolean);
-        setStores(list.map((x) => ({ storeId: String(x.storeId || ""), name: String(x.name || x.storeId || "") })));
+        const ids = list.map((x: any) => String(x.storeId || "")).filter(Boolean);
+        setStores(list.map((x: any) => ({ storeId: String(x.storeId || ""), name: String(x.name || x.storeId || "") })));
         setStoreIds(ids);
 
         // pick persisted storeId if still allowed; otherwise pick first
@@ -155,7 +155,11 @@ export default function AdminItemsPage() {
     const ref = doc(firestore, "stores", storeId, "catalogCache", "main");
     return onSnapshot(ref, (snap) => {
       const data = snap.exists() ? (snap.data() as any) : null;
-      setStoreItems(Array.isArray(data?.items) ? data.items : []);
+      
+      const arr = Array.isArray(data?.items) ? data.items : [];
+      if (arr[0]) console.log('[storeItems sample]', Object.keys(arr[0]).sort());
+      setStoreItems(arr);
+
     });
   }, [firestore, authReady, isAuthed, storeId]);
 
@@ -266,7 +270,7 @@ export default function AdminItemsPage() {
 
       const next = itemsArr.map((x) => {
         if (String(x?.id || "") !== String(it.id)) return x;
-        // store-level toggle (cannot enable if global disabled; rebuild will enforce)
+        // store-level toggle (rebuild will enforce global disable)
         return {
           ...x,
           isAvailable: x.isAvailable === false ? true : false,
@@ -279,6 +283,18 @@ export default function AdminItemsPage() {
       toast({ title: "Update failed", description: e?.message, variant: "destructive" });
     } finally {
       setIsBusy(false);
+    }
+  }
+
+  async function reviveStoreItem(it: any) {
+    // Always show revive in store tab; fail if global is archived/disabled.
+    if (!isGlobalActive(it.id)) {
+      toast({ title: "Cannot revive", description: "Item is disabled in Global catalog.", variant: "destructive" });
+      return;
+    }
+    // Ensure it becomes available in store
+    if (it.isAvailable === false) {
+      await toggleStoreAvail({ ...it, isAvailable: false });
     }
   }
 
@@ -538,14 +554,23 @@ export default function AdminItemsPage() {
                 <Button variant="outline" size="icon" onClick={() => (activeTab === "global" ? toggleAvail(it) : toggleStoreAvail(it))} disabled={isBusy || (activeTab === "store" && !isGlobalActive(it.id))} aria-label={it.isAvailable ? "Hide" : "Show"}>
                   {it.isAvailable ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
-                {activeTab === "global" && it.isArchived ? (
-                  <Button variant="outline" onClick={() => reviveItem(it)} disabled={isBusy} className="h-9">
-                    Revive
-                  </Button>
+                {activeTab === "global" ? (
+                  it.isArchived ? (
+                    <Button variant="outline" onClick={() => reviveItem(it)} disabled={isBusy} className="h-9">
+                      Revive
+                    </Button>
+                  ) : (
+                    <Button variant="destructive" size="icon" onClick={() => removeItem(it)} disabled={isBusy} aria-label="Archive">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )
                 ) : (
-                  <Button variant="destructive" size="icon" onClick={() => removeItem(it)} disabled={isBusy} aria-label="Archive">
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  // Store tab: always show Revive for inactive items; click will validate global first
+                  it.isAvailable === false ? (
+                    <Button variant="outline" onClick={() => reviveStoreItem(it)} disabled={isBusy} className="h-9">
+                      Revive
+                    </Button>
+                  ) : null
                 )}
               </div>
             </div>
