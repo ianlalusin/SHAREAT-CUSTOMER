@@ -45,12 +45,12 @@ export default function CatalogPage() {
       <div className="flex-1 overflow-y-auto pr-1">
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {items.map((it) => (
-          <div key={it.id} className="border rounded-2xl p-3">
-            <div className="font-semibold">{it.name}</div>
-            <div className="text-sm text-muted-foreground">{it.category}</div>
-            <div className="mt-2 font-bold">₱{it.price}</div>
-          </div>
-        ))}
+            <div key={it.id} className="border rounded-2xl p-3">
+              <div className="font-semibold">{it.name}</div>
+              <div className="text-sm text-muted-foreground">{it.category}</div>
+              <div className="mt-2 font-bold">₱{it.price}</div>
+            </div>
+          ))}
         </div>
       </div>
     </main>

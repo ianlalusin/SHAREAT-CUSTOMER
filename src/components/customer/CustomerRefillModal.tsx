@@ -592,7 +592,7 @@ function CustomerRefillContent({
       <div className="p-4 border-t flex justify-end gap-2">
         <Button variant="ghost" onClick={closeAndReset}>Cancel</Button>
         <Button onClick={submitCart} disabled={isSubmitting || !!sessionIsLocked || (cart.size === 0 && !Object.values(otherQty).some((v) => Number(v || 0) > 0))}>
-          {isSubmitting ? <Loader2 className="animate-spin" /> : `Send ${cart.size} Item(s)`}
+          {isSubmitting ? <Loader2 className="animate-spin" /> : `Send`}
         </Button>
       </div>
     </div>

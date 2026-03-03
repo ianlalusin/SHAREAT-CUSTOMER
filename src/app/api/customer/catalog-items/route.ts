@@ -7,6 +7,15 @@ function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
 }
 
+type CatalogItem = {
+  id: string;
+  name: string;
+  category: string;
+  price: number;
+  imageUrl: string | null;
+  isAvailable?: boolean;
+};
+
 export async function GET(req: Request) {
   try {
     const authz = req.headers.get("authorization") || "";
@@ -34,22 +43,23 @@ export async function GET(req: Request) {
     if (s.customerAccessEnabled !== true) return bad("Customer access disabled.", 403);
     if (Number(s.customerAccessExpiresAtMs || 0) <= Date.now()) return bad("Customer access expired.", 403);
 
-    const qSnap = await db
-      .collection("catalogItems")
-      .where("isAvailable", "==", true)
-      .orderBy("name", "asc")
-      .get();
+    // store-scoped catalog cache (single doc)
+    const cacheSnap = await db.doc(`stores/${storeId}/catalogCache/main`).get();
+    if (!cacheSnap.exists) return bad("Catalog cache not found for store.", 404);
 
-    const items = qSnap.docs.map((d) => {
-      const x = d.data() as any;
-      return {
-        id: d.id,
+    const cache = cacheSnap.data() as any;
+    const rawItems = Array.isArray(cache.items) ? (cache.items as any[]) : [];
+
+    const items: CatalogItem[] = rawItems
+      .map((x) => ({
+        id: String(x.id ?? ""),
         name: String(x.name ?? ""),
         category: String(x.category ?? ""),
         price: Number(x.price ?? 0),
         imageUrl: x.imageUrl ?? null,
-      };
-    });
+        isAvailable: x.isAvailable,
+      }))
+      .filter((x) => !!x.id && (!!x.isAvailable || x.isAvailable === undefined));
 
     return NextResponse.json({ ok: true, items });
   } catch (e: any) {

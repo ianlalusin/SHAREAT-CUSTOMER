@@ -1,10 +1,79 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Prototype Access: Allow all reads and writes to facilitate rapid testing
-    // without Firebase Authentication dependencies.
+
+    // ---- helpers ----
+    function isSignedIn() { return request.auth != null; }
+    function isCustomer() { return isSignedIn() && request.auth.token.customer == true; }
+    function isAdminOrManager() {
+      return isSignedIn() && (request.auth.token.role in ['admin','manager'] || request.auth.token.admin == true || request.auth.token.platformAdmin == true);
+    }
+    function isAdmin() {
+      return isSignedIn() && (request.auth.token.role == 'admin' || request.auth.token.admin == true || request.auth.token.platformAdmin == true);
+    }
+    function isManager() {
+      return isSignedIn() && (request.auth.token.role == 'manager');
+    }
+    function assignedStores() {
+      return (isSignedIn() && request.auth.token.assignedStoreIds is list) ? request.auth.token.assignedStoreIds : [];
+    }
+    function canAccessStore(storeId) {
+      return isAdmin() || (isManager() && (storeId in assignedStores()));
+    }
+
+    // ---- root collections ----
+
+    // Global catalog items are READ-ONLY for admin/manager
+    match /catalogItems/{id} {
+      allow read: if isAdminOrManager();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Categories (if kept global) - READ for admin/manager, WRITE admin only
+    match /categories/{id} {
+      allow read: if isAdminOrManager();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Users doc: allow self-read; admin can read/write; managers can read own only
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // Staff docs (optional): admin read/write; managers read own
+    match /staff/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // pin registry: admin/manager read; write admin only (tighten later)
+    match /pinRegistry/{pin} {
+      allow read: if isAdminOrManager();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ---- store-scoped ----
+    match /stores/{storeId} {
+      // allow basic store doc read for admin/manager (needed to show store name)
+      allow read: if isAdminOrManager();
+      allow write: if isAdmin();
+
+      // store-scoped catalog cache: manager can read/write only for assigned stores; admin can read/write
+      match /catalogCache {
+        allow read: if canAccessStore(storeId) || (isCustomer() && request.auth.token.storeId == storeId);
+        allow write: if canAccessStore(storeId);
+      }
+
+      // everything else under store is blocked for now (POS app rules should be added explicitly)
+      match /{subpath=**} {
+        allow read, write: if false;
+      }
+    }
+
+    // Default deny
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

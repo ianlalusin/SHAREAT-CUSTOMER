@@ -109,6 +109,9 @@ export async function POST(req: Request) {
           notes,
           qty,
 
+          // for OTHER_REFILLS grouped tickets
+          refillRequest: (it && typeof it === "object" ? (it as any).refillRequest : undefined) ?? null,
+
           sessionId,
           sessionLabel,
           sessionMode,

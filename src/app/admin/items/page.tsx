@@ -1,7 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
+import {
+  useEffect,
+  useState } from "react";
+import { getAuth,
+  onAuthStateChanged,
+  signOut } from "firebase/auth";
 import {
   addDoc,
   collection,
@@ -13,6 +17,8 @@ import {
   updateDoc,
   serverTimestamp,
   where,
+  limit,
+  getDoc
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 
@@ -26,6 +32,7 @@ import { useFirebase } from "@/firebase";
 import { useRouter } from "next/navigation";
 import { Plus, Pencil, EyeOff, Eye, Trash2, Upload, Loader2, ArrowLeft } from "lucide-react";
 
+import { getStoreName } from "@/lib/store-directory";
 type Category = { id: string; name: string; isActive: boolean; sortOrder: number };
 
 type CatalogItem = {
@@ -35,6 +42,7 @@ type CatalogItem = {
   price: number;
   imageUrl: string | null;
   isAvailable: boolean;
+  isArchived?: boolean;
 };
 
 function toPrice(v: string) {
@@ -51,6 +59,15 @@ export default function AdminItemsPage() {
   const [authReady, setAuthReady] = useState(false);
   const [isAuthed, setIsAuthed] = useState(false);
 
+  const [storeId, setStoreId] = useState<string>("");
+  const [storeIds, setStoreIds] = useState<string[]>([]);
+  const [stores, setStores] = useState<{ storeId: string; name: string }[]>([]);
+  const selectedStoreName = (stores.find((s) => s.storeId === storeId)?.name || getStoreName(storeId));
+
+  useEffect(() => {
+    try { setStoreId(localStorage.getItem("admin_selected_storeId") || ""); } catch {}
+  }, []);
+
   useEffect(() => {
     const auth = getAuth();
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -61,10 +78,35 @@ export default function AdminItemsPage() {
         return;
       }
       setIsAuthed(true);
+
+      // load assignedStoreIds from users/{uid}
+      try {
+        const idToken = await user.getIdToken();
+        const res = await fetch("/api/admin/my-stores", {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        const data = await res.json();
+        const list = Array.isArray(data?.stores) ? data.stores : [];
+        const ids = list.map((x) => String(x.storeId || "")).filter(Boolean);
+        setStores(list.map((x) => ({ storeId: String(x.storeId || ""), name: String(x.name || x.storeId || "") })));
+        setStoreIds(ids);
+
+        // pick persisted storeId if still allowed; otherwise pick first
+        let selected = "";
+        try { selected = localStorage.getItem("admin_selected_storeId") || ""; } catch {}
+        if (!selected || (ids.length > 0 && !ids.includes(selected))) selected = ids[0] || "";
+        if (selected) {
+          try { localStorage.setItem("admin_selected_storeId", selected); } catch {}
+          setStoreId(selected);
+        }
+      } catch {}
     });
     return () => unsub();
-  }, [router]);
+  }, [router, firestore]);
   const [items, setItems] = useState<CatalogItem[]>([]);
+  const [storeItems, setStoreItems] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<"global" | "store">("global");
+  const [statusFilter, setStatusFilter] = useState<"active" | "inactive">("active");
   const [categories, setCategories] = useState<Category[]>([]);
 
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -98,11 +140,24 @@ export default function AdminItemsPage() {
             price: Number(x.price ?? 0),
             imageUrl: x.imageUrl ?? null,
             isAvailable: x.isAvailable !== false,
+            isArchived: x.isArchived === true,
           };
         })
       );
     });
   }, [firestore, authReady, isAuthed]);
+
+  useEffect(() => {
+    if (!authReady || !isAuthed || !storeId) {
+      setStoreItems([]);
+      return;
+    }
+    const ref = doc(firestore, "stores", storeId, "catalogCache", "main");
+    return onSnapshot(ref, (snap) => {
+      const data = snap.exists() ? (snap.data() as any) : null;
+      setStoreItems(Array.isArray(data?.items) ? data.items : []);
+    });
+  }, [firestore, authReady, isAuthed, storeId]);
 
   useEffect(() => {
     if (!authReady || !isAuthed) return;
@@ -138,12 +193,12 @@ export default function AdminItemsPage() {
     return await getDownloadURL(r);
   }
 
-  async function rebuildGlobalCatalogCache() {
+  async function rebuildStoreCatalogCache(storeId: string) {
     try {
       const user = getAuth().currentUser;
-      if (!user) return;
+      if (!user || !storeId) return;
       const idToken = await user.getIdToken();
-      await fetch("/api/admin/rebuild-global-catalog-cache", {
+      await fetch(`/api/admin/rebuild-store-catalog-cache?storeId=${encodeURIComponent(storeId)}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${idToken}` },
       });
@@ -177,7 +232,7 @@ export default function AdminItemsPage() {
       setImageFile(null);
       setIsAddOpen(false);
       toast({ title: "Added" });
-      await rebuildGlobalCatalogCache();
+      await rebuildStoreCatalogCache(storeId);
     } catch (e: any) {
       toast({ title: "Create failed", description: e?.message, variant: "destructive" });
     } finally {
@@ -192,7 +247,34 @@ export default function AdminItemsPage() {
         isAvailable: !it.isAvailable,
         updatedAt: serverTimestamp(),
       });
-      await rebuildGlobalCatalogCache();
+      await rebuildStoreCatalogCache(storeId);
+    } catch (e: any) {
+      toast({ title: "Update failed", description: e?.message, variant: "destructive" });
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function toggleStoreAvail(it: any) {
+    if (!storeId) return;
+    setIsBusy(true);
+    try {
+      const cacheRef = doc(firestore, "stores", storeId, "catalogCache", "main");
+      const snap = await getDoc(cacheRef);
+      const data = snap.exists() ? (snap.data() as any) : null;
+      const itemsArr: any[] = Array.isArray(data?.items) ? data.items : [];
+
+      const next = itemsArr.map((x) => {
+        if (String(x?.id || "") !== String(it.id)) return x;
+        // store-level toggle (cannot enable if global disabled; rebuild will enforce)
+        return {
+          ...x,
+          isAvailable: x.isAvailable === false ? true : false,
+          storeUpdatedAtMs: Date.now(),
+        };
+      });
+
+      await updateDoc(cacheRef, { items: next, updatedAtMs: Date.now() });
     } catch (e: any) {
       toast({ title: "Update failed", description: e?.message, variant: "destructive" });
     } finally {
@@ -203,10 +285,30 @@ export default function AdminItemsPage() {
   async function removeItem(it: CatalogItem) {
     setIsBusy(true);
     try {
-      await deleteDoc(doc(firestore, "catalogItems", it.id));
-      await rebuildGlobalCatalogCache();
+      // Archive (soft delete)
+      await updateDoc(doc(firestore, "catalogItems", it.id), {
+        isArchived: true,
+        isAvailable: false,
+        updatedAt: serverTimestamp(),
+      });
+      await rebuildStoreCatalogCache(storeId);
     } catch (e: any) {
-      toast({ title: "Delete failed", description: e?.message, variant: "destructive" });
+      toast({ title: "Archive failed", description: e?.message, variant: "destructive" });
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  async function reviveItem(it: CatalogItem) {
+    setIsBusy(true);
+    try {
+      await updateDoc(doc(firestore, "catalogItems", it.id), {
+        isArchived: false,
+        updatedAt: serverTimestamp(),
+      });
+      await rebuildStoreCatalogCache(storeId);
+    } catch (e: any) {
+      toast({ title: "Revive failed", description: e?.message, variant: "destructive" });
     } finally {
       setIsBusy(false);
     }
@@ -238,13 +340,26 @@ export default function AdminItemsPage() {
       await updateDoc(doc(firestore, "catalogItems", editItem.id), updates);
       setEditOpen(false);
       toast({ title: "Saved" });
-      await rebuildGlobalCatalogCache();
+      await rebuildStoreCatalogCache(storeId);
     } catch (e: any) {
       toast({ title: "Save failed", description: e?.message, variant: "destructive" });
     } finally {
       setIsBusy(false);
     }
   }
+
+  const globalActiveItems = items.filter((x) => x.isArchived !== true);
+  const globalInactiveItems = items.filter((x) => x.isArchived === true);
+
+  const storeActiveItems = storeItems.filter((x: any) => x?.isAvailable !== false);
+  const storeInactiveItems = storeItems.filter((x: any) => x?.isAvailable === false);
+
+  const globalById = new Map<string, any>(items.map((x) => [String(x.id), x]));
+  const isGlobalActive = (id: any) => {
+    const g = globalById.get(String(id));
+    if (!g) return true; // fallback: allow revive if we can't see global
+    return g.isArchived !== true && g.isAvailable !== false;
+  };
 
   return (
     <main className="min-h-screen p-6 max-w-[980px] mx-auto space-y-6">
@@ -254,6 +369,26 @@ export default function AdminItemsPage() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <h1 className="text-2xl font-bold">Catalog Admin</h1>
+          <div className="ml-2">
+            <select
+              className="h-9 rounded-md border bg-background px-2 text-sm max-w-[220px]"
+              value={storeId}
+              onChange={(e) => {
+                const v = e.target.value;
+                setStoreId(v);
+                try { localStorage.setItem("admin_selected_storeId", v); } catch {}
+              }}
+              disabled={stores.length <= 1}
+              aria-label="Select store"
+            >
+              {stores.length === 0 ? (
+                <option value="">No store assigned</option>
+              ) : (
+                stores.map((s) => (
+                  <option key={s.storeId} value={s.storeId}>{s.name}</option>
+                ))
+              )}</select>
+          </div>
         </div>
         <Button
           variant="outline"
@@ -268,13 +403,47 @@ export default function AdminItemsPage() {
 
       <div className="flex items-center justify-between">
         <div className="text-sm text-muted-foreground">Manage products for the public catalog.</div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={async () => {
+              setIsBusy(true);
+              try {
+                await rebuildStoreCatalogCache(storeId);
+                toast({ title: "Cache rebuilt" });
+              } catch {}
+              setIsBusy(false);
+            }}
+            disabled={isBusy || !storeId}
+          >
+            {isBusy ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+            Rebuild Cache
+          </Button>
+          <Button
+            onClick={() => setIsAddOpen((v) => !v)}
+            disabled={isBusy}
+            className="rounded-full h-12 w-12 p-0 bg-primary hover:bg-primary/90 shadow-lg"
+            aria-label="Add item"
+          >
+            <Plus className="h-6 w-6" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
         <Button
-          onClick={() => setIsAddOpen((v) => !v)}
+          variant={activeTab === "global" ? "default" : "outline"}
+          onClick={() => setActiveTab("global")}
           disabled={isBusy}
-          className="rounded-full h-12 w-12 p-0 bg-primary hover:bg-primary/90 shadow-lg"
-          aria-label="Add item"
         >
-          <Plus className="h-6 w-6" />
+          Global
+        </Button>
+        <Button
+          variant={activeTab === "store" ? "default" : "outline"}
+          onClick={() => setActiveTab("store")}
+          disabled={isBusy || !storeId}
+        >
+          {selectedStoreName}
         </Button>
       </div>
 
@@ -327,11 +496,30 @@ export default function AdminItemsPage() {
 
       <Card className="rounded-[2rem] border-none shadow-xl bg-white">
         <CardHeader>
-          <CardTitle>Products</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            Products
+            <button
+              type="button"
+              onClick={() => setStatusFilter("active")}
+              className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${statusFilter === "active" ? "bg-primary text-primary-foreground border-primary" : "bg-white text-zinc-600"}`}
+            >
+              Active
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter("inactive")}
+              className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${statusFilter === "inactive" ? "bg-primary text-primary-foreground border-primary" : "bg-white text-zinc-600"}`}
+            >
+              Inactive
+            </button>
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {items.map((it) => (
-            <div key={it.id} className="flex items-center justify-between border rounded-xl p-3 gap-3 hover:bg-zinc-50 transition-colors">
+          {(activeTab === "global"
+            ? (statusFilter === "active" ? globalActiveItems : globalInactiveItems)
+            : (statusFilter === "active" ? storeActiveItems : storeInactiveItems)
+          ).map((it: any) => (
+            <div key={it.id} className={`flex items-center justify-between border rounded-xl p-3 gap-3 transition-colors ${activeTab === "global" && it.isArchived ? "opacity-60 bg-zinc-50" : "hover:bg-zinc-50"}`}>
               <div className="h-12 w-12 rounded-lg overflow-hidden bg-zinc-100 flex items-center justify-center shrink-0 border">
                 {it.imageUrl ? (
                   <img src={it.imageUrl} alt={it.name} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
@@ -347,16 +535,25 @@ export default function AdminItemsPage() {
                 <Button variant="outline" size="icon" onClick={() => openEdit(it)} disabled={isBusy} aria-label="Edit">
                   <Pencil className="h-4 w-4" />
                 </Button>
-                <Button variant="outline" size="icon" onClick={() => toggleAvail(it)} disabled={isBusy} aria-label={it.isAvailable ? "Hide" : "Show"}>
+                <Button variant="outline" size="icon" onClick={() => (activeTab === "global" ? toggleAvail(it) : toggleStoreAvail(it))} disabled={isBusy || (activeTab === "store" && !isGlobalActive(it.id))} aria-label={it.isAvailable ? "Hide" : "Show"}>
                   {it.isAvailable ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
-                <Button variant="destructive" size="icon" onClick={() => removeItem(it)} disabled={isBusy} aria-label="Delete">
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                {activeTab === "global" && it.isArchived ? (
+                  <Button variant="outline" onClick={() => reviveItem(it)} disabled={isBusy} className="h-9">
+                    Revive
+                  </Button>
+                ) : (
+                  <Button variant="destructive" size="icon" onClick={() => removeItem(it)} disabled={isBusy} aria-label="Archive">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </div>
           ))}
-          {items.length === 0 && <div className="text-sm text-muted-foreground py-4 text-center">No items yet.</div>}
+          {(activeTab === "global"
+            ? (statusFilter === "active" ? globalActiveItems : globalInactiveItems)
+            : (statusFilter === "active" ? storeActiveItems : storeInactiveItems)
+          ).length === 0 && <div className="text-sm text-muted-foreground py-4 text-center">No items yet.</div>}
         </CardContent>
       </Card>
 

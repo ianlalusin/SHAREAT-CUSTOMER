@@ -7,7 +7,7 @@ function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
 }
 
-export async function POST(req: Request) {
+export async function GET(req: Request) {
   try {
     const authz = req.headers.get("authorization") || "";
     const m = authz.match(/^Bearer\s+(.+)$/i);
@@ -31,41 +31,35 @@ export async function POST(req: Request) {
     const isActiveStaff = staff && staff.status === "active";
     if (!isPlatformAdmin && !isActiveStaff) return bad("Not allowed.", 403);
 
-    const storeId = String((decoded as any).storeId || "");
-    if (!storeId) return bad("Missing storeId in token.", 403);
+    // Load assignedStoreIds from staff/{uid} (matches firestore.rules)
+    const assigned: string[] = Array.isArray(staff?.assignedStoreIds)
+      ? staff.assignedStoreIds.map((x: any) => String(x)).filter(Boolean)
+      : [];
 
-    const qSnap = await db
-      .collection("catalogItems")
-      .where("isAvailable", "==", true)
-      .orderBy("name", "asc")
-      .get();
+    // Platform admins can optionally see all stores if assignedStoreIds is empty
+    let storeIds = assigned;
+    if (isPlatformAdmin && storeIds.length === 0) {
+      // best-effort: list first 200 stores
+      const allSnap = await db.collection("stores").limit(200).get();
+      storeIds = allSnap.docs.map((d) => d.id);
+    }
 
-    const items = qSnap.docs.map((d) => {
-      const x = d.data() as any;
-      return {
-        id: d.id,
-        name: String(x.name ?? ""),
-        category: String(x.category ?? ""),
-        price: Number(x.price ?? 0),
-        imageUrl: x.imageUrl ?? null,
-        isAvailable: x.isAvailable !== false,
-        // metadata for diffing (kept in cache; customer API can ignore if needed)
-        updatedAtMs: x.updatedAt?.toMillis ? Number(x.updatedAt.toMillis()) : null,
-      };
-    });
-
-    const nowMs = Date.now();
-
-    await db.doc(`stores/${storeId}/catalogCache/main`).set(
-      {
-        updatedAtMs: nowMs,
-        itemCount: items.length,
-        items,
-      },
-      { merge: true }
+    const results = await Promise.all(
+      storeIds.map(async (storeId) => {
+        try {
+          const sSnap = await db.doc(`stores/${storeId}`).get();
+          const s = sSnap.exists ? (sSnap.data() as any) : null;
+          const name = String(s?.name || s?.storeName || "");
+          return { storeId, name: name || storeId };
+        } catch {
+          return { storeId, name: storeId };
+        }
+      })
     );
 
-    return NextResponse.json({ ok: true, storeId, itemCount: items.length, updatedAtMs: nowMs });
+    results.sort((a, b) => (a.name || a.storeId).localeCompare(b.name || b.storeId));
+
+    return NextResponse.json({ ok: true, stores: results });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
   }
