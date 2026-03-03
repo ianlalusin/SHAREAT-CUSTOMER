@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { CustomerRefillModal } from "@/components/customer/CustomerRefillModal";
 import { CustomerCatalog } from "@/components/customer/CustomerCatalog";
 
+import { CustomerFeedbackModal } from "@/components/customer/CustomerFeedbackModal";
 import { getAuth } from "firebase/auth";
 
 type SessionDTO = {
@@ -37,6 +38,7 @@ export default function DashboardPage() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [isRefillOpen, setIsRefillOpen] = useState(false);
 
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const sessionToken = useMemo(() => getCookie("customer_token") || getCookie("session_token"), []);
 
   const [session, setSession] = useState<SessionDTO | null>(null);
@@ -126,12 +128,25 @@ export default function DashboardPage() {
         {/* Menu */}
         <CustomerCatalog />
       </div>
+      {/* Floating Feedback bubble */}
+      <Button
+        className="fixed bottom-5 right-5 z-50 h-12 px-5 rounded-full shadow-xl bg-primary text-white font-bold hover:scale-[1.02] active:scale-[0.98] transition-all"
+        onClick={() => setIsFeedbackOpen(true)}
+      >
+        Feedback
+      </Button>
 
       <CustomerRefillModal
         open={isRefillOpen}
         onOpenChange={setIsRefillOpen}
         session={session as any}
         sessionIsLocked={false}
+      />
+
+      <CustomerFeedbackModal
+        open={isFeedbackOpen}
+        onOpenChange={setIsFeedbackOpen}
+        customerName={session.customerName}
       />
     </main>
   );
