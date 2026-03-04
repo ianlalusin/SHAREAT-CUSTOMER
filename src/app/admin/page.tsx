@@ -11,7 +11,7 @@ import { StoreDirectoryModal } from "@/components/admin/StoreDirectoryModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, LogOut, Package, KeyRound, RefreshCw, Settings } from "lucide-react";
+import { Loader2, LogOut, Package, KeyRound, RefreshCw, Settings, MessageSquare } from "lucide-react";
 
 type PinRow = {
   id: string; // PIN itself (doc id)
@@ -131,6 +131,15 @@ export default function AdminHomePage() {
         >
           <Package className="h-5 w-5" />
           Manage Items
+        </Button>
+
+        <Button
+          onClick={() => router.push("/admin/feedback")}
+          variant="outline"
+          className="h-16 rounded-2xl font-black text-lg gap-3"
+        >
+          <MessageSquare className="h-5 w-5" />
+          Feedbacks
         </Button>
 
         <Button

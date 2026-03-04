@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { getAuth } from "firebase/auth";
 import { Star } from "lucide-react";
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -43,9 +44,32 @@ export function CustomerFeedbackModal({ open, onOpenChange, customerName }: Prop
     setIsSubmitting(true);
 
     try {
-      // TODO: wire to API (storeId/sessionId/customer, etc.)
-      await new Promise((r) => setTimeout(r, 350));
+      const auth = getAuth();
+      const user = auth.currentUser;
+      if (!user) throw new Error("Not logged in.");
+
+      const idToken = await user.getIdToken();
+
+      const res = await fetch("/api/customer/submit-feedback", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          rating,
+          suggestion,
+          customerName,
+        }),
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "Submit failed.");
+
       setSubmitted(true);
+    } catch (e) {
+      console.error(e);
+      alert((e && e.message) ? e.message : "Submit failed.");
     } finally {
       setIsSubmitting(false);
     }
