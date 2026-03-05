@@ -35,8 +35,11 @@ export function DashboardHeader({ customerName, tableDisplayName, packageName }:
         </button>
 
         <div className="text-center px-12 sm:px-16">
-          <div className="text-sm sm:text-base font-bold text-white/85">
-            Hello {customerName || "Customer"}
+          <div
+            className="text-xl sm:text-2xl font-black tracking-wide uppercase"
+            style={{ fontFamily: '"Baloo Thambi 2", system-ui, sans-serif' }}
+          >
+            HELLO, {customerName || "CUSTOMER"}
           </div>
 
           <div className="mt-2 flex items-center justify-center gap-2 flex-wrap">

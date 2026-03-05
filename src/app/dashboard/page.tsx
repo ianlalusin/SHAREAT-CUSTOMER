@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2, Plus, MessageSquare } from "lucide-react";
 
 import { DashboardHeader } from "@/components/dashboard/Header";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,12 @@ function getCookie(name: string) {
   return c.find((x) => x.startsWith(name + "="))?.split("=").slice(1).join("=") ?? "";
 }
 
+function getSessionKeyForFeedback() {
+  const storeId = getCookie("store_id") || "nostore";
+  const sessionId = getCookie("session_id") || "nosession";
+  return `customerFeedbackSubmitted:${storeId}:${sessionId}`;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
 
@@ -39,6 +45,7 @@ export default function DashboardPage() {
   const [isRefillOpen, setIsRefillOpen] = useState(false);
 
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
   const sessionToken = useMemo(() => getCookie("customer_token") || getCookie("session_token"), []);
 
   const [session, setSession] = useState<SessionDTO | null>(null);
@@ -55,6 +62,16 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let cancelled = false;
+
+    const onSubmitted = () => {
+      try {
+        const key = getSessionKeyForFeedback();
+        localStorage.setItem(key, '1');
+      } catch {}
+      setFeedbackSubmitted(true);
+    };
+
+    window.addEventListener('customer-feedback-submitted', onSubmitted as any);
 
     async function run() {
       setLoadingSession(true);
@@ -84,6 +101,10 @@ export default function DashboardPage() {
       if (!cancelled) {
         setSession(json.session as SessionDTO);
         setLoadingSession(false);
+        try {
+          const key = getSessionKeyForFeedback();
+          if (localStorage.getItem(key) === '1') setFeedbackSubmitted(true);
+        } catch {}
       }
     }
 
@@ -94,6 +115,7 @@ export default function DashboardPage() {
 
     return () => {
       cancelled = true;
+      try { window.removeEventListener('customer-feedback-submitted', onSubmitted as any); } catch {}
     };
   }, [router]);
 
@@ -105,7 +127,17 @@ export default function DashboardPage() {
     );
   }
 
-  return (
+  const feedbackPulseStyle = `
+@keyframes feedbackPulse {
+  0%, 88% { transform: scale(1); box-shadow: 0 10px 25px rgba(0,0,0,0.18); }
+  90% { transform: scale(1.06); box-shadow: 0 18px 35px rgba(0,0,0,0.22); }
+  92% { transform: scale(1); box-shadow: 0 10px 25px rgba(0,0,0,0.18); }
+  96% { transform: scale(1.05); box-shadow: 0 16px 32px rgba(0,0,0,0.20); }
+  100% { transform: scale(1); box-shadow: 0 10px 25px rgba(0,0,0,0.18); }
+}
+`;
+
+return (
     <main className="min-h-screen pb-16 flex flex-col bg-zinc-50">
       <DashboardHeader
         customerName={session.customerName}
@@ -129,12 +161,19 @@ export default function DashboardPage() {
         <CustomerCatalog />
       </div>
       {/* Floating Feedback bubble */}
-      <Button
-        className="fixed bottom-5 right-5 z-50 h-12 px-5 rounded-full shadow-xl bg-primary text-white font-bold hover:scale-[1.02] active:scale-[0.98] transition-all"
-        onClick={() => setIsFeedbackOpen(true)}
-      >
-        Feedback
-      </Button>
+      {!feedbackSubmitted && (
+        <>
+          <style>{feedbackPulseStyle}</style>
+          <Button
+            className="fixed bottom-5 right-5 z-50 h-12 px-5 rounded-full shadow-xl bg-primary text-white font-bold hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2"
+            style={{ animation: 'feedbackPulse 18s infinite' }}
+            onClick={() => setIsFeedbackOpen(true)}
+          >
+            <MessageSquare className="h-5 w-5" />
+            Customer Feedback
+          </Button>
+        </>
+      )}
 
       <CustomerRefillModal
         open={isRefillOpen}

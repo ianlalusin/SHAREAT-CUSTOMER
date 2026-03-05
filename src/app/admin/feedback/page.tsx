@@ -1,16 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { Star } from "lucide-react";
-import { getAuth, onAuthStateChanged } from "firebase/auth";
+import { useRouter } from "next/navigation";
+import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
+import { ArrowLeft, Star } from "lucide-react";
 
-import { DashboardHeader } from "@/components/dashboard/Header";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { getStoreName } from "@/lib/store-directory";
 import { useFirebase } from "@/firebase";
-import { useRouter } from "next/navigation";
 
 type FeedbackRow = {
   id: string;
@@ -45,6 +43,32 @@ function fmt(ms: number) {
   }
 }
 
+function downloadCsv(filename: string, rows: Record<string, any>[]) {
+  const headers = ["storeId", "dayDocId", "createdAtClientMs", "rating", "customerName", "suggestion"];
+  const lines = [
+    headers.join(","),
+    ...rows.map((r) =>
+      headers
+        .map((h) => {
+          const v = r[h];
+          const x = v === null || v === undefined ? "" : String(v);
+          if (/[",\n]/.test(x)) return '"' + x.replace(/"/g, '""') + '"';
+          return x;
+        })
+        .join(",")
+    ),
+  ];
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export default function AdminFeedbackPage() {
   const router = useRouter();
   const { firestore } = useFirebase();
@@ -60,14 +84,10 @@ export default function AdminFeedbackPage() {
   const [rows, setRows] = useState<FeedbackRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // restore persisted storeId early
   useEffect(() => {
-    try {
-      setStoreId(localStorage.getItem("admin_selected_storeId") || "");
-    } catch {}
+    try { setStoreId(localStorage.getItem("admin_selected_storeId") || ""); } catch {}
   }, []);
 
-  // auth + assigned stores
   useEffect(() => {
     const auth = getAuth();
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -91,15 +111,10 @@ export default function AdminFeedbackPage() {
         setStoreIds(ids);
 
         let selected = "";
-        try {
-          selected = localStorage.getItem("admin_selected_storeId") || "";
-        } catch {}
-
+        try { selected = localStorage.getItem("admin_selected_storeId") || ""; } catch {}
         if (!selected || (ids.length > 0 && !ids.includes(selected))) selected = ids[0] || "";
         if (selected) {
-          try {
-            localStorage.setItem("admin_selected_storeId", selected);
-          } catch {}
+          try { localStorage.setItem("admin_selected_storeId", selected); } catch {}
           setStoreId(selected);
         }
       } catch {}
@@ -107,7 +122,6 @@ export default function AdminFeedbackPage() {
     return () => unsub();
   }, [router, firestore]);
 
-  // fetch feedback rows
   useEffect(() => {
     if (!authReady || !isAuthed) return;
     if (!storeId) return;
@@ -116,8 +130,7 @@ export default function AdminFeedbackPage() {
 
     async function run() {
       setIsLoading(true);
-      const auth = getAuth();
-      const user = auth.currentUser;
+      const user = getAuth().currentUser;
       if (!user) {
         router.replace("/admin/login");
         return;
@@ -130,9 +143,7 @@ export default function AdminFeedbackPage() {
         limit: "500",
       });
 
-      const url = `/api/admin/feedback?${qs.toString()}`;
-      console.log("[feedback] storeId=", storeId, "rating=", starFilter, "url=", url);
-      const res = await fetch(url, {
+      const res = await fetch(`/api/admin/feedback?${qs.toString()}`, {
         headers: { Authorization: `Bearer ${idToken}` },
       });
       const json = await res.json().catch(() => ({}));
@@ -154,9 +165,7 @@ export default function AdminFeedbackPage() {
       }
     });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [authReady, isAuthed, router, storeId, starFilter]);
 
   const selectedStoreName = useMemo(() => {
@@ -164,88 +173,111 @@ export default function AdminFeedbackPage() {
   }, [stores, storeId]);
 
   return (
-    <main className="min-h-screen pb-16 flex flex-col bg-zinc-50">
-      <DashboardHeader customerName="Admin" tableDisplayName={selectedStoreName} packageName="Customer Feedbacks" />
+    <main className="min-h-screen p-6 max-w-[980px] mx-auto space-y-6">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => { if (window.history.length > 1) router.back(); else router.push("/admin"); }}
+            aria-label="Back"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
 
-      <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 mt-8">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 justify-between">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex items-center gap-3">
-              <label className="text-sm font-semibold">Store</label>
-              <select
-                className="h-10 rounded-md border border-zinc-200 bg-white px-3 text-sm"
-                value={storeId}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setStoreId(v);
-                  try { localStorage.setItem("admin_selected_storeId", v); } catch {}
-                }}
-              >
-                {storeIds.map((id) => (
-                  <option key={id} value={id}>
-                    {stores.find((s) => s.storeId === id)?.name || getStoreName(id) || id}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <h1 className="text-2xl font-bold">Admin Hub</h1>
 
-            <div className="flex items-center gap-3">
-              <label className="text-sm font-semibold">Filter by stars</label>
-              <select
-                className="h-10 rounded-md border border-zinc-200 bg-white px-3 text-sm"
-                value={starFilter}
-                onChange={(e) => setStarFilter(e.target.value)}
-              >
-                <option value="all">All</option>
-                <option value="5">5 stars</option>
-                <option value="4">4 stars</option>
-                <option value="3">3 stars</option>
-                <option value="2">2 stars</option>
-                <option value="1">1 star</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button variant="outline" asChild>
-              <Link href="/admin">Back</Link>
-            </Button>
-            <Button
-              className="bg-primary text-white"
-              onClick={() => {
-                alert("Download Excel: TODO");
+          <div className="ml-2">
+            <select
+              className="h-9 rounded-md border bg-background px-2 text-sm max-w-[220px]"
+              value={storeId}
+              onChange={(e) => {
+                const v = e.target.value;
+                setStoreId(v);
+                try { localStorage.setItem("admin_selected_storeId", v); } catch {}
               }}
+              disabled={stores.length <= 1}
+              aria-label="Select store"
             >
-              Download Excel
-            </Button>
+              {stores.length === 0 ? (
+                <option value="">No store assigned</option>
+              ) : (
+                stores.map((s) => (
+                  <option key={s.storeId} value={s.storeId}>{s.name}</option>
+                ))
+              )}
+            </select>
           </div>
         </div>
 
-        {isLoading ? (
-          <div className="mt-10 text-sm text-zinc-500">Loading feedbacks...</div>
-        ) : (
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {rows.map((f) => (
-              <div key={f.id} className="rounded-2xl bg-white shadow-sm border border-zinc-100 p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-1">
-                    <div className="text-sm font-black">{getStoreName(f.storeId) || f.storeId}</div>
-                    <div className="text-xs text-zinc-500">{fmt(f.createdAtClientMs)}</div>
-                  </div>
-                  <Stars value={f.rating} />
-                </div>
-
-                <div className="mt-3 text-sm text-zinc-800 whitespace-pre-wrap">
-                  {f.suggestion || <span className="text-zinc-400">No suggestion.</span>}
-                </div>
-              </div>
-            ))}
-            {rows.length === 0 && (
-              <div className="text-sm text-zinc-400">No feedbacks found.</div>
-            )}
-          </div>
-        )}
+        <Button
+          variant="outline"
+          onClick={async () => {
+            try { await signOut(getAuth()); } catch {}
+            router.push("/");
+          }}
+        >
+          Exit Admin
+        </Button>
       </div>
+
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-muted-foreground">
+          {selectedStoreName} | Feedbacks
+        </div>
+
+        <div className="flex items-center gap-2">
+          <select
+            className="h-9 rounded-md border bg-background px-2 text-sm"
+            value={starFilter}
+            onChange={(e) => setStarFilter(e.target.value)}
+            aria-label="Filter by stars"
+          >
+            <option value="all">All stars</option>
+            <option value="5">5 stars</option>
+            <option value="4">4 stars</option>
+            <option value="3">3 stars</option>
+            <option value="2">2 stars</option>
+            <option value="1">1 star</option>
+          </select>
+
+          <Button
+            variant="outline"
+            onClick={() => {
+                const name = (selectedStoreName || storeId || "feedback").toString().replace(/[^a-zA-Z0-9._-]/g, "_");
+                const star = starFilter === "all" ? "all" : starFilter;
+                downloadCsv(`feedback_${name}_${star}.csv`, rows);
+              }}
+          >
+            Download Excel
+          </Button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="text-sm text-zinc-500">Loading feedbacks...</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {rows.map((f) => (
+            <div key={f.id} className="rounded-2xl bg-white shadow-sm border border-zinc-100 p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="text-sm font-black">{getStoreName(f.storeId) || f.storeId}</div>
+                  <div className="text-xs text-zinc-500">{fmt(f.createdAtClientMs)}</div>
+                </div>
+                <Stars value={f.rating} />
+              </div>
+
+              <div className="mt-3 text-sm text-zinc-800 whitespace-pre-wrap">
+                {f.suggestion || <span className="text-zinc-400">No suggestion.</span>}
+              </div>
+            </div>
+          ))}
+          {rows.length === 0 && (
+            <div className="text-sm text-zinc-400">No feedbacks found.</div>
+          )}
+        </div>
+      )}
     </main>
   );
 }

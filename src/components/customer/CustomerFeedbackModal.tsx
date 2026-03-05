@@ -67,7 +67,8 @@ export function CustomerFeedbackModal({ open, onOpenChange, customerName }: Prop
       if (!res.ok || !json?.ok) throw new Error(json?.error || "Submit failed.");
 
       setSubmitted(true);
-    } catch (e) {
+      try { window.dispatchEvent(new CustomEvent("customer-feedback-submitted")); } catch {}
+    } catch (e: any) {
       console.error(e);
       alert((e && e.message) ? e.message : "Submit failed.");
     } finally {
