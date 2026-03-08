@@ -50,37 +50,33 @@ export async function POST(req: Request) {
       if (id) prevById.set(id, it);
     }
 
-    const items = qSnap.docs
+    const missingItems = qSnap.docs
       .map((d) => {
         const x = d.data() as any;
 
-        // Global archive = removed everywhere (never show again in any store cache)
         if (x.isArchived === true) return null;
+        if (prevById.has(d.id)) return null;
 
-        const prevIt = prevById.get(d.id) || {};
         const globalDisabled = (x.isAvailable === false);
         const globalAvailable = !globalDisabled;
-
-        // Store can only further hide items; cannot re-enable if global is disabled.
-        const storeAvailable = globalAvailable && (prevIt.isAvailable !== false);
 
         return {
           id: d.id,
           name: String(x.name ?? ""),
           category: String(x.category ?? ""),
           imageUrl: x.imageUrl ?? null,
-
-          // store-specific fields
-          price: Number(prevIt.price ?? 0),
-          isAvailable: storeAvailable,
-
-          // metadata for UI/debug
+          price: Number(x.price ?? 0),
+          isAvailable: globalAvailable,
           globalIsAvailable: globalAvailable,
           globalUpdatedAtMs: x.updatedAt?.toMillis ? Number(x.updatedAt.toMillis()) : null,
-          storeUpdatedAtMs: prevIt.storeUpdatedAtMs ?? null,
+          storeUpdatedAtMs: null,
         };
       })
       .filter(Boolean) as any[];
+
+    const items = [...prevItems, ...missingItems].sort((a: any, b: any) =>
+      String(a?.name || "").localeCompare(String(b?.name || ""))
+    );
 
     const nowMs = Date.now();
 
@@ -97,6 +93,7 @@ export async function POST(req: Request) {
       ok: true,
       storeId,
       itemCount: items.filter((x: any) => x.isAvailable === true).length,
+      importedCount: missingItems.length,
       updatedAtMs: nowMs,
     });
   } catch (e: any) {

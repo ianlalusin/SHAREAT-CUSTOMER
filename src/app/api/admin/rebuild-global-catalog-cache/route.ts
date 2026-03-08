@@ -36,30 +36,50 @@ export async function POST(req: Request) {
 
     const qSnap = await db
       .collection("catalogItems")
-      .where("isAvailable", "==", true)
       .orderBy("name", "asc")
       .get();
 
-    const items = qSnap.docs.map((d) => {
-      const x = d.data() as any;
-      return {
-        id: d.id,
-        name: String(x.name ?? ""),
-        category: String(x.category ?? ""),
-        price: Number(x.price ?? 0),
-        imageUrl: x.imageUrl ?? null,
-        isAvailable: x.isAvailable !== false,
-        // metadata for diffing (kept in cache; customer API can ignore if needed)
-        updatedAtMs: x.updatedAt?.toMillis ? Number(x.updatedAt.toMillis()) : null,
-      };
-    });
+    const storeRef = db.doc(`stores/${storeId}/catalogCache/main`);
+    const storeSnap = await storeRef.get();
+    const prev = storeSnap.exists ? (storeSnap.data() as any) : null;
+    const prevItems: any[] = Array.isArray(prev?.items) ? prev.items : [];
+
+    const prevById = new Map<string, any>();
+    for (const it of prevItems) {
+      const id = String(it?.id || "");
+      if (id) prevById.set(id, it);
+    }
+
+    const items = qSnap.docs
+      .map((d) => {
+        const x = d.data() as any;
+        if (x.isArchived === true) return null;
+
+        const prevIt = prevById.get(d.id) || {};
+        const globalDisabled = x.isAvailable === false;
+        const globalAvailable = !globalDisabled;
+        const storeAvailable = globalAvailable && (prevIt.isAvailable !== false);
+
+        return {
+          id: d.id,
+          name: String(x.name ?? ""),
+          category: String(x.category ?? ""),
+          price: Number(prevIt.price ?? x.price ?? 0),
+          imageUrl: x.imageUrl ?? null,
+          isAvailable: storeAvailable,
+          globalIsAvailable: globalAvailable,
+          globalUpdatedAtMs: x.updatedAt?.toMillis ? Number(x.updatedAt.toMillis()) : null,
+          storeUpdatedAtMs: prevIt.storeUpdatedAtMs ?? null,
+        };
+      })
+      .filter(Boolean);
 
     const nowMs = Date.now();
 
-    await db.doc(`stores/${storeId}/catalogCache/main`).set(
+    await storeRef.set(
       {
         updatedAtMs: nowMs,
-        itemCount: items.length,
+        itemCount: items.filter((x: any) => x.isAvailable === true).length,
         items,
       },
       { merge: true }

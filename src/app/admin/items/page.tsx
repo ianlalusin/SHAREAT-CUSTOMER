@@ -157,7 +157,6 @@ export default function AdminItemsPage() {
       const data = snap.exists() ? (snap.data() as any) : null;
       
       const arr = Array.isArray(data?.items) ? data.items : [];
-      if (arr[0]) console.log('[storeItems sample]', Object.keys(arr[0]).sort());
       setStoreItems(arr);
 
     });
@@ -343,20 +342,44 @@ export default function AdminItemsPage() {
     if (!editItem) return;
     setIsBusy(true);
     try {
-      const updates: any = {
-        name: editName.trim(),
-        category: editCategory.trim(),
-        price: toPrice(editPrice),
-        updatedAt: serverTimestamp(),
-      };
-      if (editImageFile) {
-        const url = await uploadImage(editImageFile, editItem.id);
-        updates.imageUrl = url;
+      if (activeTab === "store") {
+        if (!storeId) throw new Error("Missing store.");
+        const cacheRef = doc(firestore, "stores", storeId, "catalogCache", "main");
+        const snap = await getDoc(cacheRef);
+        const data = snap.exists() ? (snap.data() as any) : null;
+        const itemsArr: any[] = Array.isArray(data?.items) ? data.items : [];
+        let nextImageUrl = editItem.imageUrl ?? null;
+        if (editImageFile) {
+          nextImageUrl = await uploadImage(editImageFile, editItem.id);
+        }
+        const next = itemsArr.map((x) => {
+          if (String(x?.id || "") !== String(editItem.id)) return x;
+          return {
+            ...x,
+            name: editName.trim(),
+            category: editCategory.trim(),
+            price: toPrice(editPrice),
+            imageUrl: nextImageUrl,
+            storeUpdatedAtMs: Date.now(),
+          };
+        });
+        await updateDoc(cacheRef, { items: next, updatedAtMs: Date.now() });
+      } else {
+        const updates: any = {
+          name: editName.trim(),
+          category: editCategory.trim(),
+          price: toPrice(editPrice),
+          updatedAt: serverTimestamp(),
+        };
+        if (editImageFile) {
+          const url = await uploadImage(editImageFile, editItem.id);
+          updates.imageUrl = url;
+        }
+        await updateDoc(doc(firestore, "catalogItems", editItem.id), updates);
+        await rebuildStoreCatalogCache(storeId);
       }
-      await updateDoc(doc(firestore, "catalogItems", editItem.id), updates);
       setEditOpen(false);
       toast({ title: "Saved" });
-      await rebuildStoreCatalogCache(storeId);
     } catch (e: any) {
       toast({ title: "Save failed", description: e?.message, variant: "destructive" });
     } finally {
