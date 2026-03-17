@@ -2,16 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { collection, onSnapshot, orderBy, query, limit } from "firebase/firestore";
+import { collection, onSnapshot, orderBy, query, limit, deleteDoc, doc } from "firebase/firestore";
 import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
 import { useFirebase } from "@/firebase";
+import { useToast } from "@/hooks/use-toast";
 
 import { STORE_DIRECTORY, getStoreName } from "@/lib/store-directory";
 import { StoreDirectoryModal } from "@/components/admin/StoreDirectoryModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, LogOut, Package, KeyRound, RefreshCw, Settings, MessageSquare } from "lucide-react";
+import { Loader2, LogOut, Package, RefreshCw, Settings, MessageSquare, Trash2 } from "lucide-react";
 
 type PinRow = {
   id: string; // PIN itself (doc id)
@@ -33,12 +34,15 @@ function fmtDate(ms?: number) {
 export default function AdminHomePage() {
   const router = useRouter();
   const { firestore } = useFirebase();
+  const { toast } = useToast();
 
   const [authReady, setAuthReady] = useState(false);
   const [isAuthed, setIsAuthed] = useState(false);
 
   const [pins, setPins] = useState<PinRow[]>([]);
   const [isLoadingPins, setIsLoadingPins] = useState(true);
+  const [isCleaningPins, setIsCleaningPins] = useState(false);
+  const [deletingPin, setDeletingPin] = useState<string | null>(null);
   const [dirOpen, setDirOpen] = useState(false);
   const [dirBump, setDirBump] = useState(0);
 
@@ -95,6 +99,56 @@ export default function AdminHomePage() {
     );
   }, [authReady, isAuthed, firestore]);
 
+  async function cleanupArchivedPins() {
+    setIsCleaningPins(true);
+    try {
+      const user = getAuth().currentUser;
+      if (!user) {
+        toast({ title: "Not signed in", description: "Please sign in again.", variant: "destructive" });
+        return;
+      }
+      const idToken = await user.getIdToken();
+      const res = await fetch("/api/admin/cleanup-archived-pins", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) {
+        toast({
+          title: "Cleanup failed",
+          description: json?.error ?? "Could not clean archived pins.",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({
+        title: "Cleanup complete",
+        description: `Deleted ${Number(json?.deletedCount || 0)} archived pin(s).`,
+      });
+    } catch (e: any) {
+      toast({
+        title: "Cleanup failed",
+        description: e?.message ?? "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCleaningPins(false);
+    }
+  }
+
+  async function removePin(pinId: string) {
+    if (!window.confirm(`Delete PIN ${pinId}?`)) return;
+    setDeletingPin(pinId);
+    try {
+      await deleteDoc(doc(firestore, "pinRegistry", pinId));
+      toast({ title: "PIN deleted" });
+    } catch (e: any) {
+      toast({ title: "Delete failed", description: e?.message ?? "Check rules.", variant: "destructive" });
+    } finally {
+      setDeletingPin(null);
+    }
+  }
+
   if (!authReady) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-zinc-50">
@@ -142,14 +196,6 @@ export default function AdminHomePage() {
           Feedbacks
         </Button>
 
-        <Button
-          onClick={() => router.push("/admin/pins")}
-          variant="outline"
-          className="h-16 rounded-2xl font-black text-lg gap-3"
-        >
-          <KeyRound className="h-5 w-5" />
-          Pins Page (soon)
-        </Button>
       </div>
 
       <Card className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-white">
@@ -162,14 +208,25 @@ export default function AdminHomePage() {
             </div>
           </div>
 
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => router.refresh()}
-            aria-label="Refresh"
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={cleanupArchivedPins}
+              disabled={isCleaningPins}
+              className="gap-2"
+            >
+              {isCleaningPins ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Cleanup Archived
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => router.refresh()}
+              aria-label="Refresh"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </div>
         </CardHeader>
 
         <CardContent className="p-0">
@@ -187,6 +244,7 @@ export default function AdminHomePage() {
                     <th className="text-left px-5 py-3 font-black">Session</th>
                     <th className="text-left px-5 py-3 font-black">Status</th>
                     <th className="text-left px-5 py-3 font-black">Expires</th>
+                    <th className="text-right px-5 py-3 font-black">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -204,12 +262,23 @@ export default function AdminHomePage() {
                           </Badge>
                         </td>
                         <td className="px-5 py-3 text-zinc-500">{fmtDate(p.expiresAtMs)}</td>
+                        <td className="px-5 py-3 text-right">
+                          <Button
+                            variant="destructive"
+                            size="icon"
+                            onClick={() => removePin(p.id)}
+                            disabled={deletingPin === p.id}
+                            aria-label={`Delete PIN ${p.id}`}
+                          >
+                            {deletingPin === p.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                          </Button>
+                        </td>
                       </tr>
                     );
                   })}
                   {pins.length === 0 && (
                     <tr>
-                      <td className="px-5 py-10 text-center text-zinc-400" colSpan={5}>
+                      <td className="px-5 py-10 text-center text-zinc-400" colSpan={6}>
                         No pins found in pinRegistry.
                       </td>
                     </tr>
