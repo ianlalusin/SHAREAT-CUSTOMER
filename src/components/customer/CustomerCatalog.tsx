@@ -58,8 +58,6 @@ export function CustomerCatalog() {
           json = JSON.parse(jsonText || "{}");
         } catch {}
 
-        console.log("[CustomerCatalog] status", res.status, "body", json);
-
         if (!res.ok || !json?.ok) throw new Error(json?.error || "Failed to load catalog.");
 
         if (cancelled) return;

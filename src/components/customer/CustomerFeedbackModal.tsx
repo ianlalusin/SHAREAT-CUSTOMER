@@ -69,7 +69,6 @@ export function CustomerFeedbackModal({ open, onOpenChange, customerName }: Prop
       setSubmitted(true);
       try { window.dispatchEvent(new CustomEvent("customer-feedback-submitted")); } catch {}
     } catch (e: any) {
-      console.error(e);
       alert((e && e.message) ? e.message : "Submit failed.");
     } finally {
       setIsSubmitting(false);

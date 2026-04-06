@@ -55,9 +55,9 @@ export async function POST(req: Request) {
   const status = String(data.status || "");
   const expiresAtMs = Number(data.expiresAtMs || 0);
 
-  if (!storeId || !sessionId) return bad("PIN is misconfigured.", 500);
-  if (status !== "active") return bad("PIN is not active.", 403);
-  if (!expiresAtMs || expiresAtMs <= Date.now()) return bad("PIN expired.", 403);
+  if (!storeId || !sessionId) return bad("Invalid or expired PIN.", 400);
+  if (status !== "active") return bad("Invalid or expired PIN.", 400);
+  if (!expiresAtMs || expiresAtMs <= Date.now()) return bad("Invalid or expired PIN.", 400);
 
   // Pull projection so the client has correct table/package/flavors immediately
   const projection = await loadSessionProjection(db, sessionId);
@@ -68,7 +68,6 @@ export async function POST(req: Request) {
     customer: true,
     storeId,
     sessionId,
-    pin: pinRaw,
   });
 
   return NextResponse.json({

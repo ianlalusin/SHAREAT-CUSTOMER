@@ -74,7 +74,6 @@ export default function PinAccessPage() {
       setCookie("customer_token", String(json.token || ""));
       setCookie("store_id", String(json.storeId || ""));
       setCookie("session_id", String(json.sessionId || ""));
-      setCookie("pin", cleanPin);
 
       // session details from projection (so dashboard + refill modal have correct scope)
       setCookie("session_customer", String(json.customerName || "Customer"));
