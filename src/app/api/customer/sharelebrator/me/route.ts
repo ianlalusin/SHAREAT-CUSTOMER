@@ -67,6 +67,7 @@ export async function GET(req: Request) {
       phone: c.phone,
       name: c.name,
       bday: c.bday,
+      address: c.address ?? "",
       email: c.email ?? null,
       pointsBalance: c.pointsBalance ?? 0,
     },

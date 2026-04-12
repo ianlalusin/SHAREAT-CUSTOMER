@@ -7,9 +7,10 @@ import { useFirestore } from "@/firebase/provider";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Star, Loader2, RefreshCw, Unlink2 } from "lucide-react";
+import { Star, Loader2, RefreshCw, Unlink2, Settings } from "lucide-react";
 import { format } from "date-fns";
 import { SharelebratorLinkCard } from "./SharelebratorLinkCard";
+import { SharelebratorProfileEditDialog } from "./SharelebratorProfileEditDialog";
 
 interface Props {
   storeId: string;
@@ -24,6 +25,7 @@ type MeResponse = {
     phone: string;
     name: string;
     bday: string;
+    address: string;
     email: string | null;
     pointsBalance: number;
   };
@@ -44,6 +46,7 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [unlinking, setUnlinking] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const prevLinkRef = useRef<string | null>(null);
 
   const fetchMe = useCallback(async () => {
@@ -150,9 +153,20 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
           }
         `}</style>
         <CardContent className="relative p-6 space-y-4">
-          <div className="flex items-center gap-2">
-            <Star className="h-5 w-5" fill="currentColor" />
-            <span className="text-sm font-bold tracking-widest uppercase">Sharelebrator</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Star className="h-5 w-5" fill="currentColor" />
+              <span className="text-sm font-bold tracking-widest uppercase">Sharelebrator</span>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-white hover:bg-white/10 h-8 w-8 p-0"
+              onClick={() => setEditOpen(true)}
+              aria-label="Edit profile"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
           </div>
           <div>
             <p className="text-[10px] uppercase opacity-60 tracking-wider">Cardholder</p>
@@ -245,6 +259,18 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
           Unlink this session
         </Button>
       )}
+
+      <SharelebratorProfileEditDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        initial={{
+          name: c.name,
+          address: c.address,
+          email: c.email,
+          bday: c.bday,
+        }}
+        onSaved={fetchMe}
+      />
     </div>
   );
 }
