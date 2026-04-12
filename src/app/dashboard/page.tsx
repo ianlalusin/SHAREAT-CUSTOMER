@@ -2,16 +2,21 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { doc, onSnapshot } from "firebase/firestore";
 import { Loader2, Plus, MessageSquare } from "lucide-react";
 
 import { DashboardHeader } from "@/components/dashboard/Header";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CustomerRefillModal } from "@/components/customer/CustomerRefillModal";
 import { CustomerCatalog } from "@/components/customer/CustomerCatalog";
 
 import { CustomerFeedbackModal } from "@/components/customer/CustomerFeedbackModal";
 import { SharelebratorLinkCard } from "@/components/customer/SharelebratorLinkCard";
+import { SharelebratorMiniCard } from "@/components/customer/SharelebratorMiniCard";
+import { SharelebratorCardView } from "@/components/customer/SharelebratorCardView";
 import { getAuth } from "firebase/auth";
+import { useFirestore } from "@/firebase/provider";
 
 type SessionDTO = {
   storeId: string;
@@ -41,6 +46,7 @@ function getSessionKeyForFeedback() {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const firestore = useFirestore();
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [isRefillOpen, setIsRefillOpen] = useState(false);
@@ -51,6 +57,10 @@ export default function DashboardPage() {
 
   const [session, setSession] = useState<SessionDTO | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
+  const [activeTab, setActiveTab] = useState("menu");
+
+  // Link state (for mini card + conditional rendering)
+  const [isLinked, setIsLinked] = useState(false);
 
   useEffect(() => {
     if (!sessionToken) {
@@ -120,6 +130,16 @@ export default function DashboardPage() {
     };
   }, [router]);
 
+  // Watch session doc for link state
+  useEffect(() => {
+    if (!firestore || !session) return;
+    const ref = doc(firestore, "stores", session.storeId, "activeSessions", session.sessionId);
+    return onSnapshot(ref, (snap) => {
+      const data = snap.data() as any;
+      setIsLinked(!!data?.linkedCustomerPhone);
+    });
+  }, [firestore, session]);
+
   if (!isLoaded || loadingSession || !session) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
@@ -138,7 +158,7 @@ export default function DashboardPage() {
 }
 `;
 
-return (
+  return (
     <main className="min-h-screen pb-16 flex flex-col bg-zinc-50">
       <DashboardHeader
         customerName={session.customerName}
@@ -146,26 +166,46 @@ return (
         packageName={session.packageName || "Package -"}
       />
 
-      <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 mt-10 relative z-10">
-        {/* Centered primary action */}
-        <div className="flex justify-center">
-          <Button
-            className="w-full sm:w-[420px] h-20 sm:h-28 rounded-[2.5rem] text-lg sm:text-xl font-black shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all bg-primary border-4 border-white/20"
-            onClick={() => setIsRefillOpen(true)}
-          >
-            <Plus className="mr-3 h-8 w-8" />
-            Order Refill
-          </Button>
-        </div>
+      <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 mt-6 relative z-10">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full max-w-sm mx-auto grid-cols-2 mb-6">
+            <TabsTrigger value="menu">Menu</TabsTrigger>
+            <TabsTrigger value="card">Card</TabsTrigger>
+          </TabsList>
 
-        {/* Sharelebrator link card */}
-        <div className="max-w-md mx-auto mt-6">
-          <SharelebratorLinkCard storeId={session.storeId} sessionId={session.sessionId} />
-        </div>
+          <TabsContent value="menu">
+            {/* Primary action */}
+            <div className="flex justify-center">
+              <Button
+                className="w-full sm:w-[420px] h-20 sm:h-28 rounded-[2.5rem] text-lg sm:text-xl font-black shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all bg-primary border-4 border-white/20"
+                onClick={() => setIsRefillOpen(true)}
+              >
+                <Plus className="mr-3 h-8 w-8" />
+                Order Refill
+              </Button>
+            </div>
 
-        {/* Menu */}
-        <CustomerCatalog />
+            {/* Show link CTA only when NOT linked */}
+            {!isLinked && (
+              <div className="max-w-md mx-auto mt-6">
+                <SharelebratorLinkCard storeId={session.storeId} sessionId={session.sessionId} />
+              </div>
+            )}
+
+            <CustomerCatalog />
+          </TabsContent>
+
+          <TabsContent value="card">
+            <SharelebratorCardView storeId={session.storeId} sessionId={session.sessionId} />
+          </TabsContent>
+        </Tabs>
       </div>
+
+      {/* Floating Sharelebrator mini card (only when linked) */}
+      {isLinked && activeTab !== "card" && (
+        <SharelebratorMiniCard onClick={() => setActiveTab("card")} />
+      )}
+
       {/* Floating Feedback bubble */}
       {!feedbackSubmitted && (
         <>
