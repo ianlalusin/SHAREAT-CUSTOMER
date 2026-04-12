@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { getAuth } from "firebase/auth";
+import { doc, onSnapshot } from "firebase/firestore";
+import { useFirestore } from "@/firebase/provider";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Star, Loader2, RefreshCw } from "lucide-react";
+import { Star, Loader2, RefreshCw, Unlink2 } from "lucide-react";
 import { format } from "date-fns";
 import { SharelebratorLinkCard } from "./SharelebratorLinkCard";
 
@@ -37,9 +39,12 @@ type MeResponse = {
 };
 
 export function SharelebratorCardView({ storeId, sessionId }: Props) {
+  const firestore = useFirestore();
   const [data, setData] = useState<MeResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [unlinking, setUnlinking] = useState(false);
+  const prevLinkRef = useRef<string | null>(null);
 
   const fetchMe = useCallback(async () => {
     const user = getAuth().currentUser;
@@ -52,6 +57,7 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
     setData(json);
   }, []);
 
+  // Initial load
   useEffect(() => {
     (async () => {
       await fetchMe();
@@ -59,12 +65,42 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
     })();
   }, [fetchMe]);
 
+  // Watch session doc — refetch /me whenever link state flips
+  useEffect(() => {
+    if (!firestore || !storeId || !sessionId) return;
+    const ref = doc(firestore, "stores", storeId, "activeSessions", sessionId);
+    return onSnapshot(ref, (snap) => {
+      const d = snap.data() as any;
+      const currentLink = d?.linkedCustomerPhone ?? null;
+      if (prevLinkRef.current !== currentLink) {
+        prevLinkRef.current = currentLink;
+        fetchMe();
+      }
+    });
+  }, [firestore, storeId, sessionId, fetchMe]);
+
   async function handleRefresh() {
     setRefreshing(true);
     try {
       await fetchMe();
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  async function handleUnlink() {
+    const user = getAuth().currentUser;
+    if (!user) return;
+    setUnlinking(true);
+    try {
+      const idToken = await user.getIdToken();
+      await fetch("/api/customer/sharelebrator/unlink-session", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      await fetchMe();
+    } finally {
+      setUnlinking(false);
     }
   }
 
@@ -86,6 +122,7 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
 
   const c = data.customer!;
   const ledger = data.ledger || [];
+  const locked = !!data.locked;
 
   return (
     <div className="max-w-md mx-auto space-y-4 pb-4">
@@ -190,6 +227,24 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
           )}
         </CardContent>
       </Card>
+
+      {/* Unlink — only shown pre-checkout */}
+      {!locked && (
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full text-muted-foreground"
+          onClick={handleUnlink}
+          disabled={unlinking}
+        >
+          {unlinking ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <Unlink2 className="h-4 w-4 mr-2" />
+          )}
+          Unlink this session
+        </Button>
+      )}
     </div>
   );
 }
