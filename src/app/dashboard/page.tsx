@@ -12,7 +12,6 @@ import { CustomerRefillModal } from "@/components/customer/CustomerRefillModal";
 import { CustomerCatalog } from "@/components/customer/CustomerCatalog";
 
 import { CustomerFeedbackModal } from "@/components/customer/CustomerFeedbackModal";
-import { SharelebratorLinkCard } from "@/components/customer/SharelebratorLinkCard";
 import { SharelebratorMiniCard } from "@/components/customer/SharelebratorMiniCard";
 import { SharelebratorCardView } from "@/components/customer/SharelebratorCardView";
 import { getAuth } from "firebase/auth";
@@ -185,13 +184,6 @@ export default function DashboardPage() {
               </Button>
             </div>
 
-            {/* Show link CTA only when NOT linked */}
-            {!isLinked && (
-              <div className="max-w-md mx-auto mt-6">
-                <SharelebratorLinkCard storeId={session.storeId} sessionId={session.sessionId} />
-              </div>
-            )}
-
             <CustomerCatalog />
           </TabsContent>
 
@@ -201,8 +193,8 @@ export default function DashboardPage() {
         </Tabs>
       </div>
 
-      {/* Floating Sharelebrator mini card (only when linked) */}
-      {isLinked && activeTab !== "card" && (
+      {/* Floating Sharelebrator mini card (always visible outside Card tab) */}
+      {activeTab !== "card" && (
         <SharelebratorMiniCard onClick={() => setActiveTab("card")} />
       )}
 
