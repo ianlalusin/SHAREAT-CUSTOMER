@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getAuth } from "firebase/auth";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -32,8 +32,12 @@ export function SharelebratorProfileEditDialog({ open, onOpenChange, initial, on
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Only reset when the dialog transitions from closed → open,
+  // not on every parent re-render (the `initial` object is a new
+  // reference each render, which would otherwise wipe user input).
+  const prevOpenRef = useRef(false);
   useEffect(() => {
-    if (open) {
+    if (open && !prevOpenRef.current) {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -43,7 +47,9 @@ export function SharelebratorProfileEditDialog({ open, onOpenChange, initial, on
       setBday(initial.bday);
       setError(null);
     }
-  }, [open, initial]);
+    prevOpenRef.current = open;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
