@@ -10,6 +10,7 @@ import { CustomerRefillModal } from "@/components/customer/CustomerRefillModal";
 import { CustomerCatalog } from "@/components/customer/CustomerCatalog";
 
 import { CustomerFeedbackModal } from "@/components/customer/CustomerFeedbackModal";
+import { SharelebratorLinkCard } from "@/components/customer/SharelebratorLinkCard";
 import { getAuth } from "firebase/auth";
 
 type SessionDTO = {
@@ -155,6 +156,11 @@ return (
             <Plus className="mr-3 h-8 w-8" />
             Order Refill
           </Button>
+        </div>
+
+        {/* Sharelebrator link card */}
+        <div className="max-w-md mx-auto mt-6">
+          <SharelebratorLinkCard storeId={session.storeId} sessionId={session.sessionId} />
         </div>
 
         {/* Menu */}
