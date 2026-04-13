@@ -50,8 +50,20 @@ export async function POST(req: Request) {
     email: email ?? null,
     bday,
     pointsBalance: 0,
+    visitCount: 0,
+    storeVisits: {},
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
+  });
+
+  // Audit log
+  await db.collection("loyaltyLogs").add({
+    type: "account_created",
+    phone,
+    customerName: name,
+    actorUid: phone, // self-serve signup
+    source: "home_page",
+    createdAt: FieldValue.serverTimestamp(),
   });
 
   const token = await getAdminAuth().createCustomToken(phone, {

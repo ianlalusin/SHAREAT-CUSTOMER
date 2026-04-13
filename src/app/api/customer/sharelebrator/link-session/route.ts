@@ -93,8 +93,21 @@ export async function POST(req: Request) {
       email: email ?? null,
       bday,
       pointsBalance: 0,
+      visitCount: 0,
+      storeVisits: {},
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
+    });
+    // Audit log
+    await db.collection("loyaltyLogs").add({
+      type: "account_created",
+      phone,
+      customerName: name,
+      actorUid: decoded.uid || phone,
+      source: "in_session",
+      storeId,
+      sessionId,
+      createdAt: FieldValue.serverTimestamp(),
     });
     customerName = name;
   } else {
