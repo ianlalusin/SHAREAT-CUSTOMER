@@ -98,6 +98,13 @@ export async function POST(req: Request) {
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
+    // Fetch store name for denormalization in the log
+    let storeName = storeId;
+    try {
+      const storeSnap = await db.doc(`stores/${storeId}`).get();
+      storeName = (storeSnap.data() as any)?.name || storeId;
+    } catch {}
+
     // Audit log
     await db.collection("loyaltyLogs").add({
       type: "account_created",
@@ -106,6 +113,7 @@ export async function POST(req: Request) {
       actorUid: decoded.uid || phone,
       source: "in_session",
       storeId,
+      storeName,
       sessionId,
       createdAt: FieldValue.serverTimestamp(),
     });
