@@ -66,6 +66,15 @@ export async function POST(req: Request) {
     createdAt: FieldValue.serverTimestamp(),
   });
 
+  // Global aggregate projection
+  await db.doc("loyaltyStats/global").set(
+    {
+      totalAccounts: FieldValue.increment(1),
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
   const token = await getAdminAuth().createCustomToken(phone, {
     loyaltyCustomer: true,
     phone,

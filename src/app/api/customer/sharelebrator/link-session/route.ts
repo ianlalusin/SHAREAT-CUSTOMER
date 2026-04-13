@@ -117,6 +117,15 @@ export async function POST(req: Request) {
       sessionId,
       createdAt: FieldValue.serverTimestamp(),
     });
+
+    // Global aggregate projection
+    await db.doc("loyaltyStats/global").set(
+      {
+        totalAccounts: FieldValue.increment(1),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
     customerName = name;
   } else {
     return bad("Unknown mode.");
