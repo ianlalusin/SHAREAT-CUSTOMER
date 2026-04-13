@@ -12,19 +12,36 @@ function bad(msg: string, status = 400) {
 export async function POST(req: Request) {
   const authHeader = req.headers.get("authorization") || "";
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (!match) return bad("Missing session token.", 401);
+  if (!match) return bad("Missing bearer token.", 401);
 
-  let decoded;
+  let decoded: any;
   try {
     decoded = await getAdminAuth().verifyIdToken(match[1]);
   } catch {
-    return bad("Invalid session token.", 401);
+    return bad("Invalid token.", 401);
   }
 
-  if (decoded.customer !== true) return bad("Not a customer session.", 403);
-  const storeId = String(decoded.storeId || "");
-  const sessionId = String(decoded.sessionId || "");
-  if (!storeId || !sessionId) return bad("Session claims missing storeId/sessionId.", 403);
+  const db = getAdminDb();
+
+  // Resolve phone + session context from either auth mode
+  let phone: string | null = null;
+  let storeId = "";
+  let sessionId = "";
+
+  if (decoded.customer === true) {
+    storeId = String(decoded.storeId || "");
+    sessionId = String(decoded.sessionId || "");
+    if (!storeId || !sessionId) return bad("Session claims missing storeId/sessionId.", 403);
+
+    const activeSnap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
+    phone = activeSnap.data()?.linkedCustomerPhone ?? null;
+    if (!phone) return bad("No linked Sharelebrator account on this session.", 404);
+  } else if (decoded.loyaltyCustomer === true) {
+    phone = String(decoded.phone || "");
+    if (!phone) return bad("Loyalty token missing phone claim.", 403);
+  } else {
+    return bad("Unauthorized token type.", 403);
+  }
 
   let body: any;
   try {
@@ -35,13 +52,6 @@ export async function POST(req: Request) {
 
   const currentPassword = String(body.currentPassword || "");
   if (!currentPassword) return bad("Current password is required.");
-
-  const db = getAdminDb();
-
-  // Find linked phone from session
-  const activeSnap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
-  const phone = activeSnap.data()?.linkedCustomerPhone;
-  if (!phone) return bad("No linked Sharelebrator account on this session.", 404);
 
   const customerRef = db.doc(`customers/${phone}`);
   const customerSnap = await customerRef.get();
@@ -80,8 +90,8 @@ export async function POST(req: Request) {
 
   await customerRef.update(patch);
 
-  // If name changed, also update the denormalized linkedCustomerName on the session
-  if (patch.name) {
+  // If name changed AND we're in a session, sync denormalized linkedCustomerName
+  if (patch.name && storeId && sessionId) {
     const nameUpdate = { linkedCustomerName: patch.name };
     const batch = db.batch();
     batch.update(db.doc(`stores/${storeId}/activeSessions/${sessionId}`), nameUpdate);

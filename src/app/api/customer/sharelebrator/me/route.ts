@@ -8,37 +8,46 @@ function bad(msg: string, status = 400) {
 }
 
 export async function GET(req: Request) {
-  // Verify session token (customer:true with storeId + sessionId)
   const authHeader = req.headers.get("authorization") || "";
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (!match) return bad("Missing session token.", 401);
+  if (!match) return bad("Missing bearer token.", 401);
 
-  let decoded;
+  let decoded: any;
   try {
     decoded = await getAdminAuth().verifyIdToken(match[1]);
   } catch {
-    return bad("Invalid session token.", 401);
+    return bad("Invalid token.", 401);
   }
-
-  if (decoded.customer !== true) return bad("Not a customer session.", 403);
-  const storeId = String(decoded.storeId || "");
-  const sessionId = String(decoded.sessionId || "");
-  if (!storeId || !sessionId) return bad("Session claims missing storeId/sessionId.", 403);
 
   const db = getAdminDb();
 
-  // Read the session's linked phone
-  const activeSnap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
-  const sessionData = activeSnap.data() as any;
-  const phone = sessionData?.linkedCustomerPhone;
-  if (!phone) return NextResponse.json({ ok: true, linked: false });
+  // Resolve phone + session context from either auth mode
+  let phone: string | null = null;
+  let sessionData: any = null;
+  let locked = false;
+
+  if (decoded.customer === true) {
+    const storeId = String(decoded.storeId || "");
+    const sessionId = String(decoded.sessionId || "");
+    if (!storeId || !sessionId) return bad("Session claims missing storeId/sessionId.", 403);
+
+    const activeSnap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
+    sessionData = activeSnap.data();
+    phone = sessionData?.linkedCustomerPhone ?? null;
+    locked = !!sessionData?.linkedCustomerLockedAt;
+    if (!phone) return NextResponse.json({ ok: true, linked: false });
+  } else if (decoded.loyaltyCustomer === true) {
+    phone = String(decoded.phone || "");
+    if (!phone) return bad("Loyalty token missing phone claim.", 403);
+  } else {
+    return bad("Unauthorized token type.", 403);
+  }
 
   const customerSnap = await db.doc(`customers/${phone}`).get();
   if (!customerSnap.exists) return NextResponse.json({ ok: true, linked: false });
 
   const c = customerSnap.data() as any;
 
-  // Recent ledger entries (last 20)
   const ledgerSnap = await db
     .collection(`customers/${phone}/pointsLedger`)
     .orderBy("createdAt", "desc")
@@ -62,7 +71,7 @@ export async function GET(req: Request) {
   return NextResponse.json({
     ok: true,
     linked: true,
-    locked: !!sessionData?.linkedCustomerLockedAt,
+    locked,
     customer: {
       phone: c.phone,
       name: c.name,

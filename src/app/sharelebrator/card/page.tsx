@@ -1,18 +1,42 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { getAuth, signInWithCustomToken, signOut, onAuthStateChanged } from "firebase/auth";
-import { doc, onSnapshot } from "firebase/firestore";
-import { useFirestore } from "@/firebase/provider";
 import { QRCodeSVG } from "qrcode.react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Sparkles, LogOut, Loader2 } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Sparkles, LogOut, Loader2, ArrowLeft, Settings, RefreshCw, Star } from "lucide-react";
+import { format } from "date-fns";
+import { SharelebratorProfileEditDialog } from "@/components/customer/SharelebratorProfileEditDialog";
+
+type MeResponse = {
+  ok: boolean;
+  linked: boolean;
+  customer?: {
+    phone: string;
+    name: string;
+    bday: string;
+    address: string;
+    email: string | null;
+    pointsBalance: number;
+  };
+  ledger?: {
+    id: string;
+    type: "earn" | "redeem" | "adjust";
+    points: number;
+    amount: number;
+    storeId: string;
+    sessionId: string;
+    createdAtMs: number | null;
+  }[];
+};
 
 export default function SharelebratorCardPage() {
-  const firestore = useFirestore();
+  const router = useRouter();
   const [authedPhone, setAuthedPhone] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
 
@@ -22,8 +46,25 @@ export default function SharelebratorCardPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Customer doc state
-  const [customerData, setCustomerData] = useState<any>(null);
+  const [data, setData] = useState<MeResponse | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+
+  const fetchMe = useCallback(async () => {
+    const user = getAuth().currentUser;
+    if (!user) return;
+    const idToken = await user.getIdToken();
+    const res = await fetch("/api/customer/sharelebrator/me", {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    if (res.status === 401) {
+      await signOut(getAuth());
+      setAuthedPhone(null);
+      return;
+    }
+    const json = (await res.json()) as MeResponse;
+    setData(json);
+  }, []);
 
   useEffect(() => {
     const auth = getAuth();
@@ -44,15 +85,9 @@ export default function SharelebratorCardPage() {
   }, []);
 
   useEffect(() => {
-    if (!firestore || !authedPhone) {
-      setCustomerData(null);
-      return;
-    }
-    const ref = doc(firestore, "customers", authedPhone);
-    return onSnapshot(ref, (snap) => {
-      setCustomerData(snap.exists() ? snap.data() : null);
-    });
-  }, [firestore, authedPhone]);
+    if (authedPhone) fetchMe();
+    else setData(null);
+  }, [authedPhone, fetchMe]);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -78,7 +113,20 @@ export default function SharelebratorCardPage() {
 
   async function handleSignOut() {
     await signOut(getAuth());
-    setCustomerData(null);
+    setData(null);
+  }
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    try {
+      await fetchMe();
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  function handleExit() {
+    router.push("/");
   }
 
   if (checking) {
@@ -89,75 +137,215 @@ export default function SharelebratorCardPage() {
     );
   }
 
+  // ───────── Login screen ─────────
   if (!authedPhone) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-zinc-50 p-4">
-        <Card className="w-full max-w-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-primary" />
-              Sharelebrator Card
-            </CardTitle>
-            <CardDescription>Sign in to view your points.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleLogin} className="space-y-3">
-              <div className="space-y-1">
-                <Label>Phone</Label>
-                <Input type="tel" placeholder="09XXXXXXXXX" value={phone} onChange={(e) => setPhone(e.target.value)} required disabled={submitting} />
-              </div>
-              <div className="space-y-1">
-                <Label>Password</Label>
-                <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required disabled={submitting} />
-              </div>
-              {error && <p className="text-sm text-destructive">{error}</p>}
-              <Button type="submit" disabled={submitting} className="w-full">
-                {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Sign In
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+      <main className="min-h-screen flex flex-col items-center justify-center bg-zinc-50 p-4">
+        <div className="w-full max-w-sm space-y-3">
+          <div className="flex">
+            <Button variant="ghost" size="sm" onClick={handleExit} className="text-muted-foreground">
+              <ArrowLeft className="h-4 w-4 mr-1" /> Back
+            </Button>
+          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-primary" />
+                Sharelebrator Card
+              </CardTitle>
+              <CardDescription>Sign in to view your points and manage your card.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleLogin} className="space-y-3">
+                <div className="space-y-1">
+                  <Label>Phone</Label>
+                  <Input
+                    type="tel"
+                    placeholder="09XXXXXXXXX"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    required
+                    disabled={submitting}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Password</Label>
+                  <Input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    disabled={submitting}
+                  />
+                </div>
+                {error && <p className="text-sm text-destructive">{error}</p>}
+                <Button type="submit" disabled={submitting} className="w-full">
+                  {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Sign In
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+          <p className="text-xs text-center text-muted-foreground">
+            Don't have a card yet? Create one during your next visit using the in-store PIN.
+          </p>
+        </div>
       </main>
     );
   }
 
+  // ───────── Authed: full card view ─────────
+  const c = data?.customer;
+  const ledger = data?.ledger ?? [];
+
   return (
     <main className="min-h-screen bg-zinc-50 p-4">
-      <div className="max-w-md mx-auto pt-8 space-y-4">
-        <Card className="bg-gradient-to-br from-primary to-red-700 text-white border-0">
-          <CardContent className="p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5" />
-                <span className="font-bold">Sharelebrator</span>
+      <div className="max-w-md mx-auto pt-2 space-y-4">
+        {/* Top bar */}
+        <div className="flex items-center justify-between">
+          <Button variant="ghost" size="sm" onClick={handleExit} className="text-muted-foreground">
+            <ArrowLeft className="h-4 w-4 mr-1" /> Exit
+          </Button>
+          <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-muted-foreground">
+            <LogOut className="h-4 w-4 mr-1" /> Sign out
+          </Button>
+        </div>
+
+        {!c ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          <>
+            {/* Hero card */}
+            <Card
+              className="border-0 overflow-hidden relative text-white"
+              style={{
+                background: "linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 40%, #3a3a3a 50%, #1a1a1a 60%, #0a0a0a 100%)",
+              }}
+            >
+              <div className="absolute inset-0 pointer-events-none">
+                <div
+                  className="absolute top-0 bottom-0 w-[20%] -skew-x-12"
+                  style={{
+                    left: "-20%",
+                    background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.15) 50%, transparent 100%)",
+                    animation: "sharelebratorCardShine 5s ease-in-out infinite",
+                  }}
+                />
               </div>
-              <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-white hover:bg-white/10">
-                <LogOut className="h-4 w-4" />
-              </Button>
-            </div>
+              <style>{`
+                @keyframes sharelebratorCardShine {
+                  0% { left: -20%; }
+                  70%, 100% { left: 120%; }
+                }
+              `}</style>
+              <CardContent className="relative p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Star className="h-5 w-5" fill="currentColor" />
+                    <span className="text-sm font-bold tracking-widest uppercase">Sharelebrator</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-white hover:bg-white/10 h-8 w-8 p-0"
+                    onClick={() => setEditOpen(true)}
+                    aria-label="Edit profile"
+                  >
+                    <Settings className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase opacity-60 tracking-wider">Cardholder</p>
+                  <p className="text-2xl font-black leading-tight">{c.name}</p>
+                  <p className="text-sm font-mono opacity-80 mt-1">{c.phone}</p>
+                  {c.bday && (
+                    <p className="text-xs opacity-70 mt-0.5">
+                      Birthday: {format(new Date(c.bday), "MMMM d")}
+                    </p>
+                  )}
+                </div>
+                <div className="bg-white rounded-lg p-3 flex items-center justify-center">
+                  <QRCodeSVG value={c.phone} size={120} />
+                </div>
+                <div className="flex items-end justify-between pt-2 border-t border-white/10">
+                  <div>
+                    <p className="text-[10px] uppercase opacity-60 tracking-wider">Available Points</p>
+                    <p className="text-4xl font-black">{c.pointsBalance.toLocaleString()}</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleRefresh}
+                    disabled={refreshing}
+                    className="text-white hover:bg-white/10 h-8"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
 
-            <div>
-              <p className="text-xs opacity-80">Cardholder</p>
-              <p className="text-xl font-bold">{customerData?.name || "—"}</p>
-              <p className="text-sm opacity-80 font-mono">{authedPhone}</p>
-            </div>
+            {/* Transactions */}
+            <Card>
+              <CardContent className="p-0">
+                <div className="px-4 py-3 border-b">
+                  <h3 className="font-semibold text-sm">Recent Transactions</h3>
+                </div>
+                {ledger.length === 0 ? (
+                  <p className="px-4 py-8 text-sm text-center text-muted-foreground">
+                    No transactions yet.
+                  </p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs">Date</TableHead>
+                        <TableHead className="text-xs">Type</TableHead>
+                        <TableHead className="text-xs text-right">Amount</TableHead>
+                        <TableHead className="text-xs text-right">Points</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {ledger.map((entry) => (
+                        <TableRow key={entry.id}>
+                          <TableCell className="text-xs">
+                            {entry.createdAtMs ? format(new Date(entry.createdAtMs), "MMM d, h:mma") : "—"}
+                          </TableCell>
+                          <TableCell className="text-xs capitalize">{entry.type}</TableCell>
+                          <TableCell className="text-xs text-right font-mono">
+                            ₱{entry.amount.toLocaleString()}
+                          </TableCell>
+                          <TableCell
+                            className={`text-xs text-right font-mono font-bold ${
+                              entry.points > 0 ? "text-green-600" : entry.points < 0 ? "text-red-600" : ""
+                            }`}
+                          >
+                            {entry.points > 0 ? "+" : ""}
+                            {entry.points}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
 
-            <div className="bg-white rounded-lg p-4 flex items-center justify-center">
-              <QRCodeSVG value={authedPhone} size={160} />
-            </div>
-
-            <div className="text-center">
-              <p className="text-xs opacity-80">Balance</p>
-              <p className="text-4xl font-black">{customerData?.pointsBalance ?? 0}</p>
-              <p className="text-sm opacity-80">points</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <p className="text-xs text-center text-muted-foreground">
-          Show this QR to the cashier to earn points at checkout.
-        </p>
+            <SharelebratorProfileEditDialog
+              open={editOpen}
+              onOpenChange={setEditOpen}
+              initial={{
+                name: c.name,
+                address: c.address,
+                email: c.email,
+                bday: c.bday,
+              }}
+              onSaved={fetchMe}
+            />
+          </>
+        )}
       </div>
     </main>
   );

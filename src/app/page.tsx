@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardContent, CardTitle, CardDescription } from "@/components/ui/card";
-import { Lock, Loader2 } from "lucide-react";
+import { Lock, Loader2, Star } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getAuth, signInWithCustomToken } from "firebase/auth";
 
@@ -138,6 +138,16 @@ export default function PinAccessPage() {
             </form>
           </CardContent>
         </Card>
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => router.push("/sharelebrator/card")}
+          className="mt-6 h-12 px-6 rounded-full border-zinc-200 text-zinc-700 hover:bg-zinc-100 font-semibold gap-2 shadow-sm"
+        >
+          <Star className="h-4 w-4 text-primary" fill="currentColor" />
+          Sharelebrator Card
+        </Button>
 
         <div className="mt-12 text-center">
           <p className="text-[10px] font-black text-zinc-300 uppercase tracking-widest">
