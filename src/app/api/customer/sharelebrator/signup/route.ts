@@ -3,6 +3,7 @@ import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { normalizePhone } from "@/lib/phone";
 import bcrypt from "bcryptjs";
 import { FieldValue } from "firebase-admin/firestore";
+import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
 
 export const runtime = "nodejs";
 
@@ -56,14 +57,13 @@ export async function POST(req: Request) {
     updatedAt: FieldValue.serverTimestamp(),
   });
 
-  // Audit log
-  await db.collection("loyaltyLogs").add({
+  // Audit log (individual + daily projection)
+  await writeLoyaltyLog({
     type: "account_created",
     phone,
     customerName: name,
     actorUid: phone, // self-serve signup
     source: "home_page",
-    createdAt: FieldValue.serverTimestamp(),
   });
 
   // Global aggregate projection

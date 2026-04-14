@@ -3,6 +3,7 @@ import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { normalizePhone } from "@/lib/phone";
 import bcrypt from "bcryptjs";
 import { FieldValue } from "firebase-admin/firestore";
+import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
 
 export const runtime = "nodejs";
 
@@ -65,13 +66,54 @@ export async function POST(req: Request) {
   // Resolve customer (login or signup)
   let customerName: string;
 
+  // Fetch store name once (used in logs for both modes)
+  let storeName = storeId;
+  try {
+    const storeSnap = await db.doc(`stores/${storeId}`).get();
+    storeName = (storeSnap.data() as any)?.name || storeId;
+  } catch {}
+
   if (body.mode === "login") {
     const snap = await customerRef.get();
-    if (!snap.exists) return bad("Account not found.", 401);
+    if (!snap.exists) {
+      await writeLoyaltyLog({
+        type: "login_failed",
+        phone,
+        customerName: "",
+        actorUid: phone,
+        source: "in_session",
+        storeId,
+        storeName,
+        sessionId,
+      });
+      return bad("Account not found.", 401);
+    }
     const data = snap.data() as any;
     const matchPw = await bcrypt.compare(password, data.passwordHash || "");
-    if (!matchPw) return bad("Incorrect phone or password.", 401);
+    if (!matchPw) {
+      await writeLoyaltyLog({
+        type: "login_failed",
+        phone,
+        customerName: data.name || "",
+        actorUid: phone,
+        source: "in_session",
+        storeId,
+        storeName,
+        sessionId,
+      });
+      return bad("Incorrect phone or password.", 401);
+    }
     customerName = data.name;
+    await writeLoyaltyLog({
+      type: "login",
+      phone,
+      customerName,
+      actorUid: phone,
+      source: "in_session",
+      storeId,
+      storeName,
+      sessionId,
+    });
   } else if (body.mode === "signup") {
     const existing = await customerRef.get();
     if (existing.exists) return bad("Account with this phone already exists. Try Log In.", 409);
@@ -98,15 +140,8 @@ export async function POST(req: Request) {
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
-    // Fetch store name for denormalization in the log
-    let storeName = storeId;
-    try {
-      const storeSnap = await db.doc(`stores/${storeId}`).get();
-      storeName = (storeSnap.data() as any)?.name || storeId;
-    } catch {}
-
-    // Audit log
-    await db.collection("loyaltyLogs").add({
+    // Audit log (individual + daily projection)
+    await writeLoyaltyLog({
       type: "account_created",
       phone,
       customerName: name,
@@ -115,7 +150,6 @@ export async function POST(req: Request) {
       storeId,
       storeName,
       sessionId,
-      createdAt: FieldValue.serverTimestamp(),
     });
 
     // Global aggregate projection

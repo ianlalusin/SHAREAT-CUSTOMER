@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { normalizePhone } from "@/lib/phone";
 import bcrypt from "bcryptjs";
+import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
 
 export const runtime = "nodejs";
 
@@ -25,15 +26,41 @@ export async function POST(req: Request) {
 
   const db = getAdminDb();
   const snap = await db.doc(`customers/${phone}`).get();
-  if (!snap.exists) return bad("Account not found.", 401);
+  if (!snap.exists) {
+    await writeLoyaltyLog({
+      type: "login_failed",
+      phone,
+      customerName: "",
+      actorUid: phone,
+      source: "standalone",
+    });
+    return bad("Account not found.", 401);
+  }
 
   const data = snap.data() as any;
   const match = await bcrypt.compare(password, data.passwordHash || "");
-  if (!match) return bad("Incorrect phone or password.", 401);
+  if (!match) {
+    await writeLoyaltyLog({
+      type: "login_failed",
+      phone,
+      customerName: data.name || "",
+      actorUid: phone,
+      source: "standalone",
+    });
+    return bad("Incorrect phone or password.", 401);
+  }
 
   const token = await getAdminAuth().createCustomToken(phone, {
     loyaltyCustomer: true,
     phone,
+  });
+
+  await writeLoyaltyLog({
+    type: "login",
+    phone,
+    customerName: data.name || "",
+    actorUid: phone,
+    source: "standalone",
   });
 
   return NextResponse.json({ ok: true, token, name: data.name, phone });
