@@ -63,6 +63,26 @@ export async function POST(req: Request) {
   const db = getAdminDb();
   const customerRef = db.doc(`customers/${phone}`);
 
+  // First-come lock: if this session is already linked to a different phone,
+  // reject early. The existing linker must unlink before a different card can
+  // claim this session. Re-linking with the same phone is idempotent-OK.
+  const activeRefPreCheck = db.doc(`stores/${storeId}/activeSessions/${sessionId}`);
+  const preCheckSnap = await activeRefPreCheck.get();
+  if (preCheckSnap.exists) {
+    const preData = preCheckSnap.data() as any;
+    if (preData.linkedCustomerLockedAt) {
+      return bad("This session has already been paid; link is locked.", 409);
+    }
+    const currentLink = preData.linkedCustomerPhone as string | null | undefined;
+    if (currentLink && currentLink !== phone) {
+      const currentName = preData.linkedCustomerName || "another card";
+      return bad(
+        `This session is already linked to ${currentName}. Ask them to unlink first before linking your card.`,
+        409
+      );
+    }
+  }
+
   // Resolve customer (login or signup)
   let customerName: string;
 
