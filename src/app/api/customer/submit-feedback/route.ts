@@ -48,8 +48,9 @@ export async function POST(req: Request) {
     if (!activeSnap.exists) return bad("Session not found.", 404);
 
     const active = activeSnap.data() as any;
-    if (active.customerAccessEnabled !== true) return bad("Customer access disabled.", 403);
-    if (Number(active.customerAccessExpiresAtMs || 0) <= Date.now()) return bad("Customer access expired.", 403);
+    // NOTE: feedback is allowed even after the session is closed by the cashier
+    // (customer token is still valid). The /closed page lets the customer leave
+    // a review on their way out — that's by design.
 
     const createdAtClientMs = Date.now();
     const createdByUid = String(decoded.uid || "");

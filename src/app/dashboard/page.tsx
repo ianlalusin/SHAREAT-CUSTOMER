@@ -129,15 +129,31 @@ export default function DashboardPage() {
     };
   }, [router]);
 
-  // Watch session doc for link state
+  // Watch session doc for link state — and detect when the cashier closes
+  // the session (rules block the read once customerAccessEnabled flips to
+  // false, which lands as a permission-denied error here).
   useEffect(() => {
     if (!firestore || !session) return;
     const ref = doc(firestore, "stores", session.storeId, "activeSessions", session.sessionId);
-    return onSnapshot(ref, (snap) => {
-      const data = snap.data() as any;
-      setIsLinked(!!data?.linkedCustomerPhone);
-    });
-  }, [firestore, session]);
+    return onSnapshot(
+      ref,
+      (snap) => {
+        const data = snap.data() as any;
+        // If the doc became unreadable / the access fields flipped, treat as ended.
+        if (!data || data.customerAccessEnabled === false) {
+          router.replace("/closed");
+          return;
+        }
+        setIsLinked(!!data?.linkedCustomerPhone);
+      },
+      (error) => {
+        // permission-denied = cashier disabled customer access (most common cause)
+        if ((error as any)?.code === "permission-denied") {
+          router.replace("/closed");
+        }
+      }
+    );
+  }, [firestore, session, router]);
 
   if (!isLoaded || loadingSession || !session) {
     return (
