@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle, X } from "lucide-react";
 
 interface Props {
@@ -12,22 +13,30 @@ interface Props {
 }
 
 /**
- * Modern centered alert — appears over the screen with an overlay,
- * warning icon, and auto-dismisses. Use for blocking validation
- * issues that the cashier-side toast feels too quiet for.
+ * Modern centered alert — rendered via portal directly into document.body
+ * so it escapes any parent transform/containing-block context (e.g.
+ * shadcn Dialog content centers itself with translate, which would
+ * otherwise make our `fixed` overlay attach to the dialog instead of
+ * the viewport).
  */
 export function CenterAlert({ open, onClose, title, message, durationMs = 3500 }: Props) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     const t = setTimeout(() => onClose(), durationMs);
     return () => clearTimeout(t);
   }, [open, durationMs, onClose]);
 
-  if (!open) return null;
+  if (!open || !mounted || typeof document === "undefined") return null;
 
-  return (
+  const overlay = (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px] animate-in fade-in-0 duration-150"
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-[3px] animate-in fade-in-0 duration-150"
       onClick={onClose}
       role="alert"
       aria-live="assertive"
@@ -55,4 +64,6 @@ export function CenterAlert({ open, onClose, title, message, durationMs = 3500 }
       </div>
     </div>
   );
+
+  return createPortal(overlay, document.body);
 }
