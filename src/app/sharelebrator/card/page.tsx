@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Sparkles, LogOut, Loader2, ArrowLeft, Settings, RefreshCw, Star } from "lucide-react";
+import { Sparkles, LogOut, Loader2, ArrowLeft, Settings, RefreshCw, Star, QrCode } from "lucide-react";
 import { format } from "date-fns";
 import { SharelebratorProfileEditDialog } from "@/components/customer/SharelebratorProfileEditDialog";
 
@@ -49,6 +49,7 @@ export default function SharelebratorCardPage() {
   const [data, setData] = useState<MeResponse | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [flipped, setFlipped] = useState(false);
 
   const fetchMe = useCallback(async () => {
     const user = getAuth().currentUser;
@@ -217,75 +218,124 @@ export default function SharelebratorCardPage() {
           </div>
         ) : (
           <>
-            {/* Hero card */}
-            <Card
-              className="border-0 overflow-hidden relative text-white"
-              style={{
-                background: "linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 40%, #3a3a3a 50%, #1a1a1a 60%, #0a0a0a 100%)",
-              }}
+            {/* Hero card — flip container (rectangular) */}
+            <style>{`
+              @keyframes sharelebratorCardShine {
+                0% { left: -20%; }
+                70%, 100% { left: 120%; }
+              }
+            `}</style>
+            <div
+              className="relative w-full"
+              style={{ perspective: "1500px", height: "320px" }}
             >
-              <div className="absolute inset-0 pointer-events-none">
-                <div
-                  className="absolute top-0 bottom-0 w-[20%] -skew-x-12"
+              <div
+                className="relative w-full h-full transition-transform duration-700"
+                style={{
+                  transformStyle: "preserve-3d",
+                  transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
+                }}
+              >
+                {/* FRONT */}
+                <Card
+                  className="absolute inset-0 border-0 overflow-hidden text-white"
                   style={{
-                    left: "-20%",
-                    background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.15) 50%, transparent 100%)",
-                    animation: "sharelebratorCardShine 5s ease-in-out infinite",
+                    background: "linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 40%, #3a3a3a 50%, #1a1a1a 60%, #0a0a0a 100%)",
+                    backfaceVisibility: "hidden",
+                    WebkitBackfaceVisibility: "hidden",
                   }}
-                />
+                >
+                  <div className="absolute inset-0 pointer-events-none">
+                    <div
+                      className="absolute top-0 bottom-0 w-[20%] -skew-x-12"
+                      style={{
+                        left: "-20%",
+                        background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.15) 50%, transparent 100%)",
+                        animation: "sharelebratorCardShine 5s ease-in-out infinite",
+                      }}
+                    />
+                  </div>
+                  <CardContent className="relative p-6 h-full flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Star className="h-5 w-5" fill="currentColor" />
+                        <span className="text-sm font-bold tracking-widest uppercase">Sharelebrator</span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-white hover:bg-white/10 h-8 w-8 p-0"
+                        onClick={() => setEditOpen(true)}
+                        aria-label="Edit profile"
+                      >
+                        <Settings className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase opacity-60 tracking-wider">Cardholder</p>
+                      <p className="text-2xl font-black leading-tight">{c.name}</p>
+                      <p className="text-sm font-mono opacity-80 mt-1">{c.phone}</p>
+                      {c.bday && (
+                        <p className="text-xs opacity-70 mt-0.5">
+                          Birthday: {format(new Date(c.bday), "MMMM d")}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-end justify-between pt-2 border-t border-white/10">
+                      <div>
+                        <p className="text-[10px] uppercase opacity-60 tracking-wider">Available Points</p>
+                        <p className="text-4xl font-black">{c.pointsBalance.toLocaleString()}</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={handleRefresh}
+                        disabled={refreshing}
+                        className="text-white hover:bg-white/10 h-8"
+                      >
+                        <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* BACK */}
+                <Card
+                  className="absolute inset-0 border-0 overflow-hidden text-white"
+                  style={{
+                    background: "linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 40%, #3a3a3a 50%, #1a1a1a 60%, #0a0a0a 100%)",
+                    backfaceVisibility: "hidden",
+                    WebkitBackfaceVisibility: "hidden",
+                    transform: "rotateY(180deg)",
+                  }}
+                >
+                  <CardContent className="relative p-5 h-full flex flex-col items-center justify-center gap-3">
+                    <div className="bg-white rounded-lg p-2.5 flex items-center justify-center">
+                      <QRCodeSVG value={c.phone} size={140} />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-base font-bold leading-tight">{c.name}</p>
+                      <p className="text-xs opacity-70 font-mono mt-0.5">{c.phone}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-[10px] uppercase opacity-60 tracking-wider">Balance</p>
+                      <p className="text-xl font-black">{c.pointsBalance.toLocaleString()} pts</p>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
-              <style>{`
-                @keyframes sharelebratorCardShine {
-                  0% { left: -20%; }
-                  70%, 100% { left: 120%; }
-                }
-              `}</style>
-              <CardContent className="relative p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Star className="h-5 w-5" fill="currentColor" />
-                    <span className="text-sm font-bold tracking-widest uppercase">Sharelebrator</span>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-white hover:bg-white/10 h-8 w-8 p-0"
-                    onClick={() => setEditOpen(true)}
-                    aria-label="Edit profile"
-                  >
-                    <Settings className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase opacity-60 tracking-wider">Cardholder</p>
-                  <p className="text-2xl font-black leading-tight">{c.name}</p>
-                  <p className="text-sm font-mono opacity-80 mt-1">{c.phone}</p>
-                  {c.bday && (
-                    <p className="text-xs opacity-70 mt-0.5">
-                      Birthday: {format(new Date(c.bday), "MMMM d")}
-                    </p>
-                  )}
-                </div>
-                <div className="bg-white rounded-lg p-3 flex items-center justify-center">
-                  <QRCodeSVG value={c.phone} size={120} />
-                </div>
-                <div className="flex items-end justify-between pt-2 border-t border-white/10">
-                  <div>
-                    <p className="text-[10px] uppercase opacity-60 tracking-wider">Available Points</p>
-                    <p className="text-4xl font-black">{c.pointsBalance.toLocaleString()}</p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={handleRefresh}
-                    disabled={refreshing}
-                    className="text-white hover:bg-white/10 h-8"
-                  >
-                    <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+            </div>
+
+            {/* Flip toggle */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => setFlipped((f) => !f)}
+            >
+              <QrCode className="h-4 w-4 mr-2" />
+              {flipped ? "Show card" : "Show QR code"}
+            </Button>
 
             {/* Transactions */}
             <Card>
