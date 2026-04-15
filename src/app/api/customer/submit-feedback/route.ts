@@ -42,15 +42,21 @@ export async function POST(req: Request) {
 
     const db = getAdminDb();
 
-    // validate session + access window (same as submit-refill)
-    const activeRef = db.doc(`stores/${storeId}/activeSessions/${sessionId}`);
-    const activeSnap = await activeRef.get();
-    if (!activeSnap.exists) return bad("Session not found.", 404);
-
-    const active = activeSnap.data() as any;
-    // NOTE: feedback is allowed even after the session is closed by the cashier
-    // (customer token is still valid). The /closed page lets the customer leave
-    // a review on their way out — that's by design.
+    // Look up the session — it may live in activeSessions (still in progress)
+    // OR closedSessions (cashier finalised payment). Either is acceptable for
+    // feedback submission since the customer token still proves they were a
+    // legitimate user of this session.
+    let active: any = null;
+    const activeSnap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
+    if (activeSnap.exists) {
+      active = activeSnap.data();
+    } else {
+      const closedSnap = await db.doc(`stores/${storeId}/closedSessions/${sessionId}`).get();
+      if (closedSnap.exists) {
+        active = closedSnap.data();
+      }
+    }
+    if (!active) return bad("Session not found.", 404);
 
     const createdAtClientMs = Date.now();
     const createdByUid = String(decoded.uid || "");

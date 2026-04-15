@@ -141,7 +141,8 @@ export default function DashboardPage() {
         const data = snap.data() as any;
         // If the doc became unreadable / the access fields flipped, treat as ended.
         if (!data || data.customerAccessEnabled === false) {
-          router.replace("/closed");
+          const name = encodeURIComponent(session.customerName || "");
+          router.replace(`/closed?name=${name}`);
           return;
         }
         setIsLinked(!!data?.linkedCustomerPhone);
@@ -149,7 +150,8 @@ export default function DashboardPage() {
       (error) => {
         // permission-denied = cashier disabled customer access (most common cause)
         if ((error as any)?.code === "permission-denied") {
-          router.replace("/closed");
+          const name = encodeURIComponent(session.customerName || "");
+          router.replace(`/closed?name=${name}`);
         }
       }
     );

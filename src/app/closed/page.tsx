@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getAuth } from "firebase/auth";
 import { Star, Loader2, Sparkles } from "lucide-react";
 
@@ -16,9 +16,16 @@ function getCookie(name: string) {
   return decodeURIComponent(c.find((x) => x.startsWith(name + "="))?.split("=").slice(1).join("=") ?? "");
 }
 
-export default function SessionClosedPage() {
+function isPlaceholder(v: string) {
+  if (!v) return true;
+  const lower = v.trim().toLowerCase();
+  return lower === "" || lower === "customer" || lower === "sharelebrator" || lower === "guest";
+}
+
+function ClosedInner() {
   const router = useRouter();
-  const [customerName, setCustomerName] = useState<string>("Sharelebrator");
+  const search = useSearchParams();
+  const [customerName, setCustomerName] = useState<string>("");
   const [rating, setRating] = useState<number>(0);
   const [suggestion, setSuggestion] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -26,9 +33,18 @@ export default function SessionClosedPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const name = getCookie("session_customer");
-    if (name) setCustomerName(name);
-  }, []);
+    // Priority: URL ?name= (passed by dashboard at session-end) → cookie
+    // → empty (we'll just say "Thank you!" without a name).
+    const fromUrl = search?.get("name") ?? "";
+    if (fromUrl && !isPlaceholder(fromUrl)) {
+      setCustomerName(fromUrl);
+      return;
+    }
+    const fromCookie = getCookie("session_customer");
+    if (fromCookie && !isPlaceholder(fromCookie)) {
+      setCustomerName(fromCookie);
+    }
+  }, [search]);
 
   const stars = useMemo(() => [1, 2, 3, 4, 5], []);
 
@@ -116,7 +132,7 @@ export default function SessionClosedPage() {
               <Sparkles className="h-8 w-8 text-primary" />
             </div>
             <h1 className="text-xl sm:text-2xl font-black leading-tight">
-              Thank you{customerName !== "Sharelebrator" ? `, ${customerName}` : ""}!
+              Thank you{customerName ? `, ${customerName}` : ""}!
             </h1>
             <p className="text-sm text-zinc-600 leading-relaxed">
               Your session has ended. We are glad you sharelebrated here at SharEat.
@@ -187,5 +203,19 @@ export default function SessionClosedPage() {
         </CardContent>
       </Card>
     </main>
+  );
+}
+
+export default function SessionClosedPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen flex items-center justify-center bg-zinc-50">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </main>
+      }
+    >
+      <ClosedInner />
+    </Suspense>
   );
 }
