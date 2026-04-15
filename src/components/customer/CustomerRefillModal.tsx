@@ -13,6 +13,7 @@ import { Loader2, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useToast } from "@/hooks/use-toast";
+import { CenterAlert } from "./CenterAlert";
 
 import { getAuth } from "firebase/auth";
 import { useFirebase } from "@/firebase";
@@ -135,6 +136,11 @@ function CustomerRefillContent({
   const [cart, setCart] = useState<Map<string, CartItem>>(new Map());
   const [activeRefillId, setActiveRefillId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [alertState, setAlertState] = useState<{ open: boolean; title: string; message: string }>({
+    open: false,
+    title: "",
+    message: "",
+  });
   const [otherQty, setOtherQty] = useState<Record<string, number>>({});
 
   useEffect(() => {
@@ -271,7 +277,11 @@ function CustomerRefillContent({
         newFlavorIds = item.flavorIds.filter((id) => id !== flavorId);
       } else {
         if (item.flavorIds.length >= 3) {
-          toast({ variant: "destructive", title: "Flavor Limit", description: "Maximum of 3 flavors." });
+          setAlertState({
+            open: true,
+            title: "Flavor limit reached",
+            message: "Maximum of 3 flavors per refill. Uncheck one to pick another.",
+          });
           return prev;
         }
         newFlavorIds = [...item.flavorIds, flavorId];
@@ -307,20 +317,27 @@ function CustomerRefillContent({
     }
     const hasOther = Object.values(otherQty).some((v) => Number(v || 0) > 0);
     if (cart.size === 0 && !hasOther) {
-      toast({ variant: "destructive", title: "Empty", description: "Select at least one refill." });
+      setAlertState({
+        open: true,
+        title: "Empty order",
+        message: "Please select at least one refill before sending the order.",
+      });
       return;
     }
 
-    // validate each cart item
+    // validate each cart item — flavor is required when the global refill
+    // says so. (Previously this also checked sortedAllowedFlavors.length > 0,
+    // but that is scoped to the active refill in the side panel and would
+    // skip validation of *other* cart items.)
     for (const item of cart.values()) {
       const globalInfo = globalRefills.find((r) => r.id === item.refill.refillId);
-      if (globalInfo?.requiresFlavor && sortedAllowedFlavors.length > 0 && item.flavorIds.length === 0) {
-        toast({
-          variant: "destructive",
-          title: "Flavor Required",
-          description: `"${item.refill.refillName}" needs at least one flavor.`,
-        });
+      if (globalInfo?.requiresFlavor && item.flavorIds.length === 0) {
         setActiveRefillId(item.refill.refillId);
+        setAlertState({
+          open: true,
+          title: "Flavor required",
+          message: `Please choose at least one flavor for "${item.refill.refillName}" before sending the order.`,
+        });
         return;
       }
     }
@@ -420,6 +437,12 @@ function CustomerRefillContent({
 
   return (
     <div className="h-[70vh] flex flex-col">
+      <CenterAlert
+        open={alertState.open}
+        title={alertState.title}
+        message={alertState.message}
+        onClose={() => setAlertState((s) => ({ ...s, open: false }))}
+      />
       <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 p-4 overflow-y-auto">
         {/* Left: refills list */}
         <div className="md:col-span-1 border-r pr-4 flex flex-col">
