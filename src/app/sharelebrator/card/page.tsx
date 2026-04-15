@@ -227,7 +227,7 @@ export default function SharelebratorCardPage() {
             `}</style>
             <div
               className="relative w-full"
-              style={{ perspective: "1500px", height: "320px" }}
+              style={{ perspective: "1500px", height: "230px" }}
             >
               <div
                 className="relative w-full h-full transition-transform duration-700"
@@ -255,45 +255,45 @@ export default function SharelebratorCardPage() {
                       }}
                     />
                   </div>
-                  <CardContent className="relative p-6 h-full flex flex-col justify-between">
+                  <CardContent className="relative p-4 h-full flex flex-col justify-between">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Star className="h-5 w-5" fill="currentColor" />
-                        <span className="text-sm font-bold tracking-widest uppercase">Sharelebrator</span>
+                      <div className="flex items-center gap-1.5">
+                        <Star className="h-4 w-4" fill="currentColor" />
+                        <span className="text-xs font-bold tracking-widest uppercase">Sharelebrator</span>
                       </div>
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="text-white hover:bg-white/10 h-8 w-8 p-0"
+                        className="text-white hover:bg-white/10 h-7 w-7 p-0"
                         onClick={() => setEditOpen(true)}
                         aria-label="Edit profile"
                       >
-                        <Settings className="h-4 w-4" />
+                        <Settings className="h-3.5 w-3.5" />
                       </Button>
                     </div>
-                    <div>
-                      <p className="text-[10px] uppercase opacity-60 tracking-wider">Cardholder</p>
-                      <p className="text-2xl font-black leading-tight">{c.name}</p>
-                      <p className="text-sm font-mono opacity-80 mt-1">{c.phone}</p>
+                    <div className="leading-none space-y-0.5">
+                      <p className="text-[9px] uppercase opacity-60 tracking-wider">Cardholder</p>
+                      <p className="text-xl font-black leading-tight">{c.name}</p>
+                      <p className="text-xs font-mono opacity-80">{c.phone}</p>
                       {c.bday && (
-                        <p className="text-xs opacity-70 mt-0.5">
+                        <p className="text-[10px] opacity-70">
                           Birthday: {format(new Date(c.bday), "MMMM d")}
                         </p>
                       )}
                     </div>
-                    <div className="flex items-end justify-between pt-2 border-t border-white/10">
-                      <div>
-                        <p className="text-[10px] uppercase opacity-60 tracking-wider">Available Points</p>
-                        <p className="text-4xl font-black">{c.pointsBalance.toLocaleString()}</p>
+                    <div className="flex items-end justify-between pt-1.5 border-t border-white/10">
+                      <div className="leading-none">
+                        <p className="text-[9px] uppercase opacity-60 tracking-wider">Available Points</p>
+                        <p className="text-3xl font-black">{c.pointsBalance.toLocaleString()}</p>
                       </div>
                       <Button
                         size="sm"
                         variant="ghost"
                         onClick={handleRefresh}
                         disabled={refreshing}
-                        className="text-white hover:bg-white/10 h-8"
+                        className="text-white hover:bg-white/10 h-7"
                       >
-                        <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                        <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
                       </Button>
                     </div>
                   </CardContent>
@@ -309,17 +309,21 @@ export default function SharelebratorCardPage() {
                     transform: "rotateY(180deg)",
                   }}
                 >
-                  <CardContent className="relative p-5 h-full flex flex-col items-center justify-center gap-3">
-                    <div className="bg-white rounded-lg p-2.5 flex items-center justify-center">
-                      <QRCodeSVG value={c.phone} size={140} />
+                  <CardContent className="relative p-4 h-full flex items-center gap-4">
+                    <div className="bg-white rounded-lg p-2 flex items-center justify-center flex-shrink-0">
+                      <QRCodeSVG value={c.phone} size={150} />
                     </div>
-                    <div className="text-center">
-                      <p className="text-base font-bold leading-tight">{c.name}</p>
-                      <p className="text-xs opacity-70 font-mono mt-0.5">{c.phone}</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-[10px] uppercase opacity-60 tracking-wider">Balance</p>
-                      <p className="text-xl font-black">{c.pointsBalance.toLocaleString()} pts</p>
+                    <div className="flex-1 min-w-0 space-y-2">
+                      <div className="leading-none">
+                        <p className="text-[9px] uppercase opacity-60 tracking-wider">Cardholder</p>
+                        <p className="text-base font-bold leading-tight truncate">{c.name}</p>
+                        <p className="text-[10px] opacity-70 font-mono mt-0.5">{c.phone}</p>
+                      </div>
+                      <div className="leading-none pt-1 border-t border-white/10">
+                        <p className="text-[9px] uppercase opacity-60 tracking-wider">Balance</p>
+                        <p className="text-2xl font-black">{c.pointsBalance.toLocaleString()}</p>
+                        <p className="text-[10px] opacity-60">points</p>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -328,9 +332,8 @@ export default function SharelebratorCardPage() {
 
             {/* Flip toggle */}
             <Button
-              variant="outline"
               size="sm"
-              className="w-full"
+              className="w-full bg-primary hover:bg-primary/90 text-white font-semibold shadow"
               onClick={() => setFlipped((f) => !f)}
             >
               <QrCode className="h-4 w-4 mr-2" />
