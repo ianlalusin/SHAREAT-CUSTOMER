@@ -20,6 +20,7 @@ type PinRow = {
   sessionId?: string;
   status?: string;
   expiresAtMs?: number;
+  archivedAtMs?: number;
 };
 
 function fmtDate(ms?: number) {
@@ -66,7 +67,11 @@ export default function AdminHomePage() {
     return pins.filter((p) => (p.status === "active") && (p.expiresAtMs ?? 0) > now).length;
   }, [pins, now]);
 
-  const expiredCount = useMemo(() => pins.length - activeCount, [pins.length, activeCount]);
+  const archivedCount = useMemo(() => {
+    return pins.filter((p) => p.status === "archived").length;
+  }, [pins]);
+
+  const expiredCount = useMemo(() => pins.length - activeCount - archivedCount, [pins.length, activeCount, archivedCount]);
 
   useEffect(() => {
     if (!authReady || !isAuthed) return;
@@ -87,6 +92,7 @@ export default function AdminHomePage() {
             sessionId: x.sessionId,
             status: x.status,
             expiresAtMs: Number(x.expiresAtMs || 0),
+            archivedAtMs: x.archivedAtMs ? Number(x.archivedAtMs) : undefined,
           };
         });
         setPins(list);
@@ -204,6 +210,7 @@ export default function AdminHomePage() {
             <CardTitle className="text-xl font-black">PIN Registry</CardTitle>
             <div className="flex items-center gap-2">
               <Badge className="rounded-xl" variant="default">Active: {activeCount}</Badge>
+              <Badge className="rounded-xl" variant="outline">Archived: {archivedCount}</Badge>
               <Badge className="rounded-xl" variant="secondary">Expired: {expiredCount}</Badge>
             </div>
           </div>
@@ -249,16 +256,19 @@ export default function AdminHomePage() {
                 </thead>
                 <tbody className="divide-y">
                   {pins.map((p) => {
-                    const expired = (p.expiresAtMs ?? 0) <= Date.now();
+                    const isArchived = p.status === "archived";
+                    const expired = !isArchived && (p.expiresAtMs ?? 0) <= Date.now();
                     const isActive = p.status === "active" && !expired;
+                    const statusLabel = isArchived ? "ARCHIVED" : isActive ? "ACTIVE" : "EXPIRED";
+                    const statusVariant = isArchived ? "outline" : isActive ? "default" : "secondary";
                     return (
                       <tr key={p.id} className="hover:bg-zinc-50/60">
                         <td className="px-5 py-3 font-black tracking-widest">{p.id}</td>
                         <td className="px-5 py-3">{getStoreName(p.storeId) /* dirBump keeps rerenders */}{dirBump ? '' : ''}</td>
                         <td className="px-5 py-3">{p.sessionId || "-"}</td>
                         <td className="px-5 py-3">
-                          <Badge className="rounded-xl" variant={isActive ? "default" : "secondary"}>
-                            {isActive ? "ACTIVE" : "EXPIRED"}
+                          <Badge className="rounded-xl" variant={statusVariant as any}>
+                            {statusLabel}
                           </Badge>
                         </td>
                         <td className="px-5 py-3 text-zinc-500">{fmtDate(p.expiresAtMs)}</td>
