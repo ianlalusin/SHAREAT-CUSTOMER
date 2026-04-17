@@ -32,6 +32,7 @@ export async function GET(req: Request) {
     if (!storeId || !sessionId) return bad("Session claims missing storeId/sessionId.", 403);
 
     const activeSnap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
+    if (!activeSnap.exists) return NextResponse.json({ ok: true, linked: false });
     sessionData = activeSnap.data();
     phone = sessionData?.linkedCustomerPhone ?? null;
     locked = !!sessionData?.linkedCustomerLockedAt;

@@ -13,6 +13,7 @@ const MAX_ENTRIES_PER_PART = 500;
 export type LoyaltyLogType =
   | "account_created"
   | "points_earned"
+  | "points_transferred"
   | "password_reset"
   | "login"
   | "login_failed";

@@ -86,7 +86,13 @@ export function FlashAdOverlay({ open, onClose, ads }: Props) {
     if (ad.clickBehavior === "redirect" && ad.redirectUrl) {
       let url = ad.redirectUrl.trim();
       if (!/^https?:\/\//i.test(url)) url = "https://" + url;
-      window.open(url, "_blank", "noopener,noreferrer");
+      // Only allow http/https schemes
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+          window.open(url, "_blank", "noopener,noreferrer");
+        }
+      } catch {}
     }
     handleClose();
   }

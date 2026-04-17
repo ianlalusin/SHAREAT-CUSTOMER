@@ -71,6 +71,7 @@ export function SharelebratorTransferDialog({ open, onOpenChange, senderPhone, s
 
     const pts = parseInt(points, 10);
     if (!pts || pts <= 0) { setError("Enter a valid number of points."); return; }
+    if (pts > 50) { setError("Maximum 50 points per transfer (daily send limit)."); return; }
     if (pts > senderBalance) { setError(`You only have ${senderBalance} points.`); return; }
 
     setLoading(true);
@@ -104,7 +105,7 @@ export function SharelebratorTransferDialog({ open, onOpenChange, senderPhone, s
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({ recipientPhone: phone, points: parseInt(points, 10) }),
       });
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.ok) {
         throw new Error(json.error || "Transfer failed.");
       }
@@ -144,16 +145,16 @@ export function SharelebratorTransferDialog({ open, onOpenChange, senderPhone, s
                 <Label>Points to Send</Label>
                 <Input
                   type="number"
-                  placeholder="e.g. 50"
+                  placeholder="e.g. 5"
                   min={1}
-                  max={senderBalance}
+                  max={50}
                   value={points}
                   onChange={(e) => setPoints(e.target.value)}
                   required
                   disabled={loading}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Available: <b>{senderBalance.toLocaleString()}</b> pts
+                  Available: <b>{senderBalance.toLocaleString()}</b> pts &middot; Max <b>50</b> pts/day
                 </p>
               </div>
               {error && <p className="text-sm text-destructive">{error}</p>}

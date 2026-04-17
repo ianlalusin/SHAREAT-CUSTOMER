@@ -195,11 +195,41 @@ export default function FlashAdsPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  const MAX_WIDTH = 800;
+  const JPEG_QUALITY = 0.7;
+  const MAX_FILE_SIZE = 500 * 1024; // 500KB
+
+  async function compressImage(file: File): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > MAX_WIDTH) {
+          height = Math.round(height * (MAX_WIDTH / width));
+          width = MAX_WIDTH;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => (blob ? resolve(blob) : reject(new Error("Compression failed"))),
+          "image/jpeg",
+          JPEG_QUALITY
+        );
+      };
+      img.onerror = () => reject(new Error("Failed to load image"));
+      img.src = URL.createObjectURL(file);
+    });
+  }
+
   async function uploadAdImage(file: File): Promise<{ url: string; path: string }> {
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const compressed = await compressImage(file);
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/\.[^.]+$/, "") + ".jpg";
     const path = `flashAdImages/${storeId}/${Date.now()}-${safeName}`;
     const r = ref(storage, path);
-    await uploadBytes(r, file, { contentType: file.type || "image/jpeg" });
+    await uploadBytes(r, compressed, { contentType: "image/jpeg" });
     const url = await getDownloadURL(r);
     return { url, path };
   }
@@ -393,7 +423,14 @@ export default function FlashAdsPage() {
                     type="file"
                     accept="image/*"
                     className="hidden"
-                    onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] || null;
+                      if (f && f.size > 5 * 1024 * 1024) {
+                        toast({ title: "File too large", description: "Max 5MB. Image will be compressed to ~150KB on upload.", variant: "destructive" });
+                        return;
+                      }
+                      setImageFile(f);
+                    }}
                   />
                   {imageFile && (
                     <Button

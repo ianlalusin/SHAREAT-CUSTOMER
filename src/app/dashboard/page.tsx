@@ -36,7 +36,8 @@ type SessionDTO = {
 function getCookie(name: string) {
   if (typeof document === "undefined") return "";
   const c = document.cookie.split(";").map((v) => v.trim());
-  return c.find((x) => x.startsWith(name + "="))?.split("=").slice(1).join("=") ?? "";
+  const raw = c.find((x) => x.startsWith(name + "="))?.split("=").slice(1).join("=") ?? "";
+  try { return decodeURIComponent(raw); } catch { return raw; }
 }
 
 function getSessionKeyForFeedback() {

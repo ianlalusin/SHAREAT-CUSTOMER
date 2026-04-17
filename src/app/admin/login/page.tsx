@@ -35,6 +35,7 @@ export default function AdminLoginPage() {
         title: "Login failed",
         description: err?.message ?? "Invalid credentials.",
       });
+    } finally {
       setIsBusy(false);
     }
   }
@@ -52,6 +53,7 @@ export default function AdminLoginPage() {
         title: "Google sign-in failed",
         description: err?.message ?? "Could not sign in with Google.",
       });
+    } finally {
       setIsBusy(false);
     }
   }

@@ -144,6 +144,8 @@ export async function POST(req: Request) {
     if (!address) return bad("Address is required.");
     const bday = String(body.bday || "").trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(bday)) return bad("Birthday must be YYYY-MM-DD.");
+    const bdayDate = new Date(bday + "T00:00:00");
+    if (isNaN(bdayDate.getTime()) || bdayDate.toISOString().slice(0, 10) !== bday) return bad("Invalid date.");
     const email = body.email ? String(body.email).trim() : undefined;
 
     const passwordHash = await bcrypt.hash(password, 10);

@@ -7,6 +7,7 @@ import { Star } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -16,6 +17,7 @@ type Props = {
 };
 
 export function CustomerFeedbackModal({ open, onOpenChange, customerName }: Props) {
+  const { toast } = useToast();
   const [rating, setRating] = useState<number>(0);
   const [suggestion, setSuggestion] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -69,7 +71,7 @@ export function CustomerFeedbackModal({ open, onOpenChange, customerName }: Prop
       setSubmitted(true);
       try { window.dispatchEvent(new CustomEvent("customer-feedback-submitted")); } catch {}
     } catch (e: any) {
-      alert((e && e.message) ? e.message : "Submit failed.");
+      toast({ variant: "destructive", title: "Submit failed", description: (e && e.message) ? e.message : "Something went wrong." });
     } finally {
       setIsSubmitting(false);
     }
