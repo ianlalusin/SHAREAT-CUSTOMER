@@ -14,7 +14,7 @@ import { CustomerCatalog } from "@/components/customer/CustomerCatalog";
 import { CustomerFeedbackModal } from "@/components/customer/CustomerFeedbackModal";
 import { SharelebratorMiniCard } from "@/components/customer/SharelebratorMiniCard";
 import { SharelebratorCardView } from "@/components/customer/SharelebratorCardView";
-import { FlashAdOverlay } from "@/components/customer/FlashAdOverlay";
+import { FlashAdOverlay, type FlashAdItem } from "@/components/customer/FlashAdOverlay";
 import { FlashAdBadge } from "@/components/customer/FlashAdBadge";
 import { getAuth } from "firebase/auth";
 import { useFirestore } from "@/firebase/provider";
@@ -64,11 +64,7 @@ export default function DashboardPage() {
   const [isLinked, setIsLinked] = useState(false);
 
   // Flash ad state
-  const [flashAd, setFlashAd] = useState<{
-    imageUrl: string;
-    clickBehavior: "close" | "redirect";
-    redirectUrl?: string | null;
-  } | null>(null);
+  const [flashAds, setFlashAds] = useState<FlashAdItem[]>([]);
   const [showFlashAdOverlay, setShowFlashAdOverlay] = useState(false);
   const [flashAdAutoShown, setFlashAdAutoShown] = useState(false);
 
@@ -168,18 +164,17 @@ export default function DashboardPage() {
     );
   }, [firestore, session, router]);
 
-  // Listen for active flash ads and pick one randomly
+  // Listen for all active flash ads
   useEffect(() => {
     if (!firestore || !session) return;
     const adsRef = collection(firestore, "stores", session.storeId, "flashAds");
     return onSnapshot(
       adsRef,
       (snap) => {
-        const activeAds = snap.docs
+        const active = snap.docs
           .map((d) => {
             const data = d.data() as any;
             return {
-              id: d.id,
               imageUrl: data.imageUrl as string,
               clickBehavior: (data.clickBehavior === "redirect" ? "redirect" : "close") as "close" | "redirect",
               redirectUrl: (data.redirectUrl || null) as string | null,
@@ -188,34 +183,18 @@ export default function DashboardPage() {
           })
           .filter((a) => a.active && a.imageUrl);
 
-        if (activeAds.length === 0) { setFlashAd(null); return; }
-
-        // Pick a random ad, avoiding the one currently shown if possible
-        const seenKey = `flashAdLastId:${session.storeId}:${session.sessionId}`;
-        let lastId = "";
-        try { lastId = sessionStorage.getItem(seenKey) || ""; } catch {}
-
-        const unseen = activeAds.filter((a) => a.id !== lastId);
-        const pool = unseen.length > 0 ? unseen : activeAds;
-        const picked = pool[Math.floor(Math.random() * pool.length)];
-
-        try { sessionStorage.setItem(seenKey, picked.id); } catch {}
-        setFlashAd({
-          imageUrl: picked.imageUrl,
-          clickBehavior: picked.clickBehavior,
-          redirectUrl: picked.redirectUrl,
-        });
+        setFlashAds(active);
       },
       (err) => {
         console.error("[FlashAd] onSnapshot error:", err);
-        setFlashAd(null);
+        setFlashAds([]);
       }
     );
   }, [firestore, session]);
 
-  // Auto-show flash ad once per session
+  // Auto-show flash ads once per session
   useEffect(() => {
-    if (!flashAd || flashAdAutoShown || !session) return;
+    if (flashAds.length === 0 || flashAdAutoShown || !session) return;
     const key = `flashAdShown:${session.storeId}:${session.sessionId}`;
     try {
       if (sessionStorage.getItem(key)) {
@@ -226,7 +205,7 @@ export default function DashboardPage() {
     } catch {}
     setFlashAdAutoShown(true);
     setShowFlashAdOverlay(true);
-  }, [flashAd, flashAdAutoShown, session]);
+  }, [flashAds, flashAdAutoShown, session]);
 
   if (!isLoaded || loadingSession || !session) {
     return (
@@ -315,17 +294,15 @@ export default function DashboardPage() {
         customerName={session.customerName}
       />
 
-      {/* Flash Ad */}
-      {flashAd && (
+      {/* Flash Ad Stories */}
+      {flashAds.length > 0 && (
         <FlashAdOverlay
           open={showFlashAdOverlay}
           onClose={() => setShowFlashAdOverlay(false)}
-          imageUrl={flashAd.imageUrl}
-          clickBehavior={flashAd.clickBehavior}
-          redirectUrl={flashAd.redirectUrl}
+          ads={flashAds}
         />
       )}
-      {flashAd && !showFlashAdOverlay && (
+      {flashAds.length > 0 && !showFlashAdOverlay && (
         <FlashAdBadge onClick={() => setShowFlashAdOverlay(true)} />
       )}
     </main>
