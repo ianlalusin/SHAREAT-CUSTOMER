@@ -1,16 +1,18 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { getAuth } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 import { useFirestore } from "@/firebase/provider";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Star, Loader2, RefreshCw, Unlink2, Settings } from "lucide-react";
+import { Star, Loader2, RefreshCw, Unlink2, Settings, Send, Gift } from "lucide-react";
 import { format } from "date-fns";
 import { SharelebratorLinkCard } from "./SharelebratorLinkCard";
 import { SharelebratorProfileEditDialog } from "./SharelebratorProfileEditDialog";
+import { SharelebratorTransferDialog } from "./SharelebratorTransferDialog";
 
 interface Props {
   storeId: string;
@@ -31,22 +33,28 @@ type MeResponse = {
   };
   ledger?: {
     id: string;
-    type: "earn" | "redeem" | "adjust";
+    type: "earn" | "redeem" | "adjust" | "transfer_out" | "transfer_in";
     points: number;
     amount: number;
     storeId: string;
     sessionId: string;
     createdAtMs: number | null;
+    recipientName?: string | null;
+    recipientPhone?: string | null;
+    senderName?: string | null;
+    senderPhone?: string | null;
   }[];
 };
 
 export function SharelebratorCardView({ storeId, sessionId }: Props) {
+  const router = useRouter();
   const firestore = useFirestore();
   const [data, setData] = useState<MeResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [unlinking, setUnlinking] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
   const prevLinkRef = useRef<string | null>(null);
 
   const fetchMe = useCallback(async () => {
@@ -183,15 +191,35 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
               <p className="text-[10px] uppercase opacity-60 tracking-wider">Available Points</p>
               <p className="text-4xl font-black">{c.pointsBalance.toLocaleString()}</p>
             </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="text-white hover:bg-white/10 h-8"
-            >
-              <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => router.push("/sharelebrator/redeem")}
+                className="text-white hover:bg-white/10 h-8 gap-1.5 text-xs"
+              >
+                <Gift className="h-3.5 w-3.5" />
+                Redeem
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setTransferOpen(true)}
+                className="text-white hover:bg-white/10 h-8 gap-1.5 text-xs"
+              >
+                <Send className="h-3.5 w-3.5" />
+                Transfer
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="text-white hover:bg-white/10 h-8"
+              >
+                <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -222,7 +250,13 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
                     <TableCell className="text-xs">
                       {entry.createdAtMs ? format(new Date(entry.createdAtMs), "MMM d, h:mma") : "—"}
                     </TableCell>
-                    <TableCell className="text-xs capitalize">{entry.type}</TableCell>
+                    <TableCell className="text-xs">
+                      {entry.type === "transfer_out"
+                        ? `Sent to ${entry.recipientName || "—"}`
+                        : entry.type === "transfer_in"
+                          ? `From ${entry.senderName || "—"}`
+                          : <span className="capitalize">{entry.type}</span>}
+                    </TableCell>
                     <TableCell className="text-xs text-right font-mono">
                       ₱{entry.amount.toLocaleString()}
                     </TableCell>
@@ -270,6 +304,14 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
           bday: c.bday,
         }}
         onSaved={fetchMe}
+      />
+
+      <SharelebratorTransferDialog
+        open={transferOpen}
+        onOpenChange={setTransferOpen}
+        senderPhone={c.phone}
+        senderBalance={c.pointsBalance}
+        onTransferred={fetchMe}
       />
     </div>
   );

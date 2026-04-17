@@ -65,6 +65,10 @@ export async function GET(req: Request) {
       storeId: data.storeId,
       sessionId: data.sessionId,
       createdAtMs: ts,
+      recipientName: data.recipientName ?? null,
+      recipientPhone: data.recipientPhone ?? null,
+      senderName: data.senderName ?? null,
+      senderPhone: data.senderPhone ?? null,
     };
   });
 
