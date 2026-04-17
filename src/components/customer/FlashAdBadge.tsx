@@ -16,7 +16,7 @@ export function FlashAdBadge({ onClick }: Props) {
   useEffect(() => {
     const interval = setInterval(() => {
       setEmojiIndex((i) => (i + 1) % EMOJIS.length);
-    }, 800);
+    }, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -41,10 +41,9 @@ export function FlashAdBadge({ onClick }: Props) {
           75% { transform: scale(1.08) rotate(4deg); }
         }
         @keyframes flashAdEmojiSwap {
-          0% { transform: scale(1); opacity: 1; }
-          40% { transform: scale(0.3); opacity: 0; }
-          60% { transform: scale(0.3); opacity: 0; }
-          100% { transform: scale(1); opacity: 1; }
+          0% { transform: scale(0.3); opacity: 0; }
+          8% { transform: scale(1.15); opacity: 1; }
+          15%, 100% { transform: scale(1); opacity: 1; }
         }
       `}</style>
       <button
@@ -59,7 +58,7 @@ export function FlashAdBadge({ onClick }: Props) {
       >
         <span
           className="text-2xl leading-none select-none pointer-events-none"
-          style={{ animation: "flashAdEmojiSwap 0.8s ease-in-out infinite" }}
+          style={{ animation: "flashAdEmojiSwap 0.4s ease-out" }}
           key={emojiIndex}
         >
           {EMOJIS[emojiIndex]}

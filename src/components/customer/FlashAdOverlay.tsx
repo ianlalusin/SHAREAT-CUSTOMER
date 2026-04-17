@@ -22,7 +22,7 @@ export function FlashAdOverlay({ open, onClose, imageUrl, clickBehavior, redirec
   // Auto-dismiss after 5 seconds
   useEffect(() => {
     if (!open) return;
-    const t = setTimeout(() => onClose(), 5000);
+    const t = setTimeout(() => onClose(), 15000);
     return () => clearTimeout(t);
   }, [open, onClose]);
 
@@ -67,7 +67,7 @@ export function FlashAdOverlay({ open, onClose, imageUrl, clickBehavior, redirec
           <div
             className="h-full bg-white/80 rounded-b-2xl"
             style={{
-              animation: "flashAdCountdown 5s linear forwards",
+              animation: "flashAdCountdown 15s linear forwards",
             }}
           />
         </div>
