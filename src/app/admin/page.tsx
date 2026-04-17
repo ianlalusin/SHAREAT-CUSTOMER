@@ -7,12 +7,10 @@ import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
 import { useFirebase } from "@/firebase";
 import { useToast } from "@/hooks/use-toast";
 
-import { STORE_DIRECTORY, getStoreName } from "@/lib/store-directory";
-import { StoreDirectoryModal } from "@/components/admin/StoreDirectoryModal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, LogOut, Package, RefreshCw, Settings, MessageSquare, Trash2 } from "lucide-react";
+import { Loader2, LogOut, Package, RefreshCw, MessageSquare, Megaphone, Trash2 } from "lucide-react";
 
 type PinRow = {
   id: string; // PIN itself (doc id)
@@ -44,8 +42,7 @@ export default function AdminHomePage() {
   const [isLoadingPins, setIsLoadingPins] = useState(true);
   const [isCleaningPins, setIsCleaningPins] = useState(false);
   const [deletingPin, setDeletingPin] = useState<string | null>(null);
-  const [dirOpen, setDirOpen] = useState(false);
-  const [dirBump, setDirBump] = useState(0);
+  const [storeNames, setStoreNames] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const auth = getAuth();
@@ -60,6 +57,28 @@ export default function AdminHomePage() {
     });
     return () => unsub();
   }, [router]);
+
+  // Fetch store names from Firestore via API
+  useEffect(() => {
+    if (!authReady || !isAuthed) return;
+    (async () => {
+      try {
+        const user = getAuth().currentUser;
+        if (!user) return;
+        const idToken = await user.getIdToken();
+        const res = await fetch("/api/admin/my-stores", {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        const list: { storeId: string; name: string }[] = Array.isArray(data?.stores) ? data.stores : [];
+        const map: Record<string, string> = {};
+        for (const s of list) {
+          if (s.storeId) map[s.storeId] = s.name || s.storeId;
+        }
+        setStoreNames(map);
+      } catch {}
+    })();
+  }, [authReady, isAuthed]);
 
   const now = Date.now();
 
@@ -184,7 +203,7 @@ export default function AdminHomePage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Button
           onClick={() => router.push("/admin/items")}
           className="h-16 rounded-2xl font-black text-lg gap-3"
@@ -202,6 +221,14 @@ export default function AdminHomePage() {
           Feedbacks
         </Button>
 
+        <Button
+          onClick={() => router.push("/admin/flash-ads")}
+          variant="outline"
+          className="h-16 rounded-2xl font-black text-lg gap-3"
+        >
+          <Megaphone className="h-5 w-5" />
+          Flash Ads
+        </Button>
       </div>
 
       <Card className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-white">
@@ -264,7 +291,7 @@ export default function AdminHomePage() {
                     return (
                       <tr key={p.id} className="hover:bg-zinc-50/60">
                         <td className="px-5 py-3 font-black tracking-widest">{p.id}</td>
-                        <td className="px-5 py-3">{getStoreName(p.storeId) /* dirBump keeps rerenders */}{dirBump ? '' : ''}</td>
+                        <td className="px-5 py-3">{(p.storeId && storeNames[p.storeId]) || p.storeId || "-"}</td>
                         <td className="px-5 py-3">{p.sessionId || "-"}</td>
                         <td className="px-5 py-3">
                           <Badge className="rounded-xl" variant={statusVariant as any}>
@@ -300,22 +327,6 @@ export default function AdminHomePage() {
         </CardContent>
       </Card>
 
-      {/* Gear (bottom-right) */}
-      <button
-        onClick={() => setDirOpen(true)}
-        className="fixed bottom-6 right-6 z-50 h-12 w-12 rounded-full bg-white shadow-xl border flex items-center justify-center hover:bg-zinc-50"
-        aria-label="Store directory"
-      >
-        <Settings className="h-5 w-5 text-zinc-700" />
-      </button>
-
-      <StoreDirectoryModal
-        open={dirOpen}
-        onOpenChange={setDirOpen}
-        storeIds={pins.map((p) => String(p.storeId || "")).filter(Boolean)}
-        defaults={STORE_DIRECTORY}
-        onChanged={() => setDirBump((x) => x + 1)}
-      />
     </main>
   );
 }

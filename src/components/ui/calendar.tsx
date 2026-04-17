@@ -25,12 +25,14 @@ function Calendar({
         caption: "flex justify-center pt-1 relative items-center",
         caption_label: "text-sm font-medium",
         nav: "space-x-1 flex items-center",
-        nav_button: cn(
+        button_previous: cn(
           buttonVariants({ variant: "outline" }),
-          "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100"
+          "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 absolute left-1"
         ),
-        nav_button_previous: "absolute left-1",
-        nav_button_next: "absolute right-1",
+        button_next: cn(
+          buttonVariants({ variant: "outline" }),
+          "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 absolute right-1"
+        ),
         table: "w-full border-collapse space-y-1",
         head_row: "flex",
         head_cell:
@@ -41,25 +43,25 @@ function Calendar({
           buttonVariants({ variant: "ghost" }),
           "h-9 w-9 p-0 font-normal aria-selected:opacity-100"
         ),
-        day_range_end: "day-range-end",
-        day_selected:
+        range_end: "day-range-end",
+        selected:
           "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
-        day_today: "bg-accent text-accent-foreground",
-        day_outside:
+        today: "bg-accent text-accent-foreground",
+        outside:
           "day-outside text-muted-foreground aria-selected:bg-accent/50 aria-selected:text-muted-foreground",
-        day_disabled: "text-muted-foreground opacity-50",
-        day_range_middle:
+        disabled: "text-muted-foreground opacity-50",
+        range_middle:
           "aria-selected:bg-accent aria-selected:text-accent-foreground",
-        day_hidden: "invisible",
+        hidden: "invisible",
         ...classNames,
       }}
       components={{
-        IconLeft: ({ className, ...props }) => (
-          <ChevronLeft className={cn("h-4 w-4", className)} {...props} />
-        ),
-        IconRight: ({ className, ...props }) => (
-          <ChevronRight className={cn("h-4 w-4", className)} {...props} />
-        ),
+        Chevron: ({ orientation, ...rest }) =>
+          orientation === "left" ? (
+            <ChevronLeft className="h-4 w-4" {...rest} />
+          ) : (
+            <ChevronRight className="h-4 w-4" {...rest} />
+          ),
       }}
       {...props}
     />

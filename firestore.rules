@@ -65,6 +65,12 @@ service cloud.firestore {
         allow write: if canAccessStore(storeId);
       }
 
+      // flash ads: customers + admin/manager can read; admin/manager can write
+      match /flashAds/{docId} {
+        allow read: if canAccessStore(storeId) || (isCustomer() && request.auth.token.storeId == storeId);
+        allow write: if canAccessStore(storeId);
+      }
+
       // everything else under store is blocked for now (POS app rules should be added explicitly)
       match /{subpath=**} {
         allow read, write: if false;
