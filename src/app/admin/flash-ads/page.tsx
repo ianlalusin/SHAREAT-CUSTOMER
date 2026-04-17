@@ -79,6 +79,7 @@ export default function FlashAdsPage() {
   // Form state
   const [editingId, setEditingId] = useState<string | null>(null); // null = create new
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
   const [clickBehavior, setClickBehavior] = useState<"close" | "redirect">("close");
   const [redirectUrl, setRedirectUrl] = useState("");
   const [active, setActive] = useState(true);
@@ -171,6 +172,7 @@ export default function FlashAdsPage() {
   function resetForm() {
     setEditingId(null);
     setImageFile(null);
+    setFileInputKey((k) => k + 1);
     setClickBehavior("close");
     setRedirectUrl("");
     setActive(true);
@@ -179,6 +181,7 @@ export default function FlashAdsPage() {
   function loadAdIntoForm(ad: FlashAdDoc) {
     setEditingId(ad.id);
     setImageFile(null);
+    setFileInputKey((k) => k + 1);
     setClickBehavior(ad.clickBehavior);
     setRedirectUrl(ad.redirectUrl || "");
     setActive(ad.active);
@@ -188,6 +191,7 @@ export default function FlashAdsPage() {
   function duplicateAd(ad: FlashAdDoc) {
     setEditingId(null); // create mode
     setImageFile(null);
+    setFileInputKey((k) => k + 1);
     setClickBehavior(ad.clickBehavior);
     setRedirectUrl(ad.redirectUrl || "");
     setActive(true);
@@ -420,6 +424,7 @@ export default function FlashAdsPage() {
                     {imageFile ? imageFile.name : "Choose image..."}
                   </span>
                   <input
+                    key={fileInputKey}
                     type="file"
                     accept="image/*"
                     className="hidden"
@@ -438,7 +443,7 @@ export default function FlashAdsPage() {
                       variant="ghost"
                       size="icon"
                       className="ml-auto h-7 w-7"
-                      onClick={(e) => { e.preventDefault(); setImageFile(null); }}
+                      onClick={(e) => { e.preventDefault(); setImageFile(null); setFileInputKey((k) => k + 1); }}
                     >
                       <X className="h-4 w-4" />
                     </Button>
