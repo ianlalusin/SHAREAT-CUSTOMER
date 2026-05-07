@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getAuth, signInWithCustomToken } from "firebase/auth";
 import { Loader2, AlertCircle } from "lucide-react";
@@ -29,7 +29,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   "This QR code is no longer valid. Please use the latest printed slip.": "This QR code is outdated. Please scan the latest printed slip.",
 };
 
-export default function JoinPage() {
+function JoinPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<"joining" | "error" | "redirecting">("joining");
@@ -129,5 +129,13 @@ export default function JoinPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function JoinPage() {
+  return (
+    <Suspense>
+      <JoinPageInner />
+    </Suspense>
   );
 }
