@@ -44,7 +44,10 @@ export async function POST(req: Request) {
     return bad(e.message, 403);
   }
 
-  const { storeId, sessionId, pin, joinVersion } = payload;
+  const storeId = payload.s;
+  const sessionId = payload.i;
+  const pin = payload.p;
+  const joinVersion = payload.v;
 
   const db = getAdminDb();
   const auth = getAdminAuth();
