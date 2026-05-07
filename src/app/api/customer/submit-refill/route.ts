@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { FieldValue } from "firebase-admin/firestore";
+import { validateActiveParticipant } from "@/lib/server/customer-participants";
 
 export const runtime = "nodejs";
 
@@ -14,17 +15,15 @@ export async function POST(req: Request) {
     const m = authz.match(/^Bearer\s+(.+)$/i);
     if (!m) return bad("Missing Authorization Bearer token.", 401);
 
-    const idToken = m[1];
-    const adminAuth = getAdminAuth();
-    const decoded = await adminAuth.verifyIdToken(idToken);
-
-    if ((decoded as any).customer !== true) return bad("Not a customer token.", 403);
+    const decoded = await getAdminAuth().verifyIdToken(m[1]);
+    if (decoded.customer !== true) return bad("Not a customer token.", 403);
 
     const storeId = String((decoded as any).storeId || "");
     const sessionId = String((decoded as any).sessionId || "");
+    const participantId = String((decoded as any).participantId || "");
     if (!storeId || !sessionId) return bad("Missing storeId/sessionId in token.", 403);
+    if (!participantId) return bad("Missing participantId in token. Please re-enter your PIN.", 403);
 
-    // Use this as createdByUid (POS expects a uid)
     const createdByUid = String(decoded.uid || "");
 
     const body = await req.json().catch(() => ({}));
@@ -33,25 +32,26 @@ export async function POST(req: Request) {
 
     const db = getAdminDb();
 
-    // Canonical session (POS projection)
     const activeRef = db.doc(`stores/${storeId}/activeSessions/${sessionId}`);
     const activeSnap = await activeRef.get();
     if (!activeSnap.exists) return bad("Session not found.", 404);
 
     const active = activeSnap.data() as any;
-
-    // Enforce customer access window
     if (active.customerAccessEnabled !== true) return bad("Customer access disabled.", 403);
     if (Number(active.customerAccessExpiresAtMs || 0) <= Date.now()) return bad("Customer access expired.", 403);
+
+    let participantInfo;
+    try {
+      participantInfo = await validateActiveParticipant(db, storeId, sessionId, participantId);
+    } catch (e: any) {
+      return bad(e.message, e.httpStatus || 403);
+    }
 
     const tableNumber = String(active.tableNumber || "");
     const sessionLabel = String(active.tableDisplayName || (tableNumber ? `Table ${tableNumber}` : ""));
     const sessionMode = String(active.sessionMode || "package_dinein");
     const customerName = active.customerName ?? null;
-
-    // POS uses a guestCount on tickets
-    const guestCount =
-      Number(active.guestCountFinal ?? active.guestCountCashierInitial ?? active.guestCount ?? 0) || 0;
+    const guestCount = Number(active.guestCountFinal ?? active.guestCountCashierInitial ?? active.guestCount ?? 0) || 0;
 
     const createdTicketIds: string[] = [];
 
@@ -61,18 +61,13 @@ export async function POST(req: Request) {
       const kitchenLocationId = String(it?.kitchenLocationId || "");
       const kitchenLocationName = String(it?.kitchenLocationName || "Kitchen");
       const qty = Number(it?.qty || 1);
-
       const notes = String(it?.notes || "");
 
       if (!itemId || !itemName) return bad("Invalid item payload.", 400);
       if (!kitchenLocationId) return bad("Missing kitchenLocationId.", 400);
 
-      const ticketRef = db
-        .collection(`stores/${storeId}/sessions/${sessionId}/kitchentickets`)
-        .doc();
-
+      const ticketRef = db.collection(`stores/${storeId}/sessions/${sessionId}/kitchentickets`).doc();
       const rtRef = db.doc(`stores/${storeId}/rtKdsTickets/${kitchenLocationId}`);
-
       const createdAtClientMs = Date.now();
 
       await db.runTransaction(async (tx: any) => {
@@ -84,74 +79,50 @@ export async function POST(req: Request) {
         const sessionIndex: Record<string, string[]> =
           rt.sessionIndex && typeof rt.sessionIndex === "object" ? { ...rt.sessionIndex } : {};
 
-        // POS-like ticket (match your sample fields)
         const ticket = {
           billLineId: null,
-
           createdAt: FieldValue.serverTimestamp(),
           createdAtClientMs,
           createdByUid,
-
+          createdByParticipantId: participantId,
+          createdBySlotNumber: participantInfo.slotNumber,
+          createdByJoinMethod: participantInfo.joinMethod,
           customerName,
-
-          // optional but present in many tickets; safe defaults
           durationMs: 0,
           guestCount,
-
           id: ticketRef.id,
-
           itemId,
           itemName,
-
           kitchenLocationId,
           kitchenLocationName,
-
           notes,
           qty,
-
-          // for OTHER_REFILLS grouped tickets
           refillRequest: (it && typeof it === "object" ? (it as any).refillRequest : undefined) ?? null,
-
           sessionId,
           sessionLabel,
           sessionMode,
-
           status: "preparing",
-
           storeId,
           tableNumber,
-
           type: "refill",
-
           updatedAt: FieldValue.serverTimestamp(),
         };
 
-        // 1) write the permanent ticket doc
         tx.set(ticketRef, ticket, { merge: false });
 
-        // 2) update rtKdsTickets projection EXACT shape
         tickets[ticketRef.id] = ticket;
-
         if (!activeIds.includes(ticketRef.id)) activeIds.unshift(ticketRef.id);
-
         const idxArr = Array.isArray(sessionIndex[sessionId]) ? [...sessionIndex[sessionId]] : [];
         if (!idxArr.includes(ticketRef.id)) idxArr.unshift(ticketRef.id);
         sessionIndex[sessionId] = idxArr;
 
-        tx.set(
-          rtRef,
-          {
-            kitchenLocationId,
-            activeIds,
-            sessionIndex,
-            tickets,
-            meta: {
-              source: "createKitchenTickets",
-              updatedAt: FieldValue.serverTimestamp(),
-            },
-          },
-          { merge: true }
-        );
+        tx.set(rtRef, {
+          kitchenLocationId,
+          activeIds,
+          sessionIndex,
+          tickets,
+          meta: { source: "createKitchenTickets", updatedAt: FieldValue.serverTimestamp() },
+        }, { merge: true });
       });
 
       createdTicketIds.push(ticketRef.id);

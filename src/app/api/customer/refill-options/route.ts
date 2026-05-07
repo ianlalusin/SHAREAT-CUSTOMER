@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import { validateActiveParticipant } from "@/lib/server/customer-participants";
 
 export const runtime = "nodejs";
 
@@ -13,19 +14,17 @@ export async function GET(req: Request) {
     const m = authz.match(/^Bearer\s+(.+)$/i);
     if (!m) return bad("Missing Authorization Bearer token.", 401);
 
-    const idToken = m[1];
-    const adminAuth = getAdminAuth();
-    const decoded = await adminAuth.verifyIdToken(idToken);
-
-    if ((decoded as any).customer !== true) return bad("Not a customer token.", 403);
+    const decoded = await getAdminAuth().verifyIdToken(m[1]);
+    if (decoded.customer !== true) return bad("Not a customer token.", 403);
 
     const storeId = String((decoded as any).storeId || "");
     const sessionId = String((decoded as any).sessionId || "");
+    const participantId = String((decoded as any).participantId || "");
     if (!storeId || !sessionId) return bad("Missing storeId/sessionId in token.", 403);
+    if (!participantId) return bad("Missing participantId in token. Please re-enter your PIN.", 403);
 
     const db = getAdminDb();
 
-    // load active session for packageOfferingId + initial flavors
     const sessSnap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
     if (!sessSnap.exists) return bad("Session not found.", 404);
 
@@ -33,10 +32,15 @@ export async function GET(req: Request) {
     if (sess.customerAccessEnabled !== true) return bad("Customer access disabled.", 403);
     if (Number(sess.customerAccessExpiresAtMs || 0) <= Date.now()) return bad("Customer access expired.", 403);
 
+    try {
+      await validateActiveParticipant(db, storeId, sessionId, participantId);
+    } catch (e: any) {
+      return bad(e.message, e.httpStatus || 403);
+    }
+
     const packageOfferingId = String(sess.packageOfferingId || "");
     const initialFlavorIds = Array.isArray(sess.initialFlavorIds) ? sess.initialFlavorIds : [];
 
-    // storeRefills
     const storeRefillsSnap = await db
       .collection(`stores/${storeId}/storeRefills`)
       .where("isEnabled", "==", true)
@@ -57,7 +61,6 @@ export async function GET(req: Request) {
       };
     });
 
-    // global refills
     const refillsSnap = await db.collection("refills").where("isActive", "==", true).get();
     const refills = refillsSnap.docs.map((d) => {
       const x = d.data() as any;
@@ -69,7 +72,6 @@ export async function GET(req: Request) {
       };
     });
 
-    // store flavors
     const flavorsSnap = await db
       .collection(`stores/${storeId}/storeFlavors`)
       .where("isEnabled", "==", true)
@@ -85,7 +87,6 @@ export async function GET(req: Request) {
       };
     });
 
-    // package (optional)
     let currentPackage: any = null;
     if (packageOfferingId) {
       const pkgSnap = await db.doc(`stores/${storeId}/storePackages/${packageOfferingId}`).get();
