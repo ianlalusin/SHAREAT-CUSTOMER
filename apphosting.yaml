@@ -8,3 +8,7 @@ runConfig:
 env:
   - variable: SERVICE_ACCOUNT_KEY_JSON
     secret: FIREBASE_SERVICE_ACCOUNT_KEY
+  - variable: CUSTOMER_JOIN_TOKEN_SECRET
+    secret: CUSTOMER_JOIN_TOKEN_SECRET
+    availability:
+      - RUNTIME
