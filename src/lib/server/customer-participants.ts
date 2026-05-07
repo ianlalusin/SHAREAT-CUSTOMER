@@ -82,6 +82,10 @@ export async function claimOrReuseParticipantSlot(
       );
     }
 
+    // slotNumber is derived from the transaction snapshot of activeCount.
+    // Firestore serializes transactions — if sessionRef changes between this read
+    // and commit (concurrent join), this transaction retries with the updated count,
+    // so slotNumbers are unique across concurrent joins.
     const slotNumber = activeCount + 1;
     const claimedByUid = `cust_part_${participantDocId}`;
 
@@ -145,11 +149,13 @@ export async function endAllParticipants(
   const snap = await ref.where("status", "==", "active").get();
   if (snap.empty) return 0;
 
+  const sessionRef = db.doc(`stores/${storeId}/activeSessions/${sessionId}`);
   const batch = db.batch();
   const nowTs = FieldValue.serverTimestamp();
   for (const d of snap.docs) {
     batch.update(d.ref, { status, revokedAt: nowTs, revokedByUid: byUid, revokeReason: reason });
   }
+  batch.update(sessionRef, { customerParticipantActiveCount: 0 });
   await batch.commit();
   return snap.size;
 }
