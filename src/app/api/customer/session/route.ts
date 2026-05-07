@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import { validateActiveParticipant } from "@/lib/server/customer-participants";
 
 export const runtime = "nodejs";
 
@@ -13,32 +14,34 @@ export async function GET(req: Request) {
     const m = authz.match(/^Bearer\s+(.+)$/i);
     if (!m) return bad("Missing Authorization Bearer token.", 401);
 
-    const idToken = m[1];
-    const adminAuth = getAdminAuth();
-    const decoded = await adminAuth.verifyIdToken(idToken);
-
-    // must be a customer token
+    const decoded = await getAdminAuth().verifyIdToken(m[1]);
     if (decoded.customer !== true) return bad("Not a customer token.", 403);
 
     const storeId = String((decoded as any).storeId || "");
     const sessionId = String((decoded as any).sessionId || "");
+    const participantId = String((decoded as any).participantId || "");
     if (!storeId || !sessionId) return bad("Missing storeId/sessionId in token.", 403);
+    if (!participantId) return bad("Missing participantId in token. Please re-enter your PIN.", 403);
 
     const db = getAdminDb();
 
-    // canonical source of truth (POS projection)
     const snap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
     if (!snap.exists) return bad("Session not found.", 404);
 
     const s = snap.data() as any;
 
-    // Customer access window:
-    // Some POS setups don't project these fields yet, so we only enforce when present.
     if (Object.prototype.hasOwnProperty.call(s, "customerAccessEnabled") && s.customerAccessEnabled !== true) {
       return bad("Customer access disabled.", 403);
     }
     if (Object.prototype.hasOwnProperty.call(s, "customerAccessExpiresAtMs") && Number(s.customerAccessExpiresAtMs || 0) <= Date.now()) {
       return bad("Customer access expired.", 403);
+    }
+
+    let participantInfo;
+    try {
+      participantInfo = await validateActiveParticipant(db, storeId, sessionId, participantId);
+    } catch (e: any) {
+      return bad(e.message, e.httpStatus || 403);
     }
 
     return NextResponse.json({
@@ -55,6 +58,9 @@ export async function GET(req: Request) {
         initialFlavorIds: Array.isArray(s.initialFlavorIds) ? s.initialFlavorIds : [],
         status: String(s.status || ""),
         sessionMode: String(s.sessionMode || ""),
+        participantId,
+        slotNumber: participantInfo.slotNumber,
+        participantStatus: "active",
       },
     });
   } catch (e: any) {
