@@ -9,6 +9,20 @@ import { Lock, Loader2, Star } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getAuth, signInWithCustomToken } from "firebase/auth";
 
+function getOrCreateDeviceId(): string {
+  try {
+    const key = "shareat_device_id";
+    let id = localStorage.getItem(key);
+    if (!id) {
+      id = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      localStorage.setItem(key, id);
+    }
+    return id;
+  } catch {
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+}
+
 export default function PinAccessPage() {
   const [pin, setPin] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -43,10 +57,11 @@ export default function PinAccessPage() {
 
     setIsLoading(true);
     try {
+      const deviceId = getOrCreateDeviceId();
       const res = await fetch("/api/customer/exchange-pin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin: cleanPin }),
+        body: JSON.stringify({ pin: cleanPin, deviceId }),
       });
 
       const json = (await res.json().catch(() => ({}))) as any;
