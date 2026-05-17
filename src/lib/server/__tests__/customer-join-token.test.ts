@@ -7,7 +7,6 @@ const { signJoinToken, verifyJoinToken } = await import("../customer-join-token"
 const validPayload = {
   s: "store1",
   i: "sess1",
-  p: "ABC123",
   v: 1,
   e: Math.floor((Date.now() + 60_000) / 1000),
 };
@@ -17,7 +16,8 @@ describe("signJoinToken / verifyJoinToken", () => {
     const token = signJoinToken(validPayload);
     const decoded = verifyJoinToken(token);
     expect(decoded.s).toBe("store1");
-    expect(decoded.p).toBe("ABC123");
+    expect(decoded.i).toBe("sess1");
+    expect(decoded.v).toBe(1);
   });
 
   it("rejects a tampered token", () => {

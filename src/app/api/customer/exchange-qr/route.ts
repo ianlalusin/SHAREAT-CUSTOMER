@@ -46,7 +46,6 @@ export async function POST(req: Request) {
 
   const storeId = payload.s;
   const sessionId = payload.i;
-  const pin = payload.p;
   const joinVersion = payload.v;
 
   const db = getAdminDb();
@@ -65,10 +64,6 @@ export async function POST(req: Request) {
     return bad("This QR code is no longer valid. Please use the latest printed slip.", 403);
   }
 
-  if (sess.customerPin !== pin) {
-    return bad("This QR code is no longer valid. Please use the latest printed slip.", 403);
-  }
-
   let slot;
   try {
     slot = await claimOrReuseParticipantSlot(db, {
@@ -76,7 +71,7 @@ export async function POST(req: Request) {
       sessionId,
       deviceIdHash,
       joinMethod: "qr",
-      pinSnapshot: pin,
+      pinSnapshot: String(sess.customerPin || ""),
       customerNameSnapshot: sess.customerName ?? null,
       tableDisplayNameSnapshot: sess.tableDisplayName ?? null,
     });

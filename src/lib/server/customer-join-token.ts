@@ -3,7 +3,6 @@ import { createHmac } from "crypto";
 export interface JoinTokenPayload {
   s: string;  // storeId
   i: string;  // sessionId
-  p: string;  // pin
   v: number;  // joinVersion
   e: number;  // exp (Unix seconds)
 }
