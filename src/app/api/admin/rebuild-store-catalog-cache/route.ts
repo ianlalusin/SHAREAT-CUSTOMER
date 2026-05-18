@@ -50,6 +50,51 @@ export async function POST(req: Request) {
       if (id) prevById.set(id, it);
     }
 
+    // Index the global docs once so we can also refresh link metadata on items
+    // already cached for this store (links are global, not store-overridden).
+    const globalById = new Map<string, any>();
+    for (const d of qSnap.docs) globalById.set(d.id, d.data() as any);
+
+    // Per-store POS inventory keyed by productId. Used to resolve the live
+    // sellingPrice for any linked customer item. When linked, POS price wins.
+    const invSnap = await db.collection(`stores/${storeId}/inventory`).get();
+    const invByProductId = new Map<string, any>();
+    for (const d of invSnap.docs) {
+      const x = d.data() as any;
+      if (x?.isActive === false) continue;
+      if (x?.isArchived === true) continue;
+      const pid = String(x?.productId || "");
+      if (pid) invByProductId.set(pid, x);
+    }
+
+    /**
+     * Returns the price to write into the per-store cache for a given item.
+     * - If linked to a POS product AND that product's inventory has a valid
+     *   positive sellingPrice in this store, POS wins (overwrites customer price).
+     * - Otherwise fall back to the customer-set price.
+     */
+    function resolvePrice(linkedPosProductId: any, fallback: number): number {
+      if (!linkedPosProductId) return fallback;
+      const inv = invByProductId.get(String(linkedPosProductId));
+      if (!inv) return fallback;
+      const sp = Number(inv.sellingPrice ?? 0);
+      if (!Number.isFinite(sp) || sp <= 0) return fallback;
+      return sp;
+    }
+
+    const refreshedPrevItems = prevItems.map((it: any) => {
+      const g = globalById.get(String(it?.id || ""));
+      if (!g) return it;
+      const linkedId = g.linkedPosProductId ?? null;
+      const fallbackPrice = Number(it?.price ?? g.price ?? 0);
+      return {
+        ...it,
+        linkedPosProductId: linkedId,
+        linkedPosProductName: g.linkedPosProductName ?? null,
+        price: resolvePrice(linkedId, fallbackPrice),
+      };
+    });
+
     const missingItems = qSnap.docs
       .map((d) => {
         const x = d.data() as any;
@@ -59,22 +104,26 @@ export async function POST(req: Request) {
 
         const globalDisabled = (x.isAvailable === false);
         const globalAvailable = !globalDisabled;
+        const linkedId = x.linkedPosProductId ?? null;
+        const fallbackPrice = Number(x.price ?? 0);
 
         return {
           id: d.id,
           name: String(x.name ?? ""),
           category: String(x.category ?? ""),
           imageUrl: x.imageUrl ?? null,
-          price: Number(x.price ?? 0),
+          price: resolvePrice(linkedId, fallbackPrice),
           isAvailable: globalAvailable,
           globalIsAvailable: globalAvailable,
           globalUpdatedAtMs: x.updatedAt?.toMillis ? Number(x.updatedAt.toMillis()) : null,
           storeUpdatedAtMs: null,
+          linkedPosProductId: linkedId,
+          linkedPosProductName: x.linkedPosProductName ?? null,
         };
       })
       .filter(Boolean) as any[];
 
-    const items = [...prevItems, ...missingItems].sort((a: any, b: any) =>
+    const items = [...refreshedPrevItems, ...missingItems].sort((a: any, b: any) =>
       String(a?.name || "").localeCompare(String(b?.name || ""))
     );
 

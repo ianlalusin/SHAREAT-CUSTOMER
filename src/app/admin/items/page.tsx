@@ -30,7 +30,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 
 import { useFirebase } from "@/firebase";
 import { useRouter } from "next/navigation";
-import { Plus, Pencil, EyeOff, Eye, Trash2, Upload, Loader2, ArrowLeft } from "lucide-react";
+import { Plus, Pencil, EyeOff, Eye, Trash2, Upload, Loader2, ArrowLeft, Link2, X as XIcon } from "lucide-react";
 
 import { getStoreName } from "@/lib/store-directory";
 type Category = { id: string; name: string; isActive: boolean; sortOrder: number };
@@ -43,7 +43,11 @@ type CatalogItem = {
   imageUrl: string | null;
   isAvailable: boolean;
   isArchived?: boolean;
+  linkedPosProductId?: string | null;
+  linkedPosProductName?: string | null;
 };
+
+type PosProduct = { id: string; name: string; category?: string };
 
 function toPrice(v: string) {
   const n = Number((v ?? "").toString().replace(/[^\d.]/g, ""));
@@ -125,6 +129,12 @@ export default function AdminItemsPage() {
   const [editCategory, setEditCategory] = useState("");
   const [editPrice, setEditPrice] = useState("0");
   const [editImageFile, setEditImageFile] = useState<File | null>(null);
+  const [editLinkedId, setEditLinkedId] = useState<string | null>(null);
+  const [editLinkedName, setEditLinkedName] = useState<string | null>(null);
+  const [linkSearch, setLinkSearch] = useState("");
+  const [linkResults, setLinkResults] = useState<PosProduct[]>([]);
+  const [linkSearchOpen, setLinkSearchOpen] = useState(false);
+  const [linkSearchLoading, setLinkSearchLoading] = useState(false);
 
   useEffect(() => {
     if (!authReady || !isAuthed) return;
@@ -141,6 +151,8 @@ export default function AdminItemsPage() {
             imageUrl: x.imageUrl ?? null,
             isAvailable: x.isAvailable !== false,
             isArchived: x.isArchived === true,
+            linkedPosProductId: x.linkedPosProductId ?? null,
+            linkedPosProductName: x.linkedPosProductName ?? null,
           };
         })
       );
@@ -335,8 +347,42 @@ export default function AdminItemsPage() {
     setEditCategory(it.category || (categories[0]?.name ?? "Add-on"));
     setEditPrice(String(it.price ?? 0));
     setEditImageFile(null);
+    setEditLinkedId(it.linkedPosProductId ?? null);
+    setEditLinkedName(it.linkedPosProductName ?? null);
+    setLinkSearch("");
+    setLinkResults([]);
+    setLinkSearchOpen(false);
     setEditOpen(true);
   }
+
+  // Debounced POS product search while the link picker is open.
+  useEffect(() => {
+    if (!editOpen) return;
+    if (!linkSearchOpen) return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        setLinkSearchLoading(true);
+        const user = getAuth().currentUser;
+        if (!user) return;
+        const idToken = await user.getIdToken();
+        const url = `/api/admin/pos-products${linkSearch.trim() ? `?q=${encodeURIComponent(linkSearch.trim())}` : ""}`;
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${idToken}` } });
+        const json = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (res.ok && json?.ok) setLinkResults(json.products || []);
+        else setLinkResults([]);
+      } catch {
+        if (!cancelled) setLinkResults([]);
+      } finally {
+        if (!cancelled) setLinkSearchLoading(false);
+      }
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [editOpen, linkSearchOpen, linkSearch]);
 
   async function saveEdit() {
     if (!editItem) return;
@@ -360,6 +406,8 @@ export default function AdminItemsPage() {
             category: editCategory.trim(),
             price: toPrice(editPrice),
             imageUrl: nextImageUrl,
+            linkedPosProductId: editLinkedId,
+            linkedPosProductName: editLinkedName,
             storeUpdatedAtMs: Date.now(),
           };
         });
@@ -376,6 +424,32 @@ export default function AdminItemsPage() {
           updates.imageUrl = url;
         }
         await updateDoc(doc(firestore, "catalogItems", editItem.id), updates);
+      }
+
+      // Link save goes through a server endpoint so it uses Admin SDK and bypasses
+      // the catalogItems write rule. Save changes on both the global and store tab.
+      const linkChanged =
+        (editItem.linkedPosProductId ?? null) !== (editLinkedId ?? null) ||
+        (editItem.linkedPosProductName ?? null) !== (editLinkedName ?? null);
+      if (linkChanged) {
+        const user = getAuth().currentUser;
+        if (user) {
+          const idToken = await user.getIdToken();
+          const res = await fetch("/api/admin/link-catalog-item", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+            body: JSON.stringify({
+              catalogItemId: editItem.id,
+              posProductId: editLinkedId,
+              posProductName: editLinkedName,
+            }),
+          });
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok || !json?.ok) throw new Error(json?.error || "Failed to save link.");
+        }
+      }
+
+      if (activeTab !== "store") {
         await rebuildStoreCatalogCache(storeId);
       }
       setEditOpen(false);
@@ -569,6 +643,16 @@ export default function AdminItemsPage() {
               <div className="min-w-0 flex-1">
                 <div className="font-semibold truncate">{it.name}</div>
                 <div className="text-sm text-muted-foreground">{it.category} • ₱{it.price} • {it.isAvailable ? "Available" : "Hidden"}</div>
+                <div className={`mt-0.5 text-[11px] flex items-center gap-1 ${it.linkedPosProductId ? "text-emerald-700" : "text-muted-foreground/70"}`}>
+                  <Link2 className="h-3 w-3" />
+                  {it.linkedPosProductId ? (
+                    <>
+                      Linked: <span className="font-medium truncate max-w-[200px]">{it.linkedPosProductName || it.linkedPosProductId}</span>
+                    </>
+                  ) : (
+                    "Not linked"
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="icon" onClick={() => openEdit(it)} disabled={isBusy} aria-label="Edit">
@@ -645,6 +729,109 @@ export default function AdminItemsPage() {
                 disabled={isBusy}
               />
             </label>
+
+            {/* Link to POS product */}
+            <div className="grid gap-1">
+              <label className="text-sm text-muted-foreground flex items-center gap-1.5">
+                <Link2 className="h-3.5 w-3.5" />
+                Linked POS product
+              </label>
+              {editLinkedId && !linkSearchOpen ? (
+                <div className="flex items-center justify-between gap-2 border rounded-md px-3 h-10 bg-zinc-50">
+                  <span className="text-sm truncate">
+                    <span className="font-medium">{editLinkedName || editLinkedId}</span>
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => {
+                        setLinkSearchOpen(true);
+                        setLinkSearch("");
+                      }}
+                      disabled={isBusy}
+                    >
+                      Change
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => {
+                        setEditLinkedId(null);
+                        setEditLinkedName(null);
+                      }}
+                      disabled={isBusy}
+                      title="Unlink"
+                    >
+                      <XIcon className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="relative">
+                  <Input
+                    placeholder="Search POS products by name…"
+                    value={linkSearch}
+                    onFocus={() => setLinkSearchOpen(true)}
+                    onChange={(e) => {
+                      setLinkSearch(e.target.value);
+                      setLinkSearchOpen(true);
+                    }}
+                    disabled={isBusy}
+                  />
+                  {linkSearchOpen && (
+                    <div className="absolute top-full left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-md border bg-background shadow-lg z-10">
+                      {linkSearchLoading ? (
+                        <div className="p-3 text-center text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin inline" />
+                        </div>
+                      ) : linkResults.length === 0 ? (
+                        <div className="p-3 text-center text-sm text-muted-foreground">
+                          {linkSearch.trim() ? "No matches" : "Start typing to search"}
+                        </div>
+                      ) : (
+                        linkResults.map((p) => (
+                          <button
+                            type="button"
+                            key={p.id}
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-100 border-b last:border-b-0"
+                            onClick={() => {
+                              setEditLinkedId(p.id);
+                              setEditLinkedName(p.name);
+                              setLinkSearchOpen(false);
+                              setLinkSearch("");
+                            }}
+                          >
+                            <div className="font-medium truncate">{p.name}</div>
+                            {p.category && (
+                              <div className="text-xs text-muted-foreground truncate">{p.category}</div>
+                            )}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                  {linkSearchOpen && editLinkedId && (
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      Currently linked to <span className="font-medium">{editLinkedName}</span>.{" "}
+                      <button
+                        type="button"
+                        className="underline"
+                        onClick={() => setLinkSearchOpen(false)}
+                        disabled={isBusy}
+                      >
+                        Keep
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setEditOpen(false)} disabled={isBusy}>Cancel</Button>
               <Button onClick={saveEdit} disabled={isBusy || !editItem || !editName.trim()}>
