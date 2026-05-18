@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { collection, doc, onSnapshot } from "firebase/firestore";
-import { Loader2, Plus, MessageSquare } from "lucide-react";
+import { Loader2, Plus, MessageSquare, Send, Clock } from "lucide-react";
 
 import { DashboardHeader } from "@/components/dashboard/Header";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CustomerRefillModal } from "@/components/customer/CustomerRefillModal";
+import { CustomerRequestModal } from "@/components/customer/CustomerRequestModal";
 import { CustomerCatalog } from "@/components/customer/CustomerCatalog";
 
 import { CustomerFeedbackModal } from "@/components/customer/CustomerFeedbackModal";
@@ -52,6 +53,7 @@ export default function DashboardPage() {
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [isRefillOpen, setIsRefillOpen] = useState(false);
+  const [isRequestOpen, setIsRequestOpen] = useState(false);
 
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
@@ -253,6 +255,29 @@ export default function DashboardPage() {
               </Button>
             </div>
 
+            {/* Secondary actions */}
+            <div className="flex justify-center mt-3">
+              <div className="w-full sm:w-[420px] grid grid-cols-2 gap-3">
+                <Button
+                  variant="outline"
+                  className="h-14 rounded-2xl text-base font-bold border-2 border-primary/30 text-primary hover:bg-primary/5 active:scale-[0.98] transition-all"
+                  onClick={() => setIsRequestOpen(true)}
+                >
+                  <Send className="mr-2 h-5 w-5" />
+                  Request
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled
+                  className="h-14 rounded-2xl text-base font-bold border-2 border-muted text-muted-foreground"
+                  title="Coming soon"
+                >
+                  <Clock className="mr-2 h-5 w-5" />
+                  Coming Soon
+                </Button>
+              </div>
+            </div>
+
             <CustomerCatalog />
           </TabsContent>
 
@@ -286,6 +311,12 @@ export default function DashboardPage() {
         open={isRefillOpen}
         onOpenChange={setIsRefillOpen}
         session={session as any}
+        sessionIsLocked={false}
+      />
+
+      <CustomerRequestModal
+        open={isRequestOpen}
+        onOpenChange={setIsRequestOpen}
         sessionIsLocked={false}
       />
 
