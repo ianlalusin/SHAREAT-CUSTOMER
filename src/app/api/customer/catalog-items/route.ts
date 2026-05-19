@@ -43,45 +43,28 @@ export async function GET(req: Request) {
     if (s.customerAccessEnabled !== true) return bad("Customer access disabled.", 403);
     if (Number(s.customerAccessExpiresAtMs || 0) <= Date.now()) return bad("Customer access expired.", 403);
 
-    // store-scoped catalog cache (single doc)
+    // store-scoped catalog cache (single doc).
+    // Prices for items linked to POS products are pre-resolved during the cache
+    // rebuild (see customer-catalog.ts → rebuildStoreCatalogCache). The customer
+    // path here reads ONLY the cache doc — one Firestore read per dashboard load
+    // regardless of inventory size. Real-time POS price changes require a cache
+    // rebuild, which already fires on every admin edit and is the right place
+    // to add a Firestore trigger or scheduled refresh if near-real-time is needed.
     const cacheSnap = await db.doc(`stores/${storeId}/catalogCache/main`).get();
     if (!cacheSnap.exists) return bad("Catalog cache not found for store.", 404);
 
     const cache = cacheSnap.data() as any;
     const rawItems = Array.isArray(cache.items) ? (cache.items as any[]) : [];
 
-    // Live POS-price overlay: when an item is linked to a POS product AND this
-    // store has an active inventory record for that product, the live POS
-    // sellingPrice always wins over whatever was last materialized in the cache.
-    // This means a manager changing the price in POS is reflected on the
-    // customer side on the next dashboard load — no rebuild required.
-    const needsOverlay = rawItems.some((x) => x?.linkedPosProductId);
-    let invByProductId: Map<string, number> = new Map();
-    if (needsOverlay) {
-      const invSnap = await db.collection(`stores/${storeId}/inventory`).get();
-      for (const d of invSnap.docs) {
-        const inv = d.data() as any;
-        if (inv?.isActive === false) continue;
-        if (inv?.isArchived === true) continue;
-        const pid = String(inv?.productId || "");
-        const sp = Number(inv?.sellingPrice ?? 0);
-        if (pid && Number.isFinite(sp) && sp > 0) invByProductId.set(pid, sp);
-      }
-    }
-
     const items: CatalogItem[] = rawItems
-      .map((x) => {
-        const linkedId = x?.linkedPosProductId ? String(x.linkedPosProductId) : null;
-        const livePrice = linkedId ? invByProductId.get(linkedId) : undefined;
-        return {
-          id: String(x.id ?? ""),
-          name: String(x.name ?? ""),
-          category: String(x.category ?? ""),
-          price: typeof livePrice === "number" ? livePrice : Number(x.price ?? 0),
-          imageUrl: x.imageUrl ?? null,
-          isAvailable: x.isAvailable,
-        };
-      })
+      .map((x) => ({
+        id: String(x.id ?? ""),
+        name: String(x.name ?? ""),
+        category: String(x.category ?? ""),
+        price: Number(x.price ?? 0),
+        imageUrl: x.imageUrl ?? null,
+        isAvailable: x.isAvailable,
+      }))
       .filter((x) => !!x.id && (!!x.isAvailable || x.isAvailable === undefined));
 
     return NextResponse.json({ ok: true, items });
