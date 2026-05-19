@@ -47,7 +47,14 @@ type CatalogItem = {
   linkedPosProductName?: string | null;
 };
 
-type PosProduct = { id: string; name: string; category?: string };
+type PosProduct = {
+  id: string;
+  name: string;
+  variant?: string;
+  displayName?: string;
+  category?: string;
+  subCategory?: string;
+};
 
 function toPrice(v: string) {
   const n = Number((v ?? "").toString().replace(/[^\d.]/g, ""));
@@ -794,24 +801,32 @@ export default function AdminItemsPage() {
                           {linkSearch.trim() ? "No matches" : "Start typing to search"}
                         </div>
                       ) : (
-                        linkResults.map((p) => (
-                          <button
-                            type="button"
-                            key={p.id}
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-100 border-b last:border-b-0"
-                            onClick={() => {
-                              setEditLinkedId(p.id);
-                              setEditLinkedName(p.name);
-                              setLinkSearchOpen(false);
-                              setLinkSearch("");
-                            }}
-                          >
-                            <div className="font-medium truncate">{p.name}</div>
-                            {p.category && (
-                              <div className="text-xs text-muted-foreground truncate">{p.category}</div>
-                            )}
-                          </button>
-                        ))
+                        linkResults.map((p) => {
+                          const display = p.displayName || (p.variant ? `${p.name} (${p.variant})` : p.name);
+                          return (
+                            <button
+                              type="button"
+                              key={p.id}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-100 border-b last:border-b-0"
+                              onClick={() => {
+                                setEditLinkedId(p.id);
+                                // Save the human-readable name including variant so list
+                                // displays disambiguate (e.g. "Kimpab (Signature)").
+                                setEditLinkedName(display);
+                                setLinkSearchOpen(false);
+                                setLinkSearch("");
+                              }}
+                            >
+                              <div className="font-medium truncate">
+                                {p.name}
+                                {p.variant && <span className="text-muted-foreground"> ({p.variant})</span>}
+                              </div>
+                              {(p.subCategory || p.category) && (
+                                <div className="text-xs text-muted-foreground truncate">{p.subCategory || p.category}</div>
+                              )}
+                            </button>
+                          );
+                        })
                       )}
                     </div>
                   )}
