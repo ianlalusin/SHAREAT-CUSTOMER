@@ -10,7 +10,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useToast } from "@/hooks/use-toast";
 import { getAuth } from "firebase/auth";
 
-const PLACEHOLDER = "put your request here, we'll send it to our staff";
+const PLACEHOLDER = "Put your request here — we'll send it to our staff.\n\nFor rice & cheese refills, please use the Order Refill button instead.";
 const MAX_LENGTH = 500;
 
 export function CustomerRequestModal({
@@ -121,6 +121,10 @@ function CustomerRequestContent({
 
   return (
     <div className="p-4 pt-2 flex flex-col gap-3">
+      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+        For <span className="font-semibold">rice &amp; cheese refills</span>, tap the{" "}
+        <span className="font-semibold">Order Refill</span> button — this box is for other concerns.
+      </p>
       <Textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
