@@ -3,17 +3,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { collection, doc, onSnapshot } from "firebase/firestore";
-import { Loader2, Plus, MessageSquare, Send, Clock } from "lucide-react";
+import { Loader2, Plus, MessageSquare, Send, Star } from "lucide-react";
 
 import { DashboardHeader } from "@/components/dashboard/Header";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { CustomerRefillModal } from "@/components/customer/CustomerRefillModal";
 import { CustomerRequestModal } from "@/components/customer/CustomerRequestModal";
 import { CustomerCatalog } from "@/components/customer/CustomerCatalog";
 
 import { CustomerFeedbackModal } from "@/components/customer/CustomerFeedbackModal";
-import { SharelebratorMiniCard } from "@/components/customer/SharelebratorMiniCard";
 import { SharelebratorCardView } from "@/components/customer/SharelebratorCardView";
 import { FlashAdOverlay, type FlashAdItem } from "@/components/customer/FlashAdOverlay";
 import { FlashAdBadge } from "@/components/customer/FlashAdBadge";
@@ -61,7 +60,7 @@ export default function DashboardPage() {
 
   const [session, setSession] = useState<SessionDTO | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
-  const [activeTab, setActiveTab] = useState("menu");
+  const [isCardOpen, setIsCardOpen] = useState(false);
 
   // Link state (for mini card + conditional rendering)
   const [isLinked, setIsLinked] = useState(false);
@@ -237,60 +236,54 @@ export default function DashboardPage() {
       />
 
       <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 mt-6 relative z-10">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full max-w-sm mx-auto grid-cols-2 mb-6">
-            <TabsTrigger value="menu">Menu</TabsTrigger>
-            <TabsTrigger value="card">Card</TabsTrigger>
-          </TabsList>
+        {/* Primary action */}
+        <div className="flex justify-center">
+          <Button
+            className="w-full sm:w-[420px] h-20 sm:h-28 rounded-[2.5rem] text-lg sm:text-xl font-black shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all bg-primary border-4 border-white/20"
+            onClick={() => setIsRefillOpen(true)}
+          >
+            <Plus className="mr-3 h-8 w-8" />
+            Order Refill
+          </Button>
+        </div>
 
-          <TabsContent value="menu">
-            {/* Primary action */}
-            <div className="flex justify-center">
-              <Button
-                className="w-full sm:w-[420px] h-20 sm:h-28 rounded-[2.5rem] text-lg sm:text-xl font-black shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all bg-primary border-4 border-white/20"
-                onClick={() => setIsRefillOpen(true)}
-              >
-                <Plus className="mr-3 h-8 w-8" />
-                Order Refill
-              </Button>
-            </div>
+        {/* Secondary actions */}
+        <div className="flex justify-center mt-3">
+          <div className="w-full sm:w-[420px] grid grid-cols-2 gap-3">
+            <Button
+              variant="outline"
+              className="h-14 rounded-2xl text-base font-bold border-2 border-primary/30 text-primary hover:bg-primary/5 active:scale-[0.98] transition-all"
+              onClick={() => setIsRequestOpen(true)}
+            >
+              <Send className="mr-2 h-5 w-5" />
+              Request
+            </Button>
+            <Button
+              variant="outline"
+              className="h-14 rounded-2xl text-base font-bold border-2 border-primary/30 text-primary hover:bg-primary/5 active:scale-[0.98] transition-all"
+              onClick={() => setIsCardOpen(true)}
+            >
+              <Star className="mr-2 h-5 w-5" />
+              Card
+            </Button>
+          </div>
+        </div>
 
-            {/* Secondary actions */}
-            <div className="flex justify-center mt-3">
-              <div className="w-full sm:w-[420px] grid grid-cols-2 gap-3">
-                <Button
-                  variant="outline"
-                  className="h-14 rounded-2xl text-base font-bold border-2 border-primary/30 text-primary hover:bg-primary/5 active:scale-[0.98] transition-all"
-                  onClick={() => setIsRequestOpen(true)}
-                >
-                  <Send className="mr-2 h-5 w-5" />
-                  Request
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled
-                  className="h-14 rounded-2xl text-base font-bold border-2 border-muted text-muted-foreground"
-                  title="Coming soon"
-                >
-                  <Clock className="mr-2 h-5 w-5" />
-                  Coming Soon
-                </Button>
-              </div>
-            </div>
-
-            <CustomerCatalog />
-          </TabsContent>
-
-          <TabsContent value="card">
-            <SharelebratorCardView storeId={session.storeId} sessionId={session.sessionId} />
-          </TabsContent>
-        </Tabs>
+        <CustomerCatalog />
       </div>
 
-      {/* Floating Sharelebrator mini card (always visible outside Card tab) */}
-      {activeTab !== "card" && (
-        <SharelebratorMiniCard onClick={() => setActiveTab("card")} />
-      )}
+      {/* Sharelebrator card — opens in a bottom drawer */}
+      <Drawer open={isCardOpen} onOpenChange={setIsCardOpen}>
+        <DrawerContent className="max-h-[92dvh]">
+          <DrawerHeader className="text-left">
+            <DrawerTitle>Sharelebrator Card</DrawerTitle>
+            <DrawerDescription>Your points, history, and rewards.</DrawerDescription>
+          </DrawerHeader>
+          <div className="px-4 pb-6 overflow-y-auto">
+            <SharelebratorCardView storeId={session.storeId} sessionId={session.sessionId} />
+          </div>
+        </DrawerContent>
+      </Drawer>
 
       {/* Floating Feedback bubble */}
       {!feedbackSubmitted && (
