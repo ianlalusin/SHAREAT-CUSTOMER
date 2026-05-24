@@ -1,10 +1,47 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import { FieldValue } from "firebase-admin/firestore";
 
 export const runtime = "nodejs";
 
 function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
+}
+
+/**
+ * Lazily refund any of this member's active vouchers that have passed their
+ * expiry. Unapplied Hub vouchers were debited at creation, so expiry credits
+ * the points back and marks the voucher expired. Idempotent per voucher.
+ */
+async function expireStaleVouchers(db: any, docs: any[]): Promise<void> {
+  const now = Date.now();
+  const stale = docs.filter((d) => {
+    const v = d.data();
+    return v.status === "active" && typeof v.expiresAtMs === "number" && v.expiresAtMs < now && !v.appliedSessionId;
+  });
+  for (const d of stale) {
+    try {
+      await db.runTransaction(async (tx: any) => {
+        const vSnap = await tx.get(d.ref);
+        if (!vSnap.exists) return;
+        const v = vSnap.data();
+        if (v.status !== "active") return; // already handled by a concurrent read
+        const pointsCost = Math.floor(Number(v.pointsCost) || 0);
+        const customerRef = db.doc(`customers/${v.phone}`);
+        const ledgerRef = customerRef.collection("pointsLedger").doc();
+        tx.update(customerRef, { pointsBalance: FieldValue.increment(pointsCost), updatedAt: FieldValue.serverTimestamp() });
+        tx.set(ledgerRef, {
+          type: "redeem_refund", points: pointsCost, amount: 0, storeId: "", storeName: "", sessionId: "",
+          redemptionId: v.id, rewardId: v.rewardId, rewardName: v.rewardName, reason: "expired",
+          createdAt: FieldValue.serverTimestamp(), createdByUid: "system",
+        });
+        tx.update(d.ref, { status: "expired", refundedAtMs: now, updatedAt: FieldValue.serverTimestamp() });
+        tx.set(db.doc("loyaltyStats/global"), { totalPointsOutstanding: FieldValue.increment(pointsCost), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      });
+    } catch (e) {
+      console.warn("[expireStaleVouchers] failed for", d.id, e);
+    }
+  }
 }
 
 // Resolve the loyalty member's phone from either auth mode (session-linked
@@ -38,11 +75,22 @@ export async function GET(req: Request) {
   if (!phone) return NextResponse.json({ ok: true, linked: false, rewards: [], vouchers: [], pointsBalance: 0 });
 
   try {
-    const [rewardsSnap, customerSnap, vouchersSnap] = await Promise.all([
+    let [rewardsSnap, vouchersSnap] = await Promise.all([
       db.collection("loyaltyRewards").get(),
-      db.doc(`customers/${phone}`).get(),
       db.collection("loyaltyRedemptions").where("phone", "==", phone).where("status", "==", "active").get(),
     ]);
+
+    // Refund + expire any stale vouchers, then re-read so balance/list are fresh.
+    const hadStale = vouchersSnap.docs.some((d: any) => {
+      const v = d.data();
+      return typeof v.expiresAtMs === "number" && v.expiresAtMs < Date.now() && !v.appliedSessionId;
+    });
+    if (hadStale) {
+      await expireStaleVouchers(db, vouchersSnap.docs);
+      vouchersSnap = await db.collection("loyaltyRedemptions").where("phone", "==", phone).where("status", "==", "active").get();
+    }
+
+    const customerSnap = await db.doc(`customers/${phone}`).get();
 
     const rewards = rewardsSnap.docs
       .map((d: any) => ({ id: d.id, ...d.data() }))
