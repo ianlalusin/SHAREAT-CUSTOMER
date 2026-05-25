@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { collection, doc, onSnapshot } from "firebase/firestore";
+import { collection, doc, getDocs, onSnapshot } from "firebase/firestore";
 import { Loader2, Plus, MessageSquare, Send, Star } from "lucide-react";
 
 import { DashboardHeader } from "@/components/dashboard/Header";
@@ -166,13 +166,16 @@ export default function DashboardPage() {
     );
   }, [firestore, session, router]);
 
-  // Listen for all active flash ads
+  // Load active flash ads once on mount. Ads only need to auto-show once per
+  // session, so a one-shot read is enough — no need to hold a live listener for
+  // the whole meal.
   useEffect(() => {
     if (!firestore || !session) return;
+    let cancelled = false;
     const adsRef = collection(firestore, "stores", session.storeId, "flashAds");
-    return onSnapshot(
-      adsRef,
-      (snap) => {
+    getDocs(adsRef)
+      .then((snap) => {
+        if (cancelled) return;
         const active = snap.docs
           .map((d) => {
             const data = d.data() as any;
@@ -184,14 +187,14 @@ export default function DashboardPage() {
             };
           })
           .filter((a) => a.active && a.imageUrl);
-
         setFlashAds(active);
-      },
-      (err) => {
-        console.error("[FlashAd] onSnapshot error:", err);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("[FlashAd] load error:", err);
         setFlashAds([]);
-      }
-    );
+      });
+    return () => { cancelled = true; };
   }, [firestore, session]);
 
   // Auto-show flash ads once per session
