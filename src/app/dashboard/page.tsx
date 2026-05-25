@@ -3,14 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { collection, doc, getDocs, onSnapshot } from "firebase/firestore";
-import { Loader2, Plus, MessageSquare, Send, Star } from "lucide-react";
+import { Loader2, Plus, MessageSquare, Bell, Star } from "lucide-react";
 
 import { DashboardHeader } from "@/components/dashboard/Header";
 import { Button } from "@/components/ui/button";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { CustomerRefillModal } from "@/components/customer/CustomerRefillModal";
-import { CustomerRequestModal } from "@/components/customer/CustomerRequestModal";
 import { CustomerCatalog } from "@/components/customer/CustomerCatalog";
+import { useToast } from "@/hooks/use-toast";
 
 import { CustomerFeedbackModal } from "@/components/customer/CustomerFeedbackModal";
 import { SharelebratorCardView } from "@/components/customer/SharelebratorCardView";
@@ -49,10 +49,12 @@ function getSessionKeyForFeedback() {
 export default function DashboardPage() {
   const router = useRouter();
   const firestore = useFirestore();
+  const { toast } = useToast();
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [isRefillOpen, setIsRefillOpen] = useState(false);
-  const [isRequestOpen, setIsRequestOpen] = useState(false);
+  const [assistanceBusy, setAssistanceBusy] = useState(false);
+  const [assistanceCooldown, setAssistanceCooldown] = useState(false);
 
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
@@ -212,6 +214,29 @@ export default function DashboardPage() {
     setShowFlashAdOverlay(true);
   }, [flashAds, flashAdAutoShown, session]);
 
+  const handleAssistance = async () => {
+    if (assistanceBusy || assistanceCooldown) return;
+    setAssistanceBusy(true);
+    try {
+      const user = getAuth().currentUser;
+      if (!user) throw new Error("Session expired. Please re-enter your PIN.");
+      const idToken = await user.getIdToken();
+      const res = await fetch("/api/customer/request-assistance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+      });
+      const json = (await res.json().catch(() => ({}))) as any;
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not notify staff.");
+      toast({ title: "Staff notified", description: "Someone will be with you shortly." });
+      setAssistanceCooldown(true);
+      setTimeout(() => setAssistanceCooldown(false), 30_000);
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Couldn't notify staff", description: e?.message ?? "Please try again." });
+    } finally {
+      setAssistanceBusy(false);
+    }
+  };
+
   if (!isLoaded || loadingSession || !session) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
@@ -256,10 +281,11 @@ export default function DashboardPage() {
             <Button
               variant="outline"
               className="h-14 rounded-2xl text-base font-bold border-2 border-primary/30 text-primary hover:bg-primary/5 active:scale-[0.98] transition-all"
-              onClick={() => setIsRequestOpen(true)}
+              onClick={handleAssistance}
+              disabled={assistanceBusy || assistanceCooldown}
             >
-              <Send className="mr-2 h-5 w-5" />
-              Request
+              {assistanceBusy ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Bell className="mr-2 h-5 w-5" />}
+              {assistanceCooldown ? "Staff notified" : "Ask for assistance"}
             </Button>
             <Button
               variant="outline"
@@ -310,11 +336,6 @@ export default function DashboardPage() {
         sessionIsLocked={false}
       />
 
-      <CustomerRequestModal
-        open={isRequestOpen}
-        onOpenChange={setIsRequestOpen}
-        sessionIsLocked={false}
-      />
 
       <CustomerFeedbackModal
         open={isFeedbackOpen}
