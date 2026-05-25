@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Gift, ArrowLeft, Loader2, Ticket, Star } from "lucide-react";
 
-type Reward = { id: string; name: string; description: string | null; pointsCost: number; type: "fixed" | "percent"; value: number };
+type Reward = { id: string; name: string; description: string | null; pointsCost: number; type: "fixed" | "percent"; value: number; imageUrl?: string | null };
 type Voucher = { id: string; code: string; rewardName: string; type: "fixed" | "percent"; value: number; pointsCost: number; expiresAtMs: number | null; expired: boolean };
 
 function fmtReward(r: { type: "fixed" | "percent"; value: number }) {
@@ -137,9 +137,16 @@ export default function RedeemPage() {
                   return (
                     <Card key={r.id}>
                       <CardContent className="p-3 flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="font-semibold text-sm">{r.name}</div>
-                          <div className="text-xs text-muted-foreground">{fmtReward(r)} · {r.pointsCost.toLocaleString()} pts{r.description ? ` · ${r.description}` : ""}</div>
+                        <div className="flex items-center gap-3 min-w-0">
+                          {r.imageUrl && (
+                            <div className="h-12 w-12 shrink-0 overflow-hidden rounded-md border bg-muted">
+                              <img src={r.imageUrl} alt={r.name} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <div className="font-semibold text-sm">{r.name}</div>
+                            <div className="text-xs text-muted-foreground">{fmtReward(r)} · {r.pointsCost.toLocaleString()} pts{r.description ? ` · ${r.description}` : ""}</div>
+                          </div>
                         </div>
                         <Button size="sm" disabled={!affordable || busyId === r.id} onClick={() => redeem(r)}>
                           {busyId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : affordable ? "Redeem" : "Need more"}
