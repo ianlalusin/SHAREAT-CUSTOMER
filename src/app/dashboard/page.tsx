@@ -253,6 +253,10 @@ export default function DashboardPage() {
   96% { transform: scale(1.05); box-shadow: 0 16px 32px rgba(0,0,0,0.20); }
   100% { transform: scale(1); box-shadow: 0 10px 25px rgba(0,0,0,0.18); }
 }
+@keyframes loyaltyCardShine {
+  0% { left: -30%; }
+  60%, 100% { left: 130%; }
+}
 `;
 
   return (
@@ -287,14 +291,27 @@ export default function DashboardPage() {
               {assistanceBusy ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Bell className="mr-2 h-5 w-5" />}
               {assistanceCooldown ? "Staff notified" : "Ask for assistance"}
             </Button>
-            <Button
-              variant="outline"
-              className="h-14 rounded-2xl text-base font-bold border-2 border-primary/30 text-primary hover:bg-primary/5 active:scale-[0.98] transition-all"
+            <button
+              type="button"
               onClick={() => setIsCardOpen(true)}
+              className="relative h-14 rounded-2xl overflow-hidden border border-zinc-700 bg-black shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary"
+              aria-label="Open Loyalty Card"
             >
-              <Star className="mr-2 h-5 w-5" />
-              Card
-            </Button>
+              <span className="absolute inset-0 pointer-events-none">
+                <span
+                  className="absolute top-0 bottom-0 w-[30%] -skew-x-12"
+                  style={{
+                    left: "-30%",
+                    background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%)",
+                    animation: "loyaltyCardShine 3.5s ease-in-out infinite",
+                  }}
+                />
+              </span>
+              <span className="relative flex items-center justify-center gap-2 text-base font-bold text-white">
+                <Star className="h-5 w-5 drop-shadow" strokeWidth={2.5} fill="currentColor" />
+                Loyalty Card
+              </span>
+            </button>
           </div>
         </div>
 
