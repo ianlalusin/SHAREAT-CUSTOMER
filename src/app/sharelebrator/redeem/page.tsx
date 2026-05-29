@@ -139,7 +139,7 @@ export default function RedeemPage() {
                       <CardContent className="p-3 flex items-center justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0">
                           {r.imageUrl && (
-                            <div className="h-12 w-12 shrink-0 overflow-hidden rounded-md border bg-muted">
+                            <div className="h-24 w-24 shrink-0 overflow-hidden rounded-md border bg-muted">
                               <img src={r.imageUrl} alt={r.name} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
                             </div>
                           )}
