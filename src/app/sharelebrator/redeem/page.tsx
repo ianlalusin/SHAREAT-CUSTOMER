@@ -28,6 +28,76 @@ function Countdown({ expiresAtMs }: { expiresAtMs: number | null }) {
   return <span>{m}:{String(s).padStart(2, "0")} left</span>;
 }
 
+function RewardCard({
+  r,
+  balance,
+  busy,
+  onRedeem,
+}: {
+  r: Reward;
+  balance: number;
+  busy: boolean;
+  onRedeem: () => void;
+}) {
+  const affordable = balance >= r.pointsCost;
+  const shortBy = Math.max(0, r.pointsCost - balance);
+
+  return (
+    <div className="group relative aspect-[3/2] w-full overflow-hidden rounded-2xl border bg-zinc-900 shadow-sm transition-transform duration-200 active:scale-[0.99]">
+      {/* Image (full-bleed) or branded fallback */}
+      {r.imageUrl ? (
+        <img
+          src={r.imageUrl}
+          alt={r.name}
+          referrerPolicy="no-referrer"
+          className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+        />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary to-rose-900">
+          <Gift className="h-16 w-16 text-white/25" />
+        </div>
+      )}
+
+      {/* Bottom scrim so overlaid text stays legible on any image */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
+
+      {/* Points cost — glassy gold chip, top-right */}
+      <div className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-black/35 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm">
+        <Star className="h-3.5 w-3.5 text-amber-400" /> {r.pointsCost.toLocaleString()} pts
+      </div>
+
+      {/* Name, offer + action — overlaid at the bottom */}
+      <div className="absolute inset-x-0 bottom-0 space-y-2.5 p-4">
+        <div>
+          <h3 className="text-lg font-black leading-tight text-white drop-shadow-sm">{r.name}</h3>
+          <p className="truncate text-sm font-medium text-white/85">
+            {fmtReward(r)}
+            {r.description ? <span className="text-white/55"> · {r.description}</span> : null}
+          </p>
+        </div>
+        <Button
+          size="sm"
+          onClick={onRedeem}
+          disabled={!affordable || busy}
+          className={
+            affordable
+              ? "shadow-lg shadow-black/30"
+              : "bg-white/15 text-white hover:bg-white/15"
+          }
+        >
+          {busy ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : affordable ? (
+            "Redeem"
+          ) : (
+            `Need ${shortBy.toLocaleString()} more`
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function RedeemPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -127,34 +197,20 @@ export default function RedeemPage() {
             )}
 
             {/* Catalog */}
-            <div className="space-y-2">
+            <div className="space-y-3">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Available rewards</h2>
               {rewards.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-6">No rewards available right now.</p>
               ) : (
-                rewards.map((r) => {
-                  const affordable = balance >= r.pointsCost;
-                  return (
-                    <Card key={r.id}>
-                      <CardContent className="p-3 flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                          {r.imageUrl && (
-                            <div className="h-24 w-24 shrink-0 overflow-hidden rounded-md border bg-muted">
-                              <img src={r.imageUrl} alt={r.name} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            <div className="font-semibold text-sm">{r.name}</div>
-                            <div className="text-xs text-muted-foreground">{fmtReward(r)} · {r.pointsCost.toLocaleString()} pts{r.description ? ` · ${r.description}` : ""}</div>
-                          </div>
-                        </div>
-                        <Button size="sm" disabled={!affordable || busyId === r.id} onClick={() => redeem(r)}>
-                          {busyId === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : affordable ? "Redeem" : "Need more"}
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  );
-                })
+                rewards.map((r) => (
+                  <RewardCard
+                    key={r.id}
+                    r={r}
+                    balance={balance}
+                    busy={busyId === r.id}
+                    onRedeem={() => redeem(r)}
+                  />
+                ))
               )}
             </div>
           </>
