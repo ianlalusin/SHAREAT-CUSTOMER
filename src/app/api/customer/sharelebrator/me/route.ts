@@ -48,6 +48,8 @@ export async function GET(req: Request) {
   if (!customerSnap.exists) return NextResponse.json({ ok: true, linked: false });
 
   const c = customerSnap.data() as any;
+  const pointsBalance = Number(c.pointsBalance ?? 0);
+  const pointsReserved = Number(c.pointsReserved ?? 0);
 
   const ledgerSnap = await db
     .collection(`customers/${phone}/pointsLedger`)
@@ -83,7 +85,9 @@ export async function GET(req: Request) {
       bday: c.bday,
       address: c.address ?? "",
       email: c.email ?? null,
-      pointsBalance: c.pointsBalance ?? 0,
+      pointsBalance,
+      pointsReserved,
+      available: Math.max(0, pointsBalance - pointsReserved),
     },
     ledger,
   });

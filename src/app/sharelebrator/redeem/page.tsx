@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import { getAuth } from "firebase/auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Gift, ArrowLeft, Loader2, Ticket, Star } from "lucide-react";
+import { Gift, ArrowLeft, Loader2, Ticket, Star, RefreshCw, CheckCircle2 } from "lucide-react";
 
 type Reward = { id: string; name: string; description: string | null; pointsCost: number; type: "fixed" | "percent"; value: number; imageUrl?: string | null };
-type Voucher = { id: string; code: string; rewardName: string; type: "fixed" | "percent"; value: number; pointsCost: number; expiresAtMs: number | null; expired: boolean };
+type Voucher = { id: string; code: string; rewardName: string; type: "fixed" | "percent"; value: number; pointsCost: number; expiresAtMs: number | null; expired: boolean; state: "pending" | "used"; appliedReceiptId?: string | null; appliedAtMs?: number | null };
 
 function fmtReward(r: { type: "fixed" | "percent"; value: number }) {
   return r.type === "percent" ? `${r.value}% off` : `₱${r.value.toLocaleString()} off`;
@@ -30,17 +30,17 @@ function Countdown({ expiresAtMs }: { expiresAtMs: number | null }) {
 
 function RewardCard({
   r,
-  balance,
+  available,
   busy,
   onRedeem,
 }: {
   r: Reward;
-  balance: number;
+  available: number;
   busy: boolean;
   onRedeem: () => void;
 }) {
-  const affordable = balance >= r.pointsCost;
-  const shortBy = Math.max(0, r.pointsCost - balance);
+  const affordable = available >= r.pointsCost;
+  const shortBy = Math.max(0, r.pointsCost - available);
 
   return (
     <div className="group relative aspect-[3/2] w-full overflow-hidden rounded-2xl border bg-zinc-900 shadow-sm transition-transform duration-200 active:scale-[0.99]">
@@ -101,7 +101,10 @@ function RewardCard({
 export default function RedeemPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [balance, setBalance] = useState(0);
+  const [reserved, setReserved] = useState(0);
+  const [available, setAvailable] = useState(0);
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -115,7 +118,11 @@ export default function RedeemPage() {
       const res = await fetch("/api/customer/sharelebrator/rewards", { headers: { Authorization: `Bearer ${idToken}` } });
       const json = await res.json();
       if (!json?.ok) throw new Error(json?.error || "Could not load rewards");
-      setBalance(json.pointsBalance ?? 0);
+      const bal = json.pointsBalance ?? 0;
+      const res2 = json.pointsReserved ?? 0;
+      setBalance(bal);
+      setReserved(res2);
+      setAvailable(json.available ?? Math.max(0, bal - res2));
       setRewards(json.rewards ?? []);
       setVouchers(json.vouchers ?? []);
       setError(null);
@@ -127,6 +134,11 @@ export default function RedeemPage() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  const refresh = async () => {
+    setRefreshing(true);
+    try { await load(); } finally { setRefreshing(false); }
+  };
 
   const redeem = async (reward: Reward) => {
     const user = getAuth().currentUser;
@@ -156,8 +168,20 @@ export default function RedeemPage() {
           <Button variant="ghost" size="sm" onClick={() => router.back()} className="gap-2">
             <ArrowLeft className="h-4 w-4" /> Back
           </Button>
-          <div className="text-sm font-semibold flex items-center gap-1.5">
-            <Star className="h-4 w-4 text-amber-500" /> {balance.toLocaleString()} pts
+          <div className="flex items-center gap-1.5">
+            <div className="text-sm font-semibold flex items-center gap-1.5">
+              <Star className="h-4 w-4 text-amber-500" /> {available.toLocaleString()} pts
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={refresh}
+              disabled={refreshing || loading}
+              aria-label="Refresh"
+            >
+              <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+            </Button>
           </div>
         </div>
 
@@ -167,6 +191,11 @@ export default function RedeemPage() {
           </div>
           <h1 className="text-xl font-black">Redeem Rewards</h1>
           <p className="text-xs text-muted-foreground">Redeem points for a reward, then show the code to the cashier.</p>
+          {reserved > 0 && (
+            <p className="text-[11px] font-medium text-amber-600">
+              {reserved.toLocaleString()} of {balance.toLocaleString()} pts on hold for pending vouchers · spent only when used
+            </p>
+          )}
         </div>
 
         {error && <p className="text-sm text-destructive text-center">{error}</p>}
@@ -175,24 +204,39 @@ export default function RedeemPage() {
           <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin" /></div>
         ) : (
           <>
-            {/* Active vouchers */}
+            {/* Your vouchers — pending (immutable, code shown) and used */}
             {vouchers.length > 0 && (
               <div className="space-y-2">
                 <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Your vouchers</h2>
-                {vouchers.map((v) => (
-                  <Card key={v.id} className={v.expired ? "opacity-60" : "border-primary/40"}>
-                    <CardContent className="p-3 flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="font-semibold text-sm flex items-center gap-1.5"><Ticket className="h-4 w-4 text-primary" /> {v.rewardName}</div>
-                        <div className="text-xs text-muted-foreground">{fmtReward(v)} · <Countdown expiresAtMs={v.expiresAtMs} /></div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-mono font-black text-lg tracking-widest">{v.code}</div>
-                        <div className="text-[10px] text-muted-foreground">show to cashier</div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                {vouchers.map((v) => {
+                  const used = v.state === "used";
+                  return (
+                    <Card key={v.id} className={used ? "opacity-70" : "border-primary/40"}>
+                      <CardContent className="p-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-semibold text-sm flex items-center gap-1.5"><Ticket className="h-4 w-4 text-primary" /> {v.rewardName}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {fmtReward(v)} · {used
+                              ? <span className="font-medium text-emerald-600">used in billing</span>
+                              : <Countdown expiresAtMs={v.expiresAtMs} />}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          {used ? (
+                            <div className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-600">
+                              <CheckCircle2 className="h-4 w-4" /> Used
+                            </div>
+                          ) : (
+                            <>
+                              <div className="font-mono font-black text-lg tracking-widest">{v.code}</div>
+                              <div className="text-[10px] text-muted-foreground">show to cashier · pending</div>
+                            </>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
             )}
 
@@ -206,7 +250,7 @@ export default function RedeemPage() {
                   <RewardCard
                     key={r.id}
                     r={r}
-                    balance={balance}
+                    available={available}
                     busy={busyId === r.id}
                     onRedeem={() => redeem(r)}
                   />

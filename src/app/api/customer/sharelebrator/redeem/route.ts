@@ -67,8 +67,6 @@ export async function POST(req: Request) {
   const customerRef = db.doc(`customers/${phone}`);
   const rewardRef = db.doc(`loyaltyRewards/${rewardId}`);
   const redemptionRef = db.collection("loyaltyRedemptions").doc();
-  const ledgerRef = customerRef.collection("pointsLedger").doc();
-  const statsRef = db.doc("loyaltyStats/global");
   const now = Date.now();
   const code = genCode();
   const expiresAtMs = now + expiryMin * 60_000;
@@ -86,26 +84,24 @@ export async function POST(req: Request) {
       const value = Number(reward.value) || 0;
       const type = reward.type === "percent" ? "percent" : "fixed";
       if (pointsCost <= 0 || value <= 0) throw new Error("Invalid reward configuration");
-      if (Number(c.pointsBalance || 0) < pointsCost) throw new Error("Insufficient points");
 
-      tx.update(customerRef, { pointsBalance: FieldValue.increment(-pointsCost), updatedAt: FieldValue.serverTimestamp() });
-      tx.set(ledgerRef, {
-        type: "redeem", points: -pointsCost, amount: 0, storeId: "", storeName: "", sessionId: "",
-        rewardId, rewardName: reward.name, redemptionId: redemptionRef.id,
-        createdAt: FieldValue.serverTimestamp(), createdByUid: decoded.uid ?? null,
-      });
+      // Claiming does NOT spend points — it HOLDS them. The actual spend happens
+      // only when the voucher is applied to a paid session (POS finalize).
+      // Validate against spendable = balance - already-held.
+      const balance = Number(c.pointsBalance || 0);
+      const reserved = Number(c.pointsReserved || 0);
+      if (balance - reserved < pointsCost) throw new Error("Insufficient points");
+
+      tx.update(customerRef, { pointsReserved: FieldValue.increment(pointsCost), updatedAt: FieldValue.serverTimestamp() });
       tx.set(redemptionRef, {
         id: redemptionRef.id, code, phone, rewardId, rewardName: reward.name,
         pointsCost, type, value, status: "active", source: "hub",
         createdAt: FieldValue.serverTimestamp(), createdAtClientMs: now, expiresAtMs,
         appliedStoreId: null, appliedSessionId: null, appliedReceiptId: null,
         appliedByUid: null, appliedAtMs: null, refundedAtMs: null,
+        // Points are only held now; spent at payment finalize (POS).
+        pointsSpent: false, pointsSpentAtMs: null, reservedPoints: pointsCost,
       });
-      tx.set(statsRef, {
-        totalPointsOutstanding: FieldValue.increment(-pointsCost),
-        totalPointsRedeemedEver: FieldValue.increment(pointsCost),
-        updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true });
       return { rewardName: reward.name, pointsCost, type, value, customerName: c.name || "" };
     });
 

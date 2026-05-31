@@ -9,9 +9,9 @@ function bad(msg: string, status = 400) {
 }
 
 /**
- * Lazily refund any of this member's active vouchers that have passed their
- * expiry. Unapplied Hub vouchers were debited at creation, so expiry credits
- * the points back and marks the voucher expired. Idempotent per voucher.
+ * Lazily expire any of this member's pending vouchers that have passed their
+ * expiry. Points are only HELD at claim (not spent), so expiry just RELEASES
+ * the hold — no refund, no ledger, no stats change. Idempotent per voucher.
  */
 async function expireStaleVouchers(db: any, docs: any[]): Promise<void> {
   const now = Date.now();
@@ -26,17 +26,14 @@ async function expireStaleVouchers(db: any, docs: any[]): Promise<void> {
         if (!vSnap.exists) return;
         const v = vSnap.data();
         if (v.status !== "active") return; // already handled by a concurrent read
-        const pointsCost = Math.floor(Number(v.pointsCost) || 0);
-        const customerRef = db.doc(`customers/${v.phone}`);
-        const ledgerRef = customerRef.collection("pointsLedger").doc();
-        tx.update(customerRef, { pointsBalance: FieldValue.increment(pointsCost), updatedAt: FieldValue.serverTimestamp() });
-        tx.set(ledgerRef, {
-          type: "redeem_refund", points: pointsCost, amount: 0, storeId: "", storeName: "", sessionId: "",
-          redemptionId: v.id, rewardId: v.rewardId, rewardName: v.rewardName, reason: "expired",
-          createdAt: FieldValue.serverTimestamp(), createdByUid: "system",
-        });
-        tx.update(d.ref, { status: "expired", refundedAtMs: now, updatedAt: FieldValue.serverTimestamp() });
-        tx.set(db.doc("loyaltyStats/global"), { totalPointsOutstanding: FieldValue.increment(pointsCost), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        const reservedPoints = Math.floor(Number(v.reservedPoints) || 0);
+        if (reservedPoints > 0) {
+          tx.update(db.doc(`customers/${v.phone}`), {
+            pointsReserved: FieldValue.increment(-reservedPoints),
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+        }
+        tx.update(d.ref, { status: "expired", reservedPoints: 0, updatedAt: FieldValue.serverTimestamp() });
       });
     } catch (e) {
       console.warn("[expireStaleVouchers] failed for", d.id, e);
@@ -75,22 +72,25 @@ export async function GET(req: Request) {
   if (!phone) return NextResponse.json({ ok: true, linked: false, rewards: [], vouchers: [], pointsBalance: 0 });
 
   try {
-    let [rewardsSnap, vouchersSnap] = await Promise.all([
-      db.collection("loyaltyRewards").get(),
-      db.collection("loyaltyRedemptions").where("phone", "==", phone).where("status", "==", "active").get(),
-    ]);
+    const rewardsSnap = await db.collection("loyaltyRewards").get();
+    let vouchersSnap = await db.collection("loyaltyRedemptions").where("phone", "==", phone).get();
 
-    // Refund + expire any stale vouchers, then re-read so balance/list are fresh.
+    // Expire any stale pending vouchers (releases the hold), then re-read so the
+    // list + reserved/available are fresh.
     const hadStale = vouchersSnap.docs.some((d: any) => {
       const v = d.data();
-      return typeof v.expiresAtMs === "number" && v.expiresAtMs < Date.now() && !v.appliedSessionId;
+      return v.status === "active" && typeof v.expiresAtMs === "number" && v.expiresAtMs < Date.now() && !v.appliedSessionId;
     });
     if (hadStale) {
       await expireStaleVouchers(db, vouchersSnap.docs);
-      vouchersSnap = await db.collection("loyaltyRedemptions").where("phone", "==", phone).where("status", "==", "active").get();
+      vouchersSnap = await db.collection("loyaltyRedemptions").where("phone", "==", phone).get();
     }
 
     const customerSnap = await db.doc(`customers/${phone}`).get();
+    const cData = customerSnap.exists ? (customerSnap.data() as any) : {};
+    const pointsBalance = Number(cData.pointsBalance ?? 0);
+    const pointsReserved = Number(cData.pointsReserved ?? 0);
+    const available = Math.max(0, pointsBalance - pointsReserved);
 
     const rewards = rewardsSnap.docs
       .map((d: any) => ({ id: d.id, ...d.data() }))
@@ -102,19 +102,34 @@ export async function GET(req: Request) {
       }));
 
     const now = Date.now();
+    // Derive display state from existing fields: a paid voucher (appliedReceiptId
+    // set) is "used"; an unpaid active/applied one is "pending". Show only those
+    // two — expired/cancelled drop off the list.
+    const stateOrder: Record<string, number> = { pending: 0, used: 1 };
     const vouchers = vouchersSnap.docs
       .map((d: any) => {
         const v = d.data();
+        const state = v.appliedReceiptId
+          ? "used"
+          : v.status === "active" || v.status === "applied"
+            ? "pending"
+            : v.status; // expired | cancelled
         return {
           id: d.id, code: v.code, rewardName: v.rewardName, type: v.type, value: v.value,
           pointsCost: v.pointsCost, expiresAtMs: v.expiresAtMs ?? null, createdAtClientMs: v.createdAtClientMs ?? null,
+          state,
+          appliedReceiptId: v.appliedReceiptId ?? null,
+          appliedAtMs: v.appliedAtMs ?? null,
           expired: typeof v.expiresAtMs === "number" && v.expiresAtMs < now,
         };
       })
-      .sort((a: any, b: any) => (b.createdAtClientMs ?? 0) - (a.createdAtClientMs ?? 0));
+      .filter((x: any) => x.state === "pending" || x.state === "used")
+      .sort((a: any, b: any) =>
+        (stateOrder[a.state] - stateOrder[b.state]) ||
+        ((b.createdAtClientMs ?? 0) - (a.createdAtClientMs ?? 0)),
+      );
 
-    const pointsBalance = customerSnap.exists ? Number(customerSnap.data()?.pointsBalance ?? 0) : 0;
-    return NextResponse.json({ ok: true, linked: true, pointsBalance, rewards, vouchers });
+    return NextResponse.json({ ok: true, linked: true, pointsBalance, pointsReserved, available, rewards, vouchers });
   } catch (e: any) {
     return bad(e?.message || "Failed to load rewards", 500);
   }
