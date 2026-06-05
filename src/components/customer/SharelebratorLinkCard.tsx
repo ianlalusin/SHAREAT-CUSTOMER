@@ -10,9 +10,11 @@ import { SharelebratorSignupDialog } from "./SharelebratorSignupDialog";
 interface Props {
   storeId: string;
   sessionId: string;
+  /** Called after a successful login/signup link so the parent can refresh. */
+  onLinked?: (name: string) => void;
 }
 
-export function SharelebratorLinkCard({ storeId: _storeId, sessionId: _sessionId }: Props) {
+export function SharelebratorLinkCard({ storeId: _storeId, sessionId: _sessionId, onLinked }: Props) {
   const [loginOpen, setLoginOpen] = useState(false);
   const [signupOpen, setSignupOpen] = useState(false);
 
@@ -42,8 +44,8 @@ export function SharelebratorLinkCard({ storeId: _storeId, sessionId: _sessionId
         </CardContent>
       </Card>
 
-      <SharelebratorLoginDialog open={loginOpen} onOpenChange={setLoginOpen} onLinked={() => {}} />
-      <SharelebratorSignupDialog open={signupOpen} onOpenChange={setSignupOpen} onLinked={() => {}} />
+      <SharelebratorLoginDialog open={loginOpen} onOpenChange={setLoginOpen} onLinked={(name) => onLinked?.(name)} />
+      <SharelebratorSignupDialog open={signupOpen} onOpenChange={setSignupOpen} onLinked={(name) => onLinked?.(name)} />
     </>
   );
 }

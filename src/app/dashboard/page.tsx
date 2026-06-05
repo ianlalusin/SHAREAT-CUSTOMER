@@ -325,7 +325,7 @@ export default function DashboardPage() {
             <DrawerTitle>Sharelebrator Card</DrawerTitle>
             <DrawerDescription>Your points, history, and rewards.</DrawerDescription>
           </DrawerHeader>
-          <div className="px-4 pb-6 overflow-y-auto">
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-6">
             <SharelebratorCardView storeId={session.storeId} sessionId={session.sessionId} />
           </div>
         </DrawerContent>

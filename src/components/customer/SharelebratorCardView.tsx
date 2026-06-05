@@ -126,7 +126,16 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
   if (!data?.linked) {
     return (
       <div className="max-w-md mx-auto mt-4">
-        <SharelebratorLinkCard storeId={storeId} sessionId={sessionId} />
+        <SharelebratorLinkCard
+          storeId={storeId}
+          sessionId={sessionId}
+          onLinked={() => {
+            // Don't rely solely on the session-doc snapshot to flip the view —
+            // refetch immediately once the dialog reports a successful link.
+            setLoading(true);
+            fetchMe().finally(() => setLoading(false));
+          }}
+        />
       </div>
     );
   }
