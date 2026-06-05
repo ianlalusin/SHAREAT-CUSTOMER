@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Gift, ArrowLeft, Loader2, Ticket, Star, RefreshCw, CheckCircle2 } from "lucide-react";
 
 type Reward = { id: string; name: string; description: string | null; pointsCost: number; type: "fixed" | "percent"; value: number; imageUrl?: string | null };
-type Voucher = { id: string; code: string; rewardName: string; type: "fixed" | "percent"; value: number; pointsCost: number; expiresAtMs: number | null; expired: boolean; state: "pending" | "used"; appliedReceiptId?: string | null; appliedAtMs?: number | null };
+type Voucher = { id: string; code: string; rewardName: string; type: "fixed" | "percent"; value: number; pointsCost: number; expiresAtMs: number | null; expired: boolean; state: "pending" | "collectible" | "used"; appliedReceiptId?: string | null; appliedAtMs?: number | null };
 
 function fmtReward(r: { type: "fixed" | "percent"; value: number }) {
   return r.type === "percent" ? `${r.value}% off` : `₱${r.value.toLocaleString()} off`;
@@ -108,6 +108,7 @@ export default function RedeemPage() {
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [collectingId, setCollectingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -161,6 +162,27 @@ export default function RedeemPage() {
     }
   };
 
+  const collect = async (voucher: Voucher) => {
+    const user = getAuth().currentUser;
+    if (!user) return;
+    setCollectingId(voucher.id);
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch("/api/customer/sharelebrator/collect-voucher", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ voucherId: voucher.id }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not collect points");
+      await load();
+    } catch (e: any) {
+      setError(e?.message || "Could not collect points");
+    } finally {
+      setCollectingId(null);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-zinc-50 px-4 py-6">
       <div className="max-w-md mx-auto space-y-5">
@@ -210,15 +232,18 @@ export default function RedeemPage() {
                 <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Your vouchers</h2>
                 {vouchers.map((v) => {
                   const used = v.state === "used";
+                  const expired = v.state === "collectible";
                   return (
-                    <Card key={v.id} className={used ? "opacity-70" : "border-primary/40"}>
+                    <Card key={v.id} className={used ? "opacity-70" : expired ? "border-amber-400/60" : "border-primary/40"}>
                       <CardContent className="p-3 flex items-center justify-between gap-3">
                         <div className="min-w-0">
                           <div className="font-semibold text-sm flex items-center gap-1.5"><Ticket className="h-4 w-4 text-primary" /> {v.rewardName}</div>
                           <div className="text-xs text-muted-foreground">
                             {fmtReward(v)} · {used
                               ? <span className="font-medium text-emerald-600">used in billing</span>
-                              : <Countdown expiresAtMs={v.expiresAtMs} />}
+                              : expired
+                                ? <span className="font-medium text-destructive">expired · {v.pointsCost.toLocaleString()} pts on hold</span>
+                                : <Countdown expiresAtMs={v.expiresAtMs} />}
                           </div>
                         </div>
                         <div className="text-right">
@@ -226,6 +251,20 @@ export default function RedeemPage() {
                             <div className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-600">
                               <CheckCircle2 className="h-4 w-4" /> Used
                             </div>
+                          ) : expired ? (
+                            <Button
+                              size="sm"
+                              onClick={() => collect(v)}
+                              disabled={collectingId === v.id}
+                              className="gap-1.5"
+                            >
+                              {collectingId === v.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Star className="h-4 w-4" />
+                              )}
+                              Collect {v.pointsCost.toLocaleString()} pts
+                            </Button>
                           ) : (
                             <>
                               <div className="font-mono font-black text-lg tracking-widest">{v.code}</div>

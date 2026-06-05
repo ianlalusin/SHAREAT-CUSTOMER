@@ -8,16 +8,23 @@ function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
 }
 
+// Grace window after expiry during which an expired voucher stays visible with a
+// "Collect Points" button (manual reclaim). Auto-release only kicks in beyond
+// this window as a safety net so held points are never permanently stuck.
+const RELEASE_GRACE_MS = 24 * 60 * 60 * 1000;
+
 /**
  * Lazily expire any of this member's pending vouchers that have passed their
- * expiry. Points are only HELD at claim (not spent), so expiry just RELEASES
- * the hold — no refund, no ledger, no stats change. Idempotent per voucher.
+ * expiry PLUS the grace window. Points are only HELD at claim (not spent), so
+ * expiry just RELEASES the hold — no refund, no ledger, no stats change.
+ * Idempotent per voucher. Within the grace window the voucher is left active so
+ * the customer can collect the points explicitly (see collect-voucher route).
  */
 async function expireStaleVouchers(db: any, docs: any[]): Promise<void> {
   const now = Date.now();
   const stale = docs.filter((d) => {
     const v = d.data();
-    return v.status === "active" && typeof v.expiresAtMs === "number" && v.expiresAtMs < now && !v.appliedSessionId;
+    return v.status === "active" && typeof v.expiresAtMs === "number" && v.expiresAtMs + RELEASE_GRACE_MS < now && !v.appliedSessionId;
   });
   for (const d of stale) {
     try {
@@ -79,7 +86,7 @@ export async function GET(req: Request) {
     // list + reserved/available are fresh.
     const hadStale = vouchersSnap.docs.some((d: any) => {
       const v = d.data();
-      return v.status === "active" && typeof v.expiresAtMs === "number" && v.expiresAtMs < Date.now() && !v.appliedSessionId;
+      return v.status === "active" && typeof v.expiresAtMs === "number" && v.expiresAtMs + RELEASE_GRACE_MS < Date.now() && !v.appliedSessionId;
     });
     if (hadStale) {
       await expireStaleVouchers(db, vouchersSnap.docs);
@@ -103,17 +110,30 @@ export async function GET(req: Request) {
 
     const now = Date.now();
     // Derive display state from existing fields: a paid voucher (appliedReceiptId
-    // set) is "used"; an unpaid active/applied one is "pending". Show only those
-    // two — expired/cancelled drop off the list.
-    const stateOrder: Record<string, number> = { pending: 0, used: 1 };
+    // set) is "used"; an active voucher past expiry that still holds points is
+    // "expired" (collectible — shows a Collect Points button); an unpaid, not-yet
+    // -expired active/applied one is "pending". Released (expired/cancelled with no
+    // hold) and beyond-grace vouchers drop off the list.
+    // Note: "collectible" is a distinct display token (not the DB status string)
+    // so a released voucher (DB status "expired", no hold) is NOT mistaken for a
+    // collectible one and stays filtered out.
+    const stateOrder: Record<string, number> = { pending: 0, collectible: 1, used: 2 };
     const vouchers = vouchersSnap.docs
       .map((d: any) => {
         const v = d.data();
+        const collectibleExpired =
+          v.status === "active" &&
+          !v.appliedReceiptId &&
+          typeof v.expiresAtMs === "number" &&
+          v.expiresAtMs < now &&
+          Number(v.reservedPoints || 0) > 0;
         const state = v.appliedReceiptId
           ? "used"
-          : v.status === "active" || v.status === "applied"
-            ? "pending"
-            : v.status; // expired | cancelled
+          : collectibleExpired
+            ? "collectible"
+            : v.status === "active" || v.status === "applied"
+              ? "pending"
+              : v.status; // released expired | cancelled → filtered out below
         return {
           id: d.id, code: v.code, rewardName: v.rewardName, type: v.type, value: v.value,
           pointsCost: v.pointsCost, expiresAtMs: v.expiresAtMs ?? null, createdAtClientMs: v.createdAtClientMs ?? null,
@@ -123,7 +143,7 @@ export async function GET(req: Request) {
           expired: typeof v.expiresAtMs === "number" && v.expiresAtMs < now,
         };
       })
-      .filter((x: any) => x.state === "pending" || x.state === "used")
+      .filter((x: any) => x.state === "pending" || x.state === "collectible" || x.state === "used")
       .sort((a: any, b: any) =>
         (stateOrder[a.state] - stateOrder[b.state]) ||
         ((b.createdAtClientMs ?? 0) - (a.createdAtClientMs ?? 0)),
