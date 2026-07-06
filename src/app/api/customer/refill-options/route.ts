@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { validateActiveParticipant } from "@/lib/server/customer-participants";
+import { getRefillOptionsMenu } from "@/lib/server/refill-options-cache";
 
 export const runtime = "nodejs";
 
@@ -41,51 +42,10 @@ export async function GET(req: Request) {
     const packageOfferingId = String(sess.packageOfferingId || "");
     const initialFlavorIds = Array.isArray(sess.initialFlavorIds) ? sess.initialFlavorIds : [];
 
-    const storeRefillsSnap = await db
-      .collection(`stores/${storeId}/storeRefills`)
-      .where("isEnabled", "==", true)
-      .orderBy("sortOrder", "asc")
-      .get();
-
-    const storeRefills = storeRefillsSnap.docs.map((d) => {
-      const x = d.data() as any;
-      return {
-        id: d.id,
-        refillId: d.id,
-        refillName: String(x.refillName || x.name || ""),
-        isOther: !!(x.isOther ?? x.isother ?? x.is_other ?? x.isOtherRefill ?? x.other),
-        kitchenLocationId: x.kitchenLocationId ?? null,
-        kitchenLocationName: x.kitchenLocationName ?? null,
-        isEnabled: x.isEnabled !== false,
-        sortOrder: Number(x.sortOrder || 0),
-      };
-    });
-
-    const refillsSnap = await db.collection("refills").where("isActive", "==", true).get();
-    const refills = refillsSnap.docs.map((d) => {
-      const x = d.data() as any;
-      return {
-        id: d.id,
-        isActive: x.isActive !== false,
-        requiresFlavor: !!x.requiresFlavor,
-        allowedFlavorIds: Array.isArray(x.allowedFlavorIds) ? x.allowedFlavorIds : [],
-      };
-    });
-
-    const flavorsSnap = await db
-      .collection(`stores/${storeId}/storeFlavors`)
-      .where("isEnabled", "==", true)
-      .get();
-
-    const storeFlavors = flavorsSnap.docs.map((d) => {
-      const x = d.data() as any;
-      return {
-        id: d.id,
-        flavorId: d.id,
-        flavorName: String(x.flavorName || x.name || ""),
-        isEnabled: x.isEnabled !== false,
-      };
-    });
+    // Menu/catalog data (storeRefills, refills, storeFlavors) only changes when
+    // an admin edits it — read from the per-store cache doc instead of scanning
+    // three collections on every customer tap. See refill-options-cache.ts.
+    const { storeRefills, refills, storeFlavors } = await getRefillOptionsMenu(db, storeId);
 
     let currentPackage: any = null;
     if (packageOfferingId) {
