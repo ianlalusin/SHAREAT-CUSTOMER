@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { collection, doc, getDocs, onSnapshot } from "firebase/firestore";
-import { Loader2, Plus, MessageSquare, Bell, Star } from "lucide-react";
+import { Loader2, Plus, MessageSquare, Bell, Star, Flame } from "lucide-react";
 
 import { DashboardHeader } from "@/components/dashboard/Header";
 import { Button } from "@/components/ui/button";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { CustomerRefillModal } from "@/components/customer/CustomerRefillModal";
+import { AddGrillerModal } from "@/components/customer/AddGrillerModal";
 import { CustomerCatalog } from "@/components/customer/CustomerCatalog";
 import { useToast } from "@/hooks/use-toast";
 
@@ -53,6 +54,7 @@ export default function DashboardPage() {
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [isRefillOpen, setIsRefillOpen] = useState(false);
+  const [isAddGrillerOpen, setIsAddGrillerOpen] = useState(false);
   const [assistanceBusy, setAssistanceBusy] = useState(false);
   const [assistanceCooldown, setAssistanceCooldown] = useState(false);
 
@@ -268,51 +270,55 @@ export default function DashboardPage() {
       />
 
       <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 mt-6 relative z-10">
-        {/* Primary action */}
-        <div className="flex justify-center">
+        <div className="w-full sm:w-[420px] mx-auto grid grid-cols-2 gap-3">
+          {/* Row 1 */}
           <Button
-            className="w-full sm:w-[420px] h-20 sm:h-28 rounded-[2.5rem] text-lg sm:text-xl font-black shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all bg-primary border-4 border-white/20"
+            className="h-14 rounded-2xl text-base font-bold shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all"
             onClick={() => setIsRefillOpen(true)}
           >
-            <Plus className="mr-3 h-8 w-8" />
+            <Plus className="mr-2 h-5 w-5" />
             Order Refill
           </Button>
-        </div>
+          <Button
+            variant="outline"
+            className="h-14 rounded-2xl text-base font-bold border-2 border-primary/30 text-primary hover:bg-primary/5 active:scale-[0.98] transition-all"
+            onClick={() => setIsAddGrillerOpen(true)}
+          >
+            <Flame className="mr-2 h-5 w-5" />
+            Add Griller
+          </Button>
 
-        {/* Secondary actions */}
-        <div className="flex justify-center mt-3">
-          <div className="w-full sm:w-[420px] grid grid-cols-2 gap-3">
-            <Button
-              variant="outline"
-              className="h-14 rounded-2xl text-base font-bold border-2 border-primary/30 text-primary hover:bg-primary/5 active:scale-[0.98] transition-all"
-              onClick={handleAssistance}
-              disabled={assistanceBusy || assistanceCooldown}
-            >
-              {assistanceBusy ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Bell className="mr-2 h-5 w-5" />}
-              {assistanceCooldown ? "Staff notified" : "Ask for assistance"}
-            </Button>
-            <button
-              type="button"
-              onClick={() => setIsCardOpen(true)}
-              className="relative h-14 rounded-2xl overflow-hidden border border-zinc-700 bg-black shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary"
-              aria-label="Open Loyalty Card"
-            >
-              <span className="absolute inset-0 pointer-events-none">
-                <span
-                  className="absolute top-0 bottom-0 w-[30%] -skew-x-12"
-                  style={{
-                    left: "-30%",
-                    background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%)",
-                    animation: "loyaltyCardShine 3.5s ease-in-out infinite",
-                  }}
-                />
-              </span>
-              <span className="relative flex items-center justify-center gap-2 text-base font-bold text-white">
-                <Star className="h-5 w-5 drop-shadow" strokeWidth={2.5} fill="currentColor" />
-                Loyalty Card
-              </span>
-            </button>
-          </div>
+          {/* Row 2 — unchanged, only repositioned */}
+          <Button
+            variant="outline"
+            className="h-14 rounded-2xl text-base font-bold border-2 border-primary/30 text-primary hover:bg-primary/5 active:scale-[0.98] transition-all"
+            onClick={handleAssistance}
+            disabled={assistanceBusy || assistanceCooldown}
+          >
+            {assistanceBusy ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Bell className="mr-2 h-5 w-5" />}
+            {assistanceCooldown ? "Staff notified" : "Ask for assistance"}
+          </Button>
+          <button
+            type="button"
+            onClick={() => setIsCardOpen(true)}
+            className="relative h-14 rounded-2xl overflow-hidden border border-zinc-700 bg-black shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary"
+            aria-label="Open Loyalty Card"
+          >
+            <span className="absolute inset-0 pointer-events-none">
+              <span
+                className="absolute top-0 bottom-0 w-[30%] -skew-x-12"
+                style={{
+                  left: "-30%",
+                  background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%)",
+                  animation: "loyaltyCardShine 3.5s ease-in-out infinite",
+                }}
+              />
+            </span>
+            <span className="relative flex items-center justify-center gap-2 text-base font-bold text-white">
+              <Star className="h-5 w-5 drop-shadow" strokeWidth={2.5} fill="currentColor" />
+              Loyalty Card
+            </span>
+          </button>
         </div>
 
         <CustomerCatalog />
@@ -351,6 +357,12 @@ export default function DashboardPage() {
         onOpenChange={setIsRefillOpen}
         session={session as any}
         sessionIsLocked={false}
+      />
+
+      <AddGrillerModal
+        open={isAddGrillerOpen}
+        onOpenChange={setIsAddGrillerOpen}
+        session={session}
       />
 
 
