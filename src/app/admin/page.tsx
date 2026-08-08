@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, LogOut, Package, RefreshCw, MessageSquare, Megaphone, Trash2 } from "lucide-react";
+import { Loader2, LogOut, RefreshCw, MessageSquare, Megaphone, Trash2 } from "lucide-react";
 
 type PinRow = {
   id: string; // PIN itself (doc id)
@@ -203,15 +203,7 @@ export default function AdminHomePage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Button
-          onClick={() => router.push("/admin/items")}
-          className="h-16 rounded-2xl font-black text-lg gap-3"
-        >
-          <Package className="h-5 w-5" />
-          Manage Items
-        </Button>
-
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Button
           onClick={() => router.push("/admin/feedback")}
           variant="outline"
