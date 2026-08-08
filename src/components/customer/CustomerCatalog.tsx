@@ -24,15 +24,32 @@ function peso(n: number) {
   }
 }
 
-export function CustomerCatalog() {
-  const [items, setItems] = useState<CatalogItem[]>([]);
+interface CustomerCatalogProps {
+  /**
+   * When provided, skips the real session-authed fetch entirely and renders
+   * these items instead — used by the admin/manager "Preview" page, which has
+   * no real customer session to fetch with. Real customer usage never passes
+   * this prop, so behavior there is unchanged.
+   */
+  overrideItems?: CatalogItem[];
+}
+
+export function CustomerCatalog({ overrideItems }: CustomerCatalogProps = {}) {
+  const [items, setItems] = useState<CatalogItem[]>(overrideItems ?? []);
   const [activeItem, setActiveItem] = useState<CatalogItem | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(overrideItems === undefined);
   const [error, setError] = useState<string | null>(null);
 
   const [activeCategory, setActiveCategory] = useState<string>("All");
 
   useEffect(() => {
+    if (overrideItems !== undefined) {
+      setItems(overrideItems);
+      setIsLoading(false);
+      setError(null);
+      return;
+    }
+
     let cancelled = false;
 
     async function load() {
@@ -76,7 +93,7 @@ export function CustomerCatalog() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [overrideItems]);
 
   const categories = useMemo(() => {
     const set = new Set<string>();

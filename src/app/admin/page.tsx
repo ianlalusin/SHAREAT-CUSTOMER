@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, LogOut, RefreshCw, MessageSquare, Megaphone, Trash2 } from "lucide-react";
+import { Loader2, LogOut, RefreshCw, MessageSquare, Megaphone, Trash2, Eye } from "lucide-react";
 
 type PinRow = {
   id: string; // PIN itself (doc id)
@@ -220,6 +220,15 @@ export default function AdminHomePage() {
         >
           <Megaphone className="h-5 w-5" />
           Flash Ads
+        </Button>
+
+        <Button
+          onClick={() => router.push("/admin/preview")}
+          variant="outline"
+          className="h-16 rounded-2xl font-black text-lg gap-3"
+        >
+          <Eye className="h-5 w-5" />
+          Preview
         </Button>
       </div>
 

@@ -8,12 +8,25 @@ interface HeaderProps {
   customerName: string;
   tableDisplayName: string;
   packageName: string;
+  /**
+   * Overrides the default "clear cookies and go to PIN entry" behavior — used
+   * by the admin/manager "Preview" page, which has no real session cookies to
+   * clear. Real customer usage never passes this, so default behavior there
+   * is unchanged.
+   */
+  onLogout?: () => void;
+  /** Overrides the "End Session" button label/icon title. */
+  logoutLabel?: string;
 }
 
-export function DashboardHeader({ customerName, tableDisplayName, packageName }: HeaderProps) {
+export function DashboardHeader({ customerName, tableDisplayName, packageName, onLogout, logoutLabel }: HeaderProps) {
   const router = useRouter();
 
   const handleLogout = () => {
+    if (onLogout) {
+      onLogout();
+      return;
+    }
     document.cookie = "customer_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;";
     document.cookie = "session_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;";
     document.cookie = "store_id=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;";
@@ -28,8 +41,8 @@ export function DashboardHeader({ customerName, tableDisplayName, packageName }:
         <button
           onClick={handleLogout}
           className="absolute right-4 sm:right-8 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/10 hover:bg-white/15 active:scale-95 transition border border-white/10"
-          title="End Session"
-          aria-label="End Session"
+          title={logoutLabel || "End Session"}
+          aria-label={logoutLabel || "End Session"}
         >
           <LogOut className="h-6 w-6" />
         </button>
