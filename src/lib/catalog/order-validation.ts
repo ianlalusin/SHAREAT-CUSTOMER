@@ -34,7 +34,13 @@ export type ResolvedModifier = {
 };
 
 export type ResolvedOrderLine = {
-  /** The sellable SKU: the variant when there is one, else the product. */
+  /**
+   * What POS bill lines and sold-items analytics key on: this store's INVENTORY
+   * DOC id (`line.itemId` — see POS lib/analytics/sold-items-core.ts), which is
+   * not the product id. A customer order keyed on the product id would bucket
+   * separately from the identical item sold at the counter, and would resolve
+   * to no inventory row at all in the sold-items report.
+   */
   itemId: string;
   itemName: string;
   category: string | null;
@@ -85,6 +91,7 @@ export function buildLineId(itemId: string, unitPrice: number, modifiers: Resolv
 type RawVariant = {
   optionGroups?: any[];
   productId?: string;
+  inventoryId?: string | null;
   displayName?: string;
   price?: number;
   orderable?: boolean;
@@ -94,6 +101,7 @@ type RawVariant = {
 
 type RawEntry = {
   productId?: string;
+  inventoryId?: string | null;
   displayName?: string;
   subCategory?: string;
   kind?: string;
@@ -218,7 +226,9 @@ export function resolveOrderLines(snapshot: any, requested: unknown): ResolveRes
       if (!v) return fail("That version is no longer available.", 409);
       selectedVariant = v;
       sku = {
-        id: String(v.productId),
+        // Inventory doc id when the snapshot carries it; the product id is the
+        // fallback for a snapshot written before this field existed.
+        id: String(v.inventoryId || v.productId),
         name: String(v.displayName || entry.displayName || ""),
         price: num(v.price),
         orderable: v.orderable === true,
@@ -227,7 +237,7 @@ export function resolveOrderLines(snapshot: any, requested: unknown): ResolveRes
       };
     } else {
       sku = {
-        id: String(entry.productId),
+        id: String(entry.inventoryId || entry.productId),
         name: String(entry.displayName || ""),
         price: num(entry.price),
         orderable: entry.orderable === true,

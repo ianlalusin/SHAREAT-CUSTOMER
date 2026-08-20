@@ -307,6 +307,30 @@ describe("resolveOrderLines — per-variant option groups", () => {
   });
 });
 
+describe("resolveOrderLines — keys on the inventory doc id", () => {
+  it("uses inventoryId as itemId, so a customer sale buckets with the same item sold at the counter", () => {
+    const item = single({ inventoryId: "inv_doc_1" });
+    const lines = ok(resolveOrderLines(snapshot({ items: [item] }), [line()]));
+    expect(lines[0].itemId).toBe("inv_doc_1");
+    expect(lines[0].lineId).toBe("addon_inv_doc_1_60");
+  });
+
+  it("uses the chosen VARIANT's inventoryId, not the family's", () => {
+    const family = kimbap();
+    family.inventoryId = "inv_family";
+    family.variants[1].inventoryId = "inv_sig";
+    const lines = ok(
+      resolveOrderLines(snapshot({ items: [family] }), [{ productId: "grp", variantId: "v_sig", qty: 1 }])
+    );
+    expect(lines[0].itemId).toBe("inv_sig");
+  });
+
+  it("falls back to the product id for a snapshot written before the field existed", () => {
+    const lines = ok(resolveOrderLines(snapshot(), [line()]));
+    expect(lines[0].itemId).toBe("coke");
+  });
+});
+
 describe("buildLineId", () => {
   it("matches POS's scheme so a customer order merges with a staff-placed one", () => {
     expect(buildLineId("coke", 60, null)).toBe("addon_coke_60");
