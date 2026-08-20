@@ -15,7 +15,7 @@ function snapshot(over: { orderingEnabled?: boolean; items?: any[] } = {}) {
   };
 }
 
-const single = (over: Record<string, any> = {}) => ({
+const single = (over: Record<string, any> = {}): Record<string, any> => ({
   productId: "coke",
   name: "Coke",
   displayName: "Coke",
@@ -28,7 +28,7 @@ const single = (over: Record<string, any> = {}) => ({
   ...over,
 });
 
-const kimbap = (over: Record<string, any> = {}) => ({
+const kimbap = (over: Record<string, any> = {}): Record<string, any> => ({
   productId: "grp",
   name: "Kimbap",
   displayName: "Kimbap",
@@ -59,7 +59,7 @@ const kimbap = (over: Record<string, any> = {}) => ({
   ...over,
 });
 
-const dipGroup = (over: Record<string, any> = {}) => ({
+const dipGroup = (over: Record<string, any> = {}): Record<string, any> => ({
   id: "og_dip",
   name: "Dip",
   selectionMode: "single",
@@ -237,6 +237,73 @@ describe("resolveOrderLines — modifiers", () => {
     expect(lines[0].modifiers).toBeNull();
     expect(lines[0].modifiersText).toBeNull();
     expect(lines[0].modifiersTotal).toBeNull();
+  });
+});
+
+describe("resolveOrderLines — per-variant option groups", () => {
+  /** Kimbap where only Signature offers Extra Nori. */
+  function noriFamily() {
+    const family = kimbap();
+    const dip = dipGroup();
+    const nori = {
+      id: "og_nori",
+      name: "Extra Nori",
+      selectionMode: "single",
+      required: false,
+      values: [{ id: "nori", name: "Nori", priceDelta: 20 }],
+    };
+    family.optionGroups = [dip];                       // the family's shared set
+    family.variants[1].optionGroups = [dip, nori];     // Signature carries the FULL list
+    return family;
+  }
+
+  it("accepts a variant-only modifier on the variant that offers it", () => {
+    const lines = ok(
+      resolveOrderLines(snapshot({ items: [noriFamily()] }), [
+        { productId: "grp", variantId: "v_sig", qty: 1, modifiers: [{ groupId: "og_nori", valueId: "nori" }] },
+      ])
+    );
+    expect(lines[0].modifiersTotal).toBe(20);
+    expect(lines[0].modifiersText).toBe("Nori");
+  });
+
+  it("REJECTS that same modifier on a sibling variant that does not offer it", () => {
+    const r = resolveOrderLines(snapshot({ items: [noriFamily()] }), [
+      { productId: "grp", variantId: "v_veg", qty: 1, modifiers: [{ groupId: "og_nori", valueId: "nori" }] },
+    ]);
+    expect(r.ok).toBe(false);
+  });
+
+  it("still honours the family's shared groups on a variant that adds its own", () => {
+    const lines = ok(
+      resolveOrderLines(snapshot({ items: [noriFamily()] }), [
+        { productId: "grp", variantId: "v_sig", qty: 1, modifiers: [{ groupId: "og_dip", valueId: "cheese" }] },
+      ])
+    );
+    expect(lines[0].modifiers?.[0].groupId).toBe("og_dip");
+  });
+
+  it("falls back to the family's groups for a variant carrying none of its own", () => {
+    const family = kimbap();
+    family.optionGroups = [dipGroup()];
+    const lines = ok(
+      resolveOrderLines(snapshot({ items: [family] }), [
+        { productId: "grp", variantId: "v_veg", qty: 1, modifiers: [{ groupId: "og_dip", valueId: "cheese" }] },
+      ])
+    );
+    expect(lines[0].modifiers?.[0].valueName).toBe("Cheese");
+  });
+
+  it("enforces a required group that only one variant carries", () => {
+    const family = kimbap();
+    family.optionGroups = [];
+    family.variants[1].optionGroups = [dipGroup({ required: true })];
+    // Veggies has no required group — fine.
+    expect(resolveOrderLines(snapshot({ items: [family] }), [{ productId: "grp", variantId: "v_veg", qty: 1 }]).ok).toBe(true);
+    // Signature does — omitting it must fail.
+    const r = resolveOrderLines(snapshot({ items: [family] }), [{ productId: "grp", variantId: "v_sig", qty: 1 }]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/choose dip/i);
   });
 });
 

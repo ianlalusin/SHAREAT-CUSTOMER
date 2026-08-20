@@ -34,6 +34,13 @@ export type CatalogVariant = {
   imageUrl: string | null;
   /** Whether a diner may order this themselves, rather than asking staff. */
   orderable: boolean;
+  /**
+   * This variant's OWN modifier set, present only when it differs from the
+   * family's. Never merge it by hand — use `optionGroupsFor(entry, variant)`,
+   * which both the menu UI and the order route read, so what a diner is shown
+   * and what the server accepts cannot diverge.
+   */
+  optionGroups?: CatalogOptionGroup[];
   description?: string;
 };
 

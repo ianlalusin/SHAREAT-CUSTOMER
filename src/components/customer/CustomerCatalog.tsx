@@ -12,6 +12,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { getAuth } from "firebase/auth";
 import { cn } from "@/lib/utils";
 import { inFlightQty, type SessionOrder } from "@/hooks/use-session-orders";
+import { optionGroupsFor } from "@/lib/catalog/project";
 import type { CatalogCategory, CatalogEntry, CatalogOptionGroup, CatalogVariant } from "@/lib/catalog/types";
 
 function peso(n: number) {
@@ -439,12 +440,27 @@ function EntryDetail({
     setNote("");
   }, [entry.productId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Switching variant can invalidate picks: "Extra Nori" exists on Signature
+  // but not on Veggies. FILTER rather than clear — clearing would also throw
+  // away still-valid picks and silently re-block a required group. Left
+  // unhandled, the diner would be priced on a modifier the server then rejects,
+  // after the review sheet already showed them a total.
+  useEffect(() => {
+    setPicks((prev) => {
+      const allowed = new Set(groups.map((g) => g.id));
+      const next = prev.filter((p) => allowed.has(p.groupId));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [selectedId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const selected: CatalogVariant | null = variants.find((v) => v.productId === selectedId) ?? variants[0] ?? null;
 
   const imageUrl = selected?.imageUrl ?? entry.imageUrl;
   const description = selected?.description ?? entry.description;
   const basePrice = selected ? selected.price : entry.price;
-  const groups = entry.optionGroups ?? [];
+  // A variant may offer modifiers the rest of its family does not, so the list
+  // follows the current selection. Same resolver the order route prices with.
+  const groups = optionGroupsFor(entry, selected);
 
   const picksTotal = useMemo(() => {
     let total = 0;

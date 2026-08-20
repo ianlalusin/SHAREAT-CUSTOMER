@@ -1,3 +1,5 @@
+import { optionGroupsFor } from "./project";
+
 /**
  * Turns what a diner tapped into priced, kitchen-routable order lines — or a
  * refusal.
@@ -81,6 +83,7 @@ export function buildLineId(itemId: string, unitPrice: number, modifiers: Resolv
 }
 
 type RawVariant = {
+  optionGroups?: any[];
   productId?: string;
   displayName?: string;
   price?: number;
@@ -122,11 +125,10 @@ function indexEntries(snapshot: any): Map<string, RawEntry> {
  * catalog disagree, and guessing which one is right would mis-price the order.
  */
 function resolveModifiers(
-  entry: RawEntry,
+  groups: any[],
   picks: OrderRequestModifier[],
   itemName: string
 ): { ok: true; modifiers: ResolvedModifier[] } | { ok: false; error: string } {
-  const groups = Array.isArray(entry.optionGroups) ? entry.optionGroups : [];
   const byGroupId = new Map<string, any>(groups.map((g: any) => [String(g?.id), g]));
   const resolved: ResolvedModifier[] = [];
   const pickedByGroup = new Map<string, number>();
@@ -206,11 +208,15 @@ export function resolveOrderLines(snapshot: any, requested: unknown): ResolveRes
 
     // Pick the sellable SKU: a family orders through one of its variants.
     let sku: { id: string; name: string; price: number; orderable: boolean; kdsId: string | null; kdsName: string | null };
+    // Null for a single product; the chosen variant otherwise. Drives which
+    // option groups this line is validated and priced against.
+    let selectedVariant: RawVariant | null = null;
     if (entry.kind === "group") {
       const variants = Array.isArray(entry.variants) ? entry.variants : [];
       if (!variantId) return fail(`Choose a version of "${entry.displayName || productId}".`);
       const v = variants.find((x) => String(x?.productId) === variantId);
       if (!v) return fail("That version is no longer available.", 409);
+      selectedVariant = v;
       sku = {
         id: String(v.productId),
         name: String(v.displayName || entry.displayName || ""),
@@ -237,7 +243,10 @@ export function resolveOrderLines(snapshot: any, requested: unknown): ResolveRes
     if (!sku.kdsId) return fail(`"${sku.name}" can't be sent to the kitchen — please ask our staff.`, 409);
 
     const picks = Array.isArray(raw?.modifiers) ? raw.modifiers : [];
-    const mods = resolveModifiers(entry, picks, sku.name);
+    // A variant may offer modifiers the rest of its family does not (Extra Nori
+    // on Signature, not Veggies), so validate against the SELECTED variant's
+    // list. `optionGroupsFor` is the same resolver the menu prices with.
+    const mods = resolveModifiers(optionGroupsFor(entry, selectedVariant), picks, sku.name);
     if (!mods.ok) return fail(mods.error);
 
     const modifiers = mods.modifiers.length ? mods.modifiers : null;

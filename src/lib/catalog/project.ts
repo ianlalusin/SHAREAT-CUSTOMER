@@ -63,7 +63,27 @@ function variant(raw: any): CatalogVariant {
     orderable: raw?.orderable === true,
   };
   if (raw?.description) v.description = String(raw.description);
+  const groups = optionGroups(raw?.optionGroups);
+  if (groups) v.optionGroups = groups;
   return v;
+}
+
+/**
+ * The option groups in effect for a selection.
+ *
+ * A variant carries its own list only when it differs from the family's, so
+ * this is a fallback, never a merge — POS already resolved parent ∪ variant ∪
+ * store when it built the snapshot (`resolveOptionGroupIds` in
+ * lib/server/catalog-shared.ts).
+ *
+ * Both the menu UI and `order-validation` call this, which is what guarantees
+ * the diner is priced on exactly the list the server will accept.
+ */
+export function optionGroupsFor(
+  entry: { optionGroups?: CatalogOptionGroup[] } | null | undefined,
+  variant?: { optionGroups?: CatalogOptionGroup[] } | null
+): CatalogOptionGroup[] {
+  return variant?.optionGroups ?? entry?.optionGroups ?? [];
 }
 
 function entry(raw: any, categoryName: string): CatalogEntry {
