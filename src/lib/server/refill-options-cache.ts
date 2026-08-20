@@ -1,4 +1,5 @@
 import type { Firestore } from "firebase-admin/firestore";
+import { globalInactiveIds } from "../refill-visibility";
 
 export const REFILL_OPTIONS_CACHE_TTL_MS = 10 * 60 * 1000;
 
@@ -46,7 +47,7 @@ export async function buildRefillOptionsMenu(db: Firestore, storeId: string): Pr
     .orderBy("sortOrder", "asc")
     .get();
 
-  const storeRefills: CachedStoreRefill[] = storeRefillsSnap.docs.map((d) => {
+  const storeRefillsAll: CachedStoreRefill[] = storeRefillsSnap.docs.map((d) => {
     const x = d.data() as any;
     return {
       id: d.id,
@@ -60,8 +61,12 @@ export async function buildRefillOptionsMenu(db: Firestore, storeId: string): Pr
     };
   });
 
-  const refillsSnap = await db.collection("refills").where("isActive", "==", true).get();
-  const refills: CachedRefill[] = refillsSnap.docs.map((d) => {
+  // Read EVERY global refill, not just the active ones: the projection has to
+  // know which ids are retired in order to drop them from the store list.
+  // Filtering the query to isActive==true is precisely why deactivating an item
+  // in the global admin appeared to do nothing. Same single collection read.
+  const refillsSnap = await db.collection("refills").get();
+  const allGlobalRefills: CachedRefill[] = refillsSnap.docs.map((d) => {
     const x = d.data() as any;
     return {
       id: d.id,
@@ -70,6 +75,12 @@ export async function buildRefillOptionsMenu(db: Firestore, storeId: string): Pr
       allowedFlavorIds: Array.isArray(x.allowedFlavorIds) ? x.allowedFlavorIds : [],
     };
   });
+
+  // Unchanged shape for consumers: only active globals carry the flavor rules.
+  const refills: CachedRefill[] = allGlobalRefills.filter((r) => r.isActive);
+
+  const globalInactive = globalInactiveIds(allGlobalRefills);
+  const storeRefills = storeRefillsAll.filter((r) => !globalInactive.has(r.refillId));
 
   const flavorsSnap = await db
     .collection(`stores/${storeId}/storeFlavors`)
