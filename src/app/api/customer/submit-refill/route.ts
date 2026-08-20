@@ -108,20 +108,28 @@ export async function POST(req: Request) {
     // ---- resolve flavor names so the ticket carries a real flavorNote ------
     // The KDS card renders `flavorNote`; only the POS staff path used to set it,
     // so customer-chosen flavors showed up under a different heading.
+    // One cached-doc read covers both the flavor names for the ticket note and
+    // the per-refill names for cooldown messages. Names come from the menu, not
+    // from the client, so a guest cannot spoof what the kitchen sees.
     const flavorNameById = new Map<string, string>();
-    if (normalized.some((n) => n.flavorIds.length)) {
-      try {
-        const menu = await getRefillOptionsMenu(db, storeId);
-        for (const f of menu.storeFlavors) flavorNameById.set(f.flavorId, f.flavorName);
-      } catch {
-        // Non-fatal: fall back to raw ids in the note rather than failing the order.
-      }
+    const refillNameById = new Map<string, string>();
+    try {
+      const menu = await getRefillOptionsMenu(db, storeId);
+      for (const f of menu.storeFlavors) flavorNameById.set(f.flavorId, f.flavorName);
+      for (const r of menu.storeRefills) refillNameById.set(r.refillId, r.refillName);
+    } catch {
+      // Non-fatal: fall back to raw ids/client names rather than failing the order.
     }
 
     // ---- claim the per-meat cooldowns (atomic, all-or-nothing) -------------
     const labels: Record<string, string> = {};
     for (const n of normalized) {
-      for (const id of n.cooldownIds) labels[id] = labels[id] || n.itemName;
+      for (const id of n.cooldownIds) {
+        // "Other Refills" is one line covering several sides, so its itemName is
+        // the bundle label. Without the menu lookup the guest gets told "OTHER
+        // REFILLS is cooling down" when really it is just the Rice.
+        labels[id] = labels[id] || refillNameById.get(id) || n.itemName;
+      }
     }
 
     let claimed: ClaimedCooldowns;

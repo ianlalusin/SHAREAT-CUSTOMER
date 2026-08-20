@@ -673,7 +673,7 @@ function CustomerRefillContent({
               </div>
 
               <div className="flex-1 flex items-center justify-center text-center text-muted-foreground bg-muted/50 rounded-lg">
-                <p>These refills are always available and optional.</p>
+                <p>Optional add-ons. Each one can be re-ordered every 10 minutes.</p>
               </div>
             </div>
           ) : activeCartItem ? (
