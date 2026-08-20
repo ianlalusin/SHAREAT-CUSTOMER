@@ -8,7 +8,7 @@ import { Loader2, Plus, MessageSquare, Bell, Star, Flame } from "lucide-react";
 import { DashboardHeader } from "@/components/dashboard/Header";
 import { Button } from "@/components/ui/button";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
-import { CustomerRefillModal } from "@/components/customer/CustomerRefillModal";
+import { CustomerRefillModal, type RefillCooldowns } from "@/components/customer/CustomerRefillModal";
 import { AddGrillerModal } from "@/components/customer/AddGrillerModal";
 import { CustomerCatalog } from "@/components/customer/CustomerCatalog";
 import { useToast } from "@/hooks/use-toast";
@@ -32,6 +32,7 @@ type SessionDTO = {
   initialFlavorIds: string[];
   status: string;
   sessionMode: string;
+  refillCooldowns?: RefillCooldowns | null;
 };
 
 function getCookie(name: string) {
@@ -54,6 +55,7 @@ export default function DashboardPage() {
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [isRefillOpen, setIsRefillOpen] = useState(false);
+  const [refillCooldowns, setRefillCooldowns] = useState<RefillCooldowns | null>(null);
   const [isAddGrillerOpen, setIsAddGrillerOpen] = useState(false);
   const [assistanceBusy, setAssistanceBusy] = useState(false);
   const [assistanceCooldown, setAssistanceCooldown] = useState(false);
@@ -123,6 +125,7 @@ export default function DashboardPage() {
 
       if (!cancelled) {
         setSession(json.session as SessionDTO);
+        setRefillCooldowns((json.session?.refillCooldowns as RefillCooldowns) ?? null);
         setLoadingSession(false);
         try {
           const key = getSessionKeyForFeedback();
@@ -357,6 +360,8 @@ export default function DashboardPage() {
         onOpenChange={setIsRefillOpen}
         session={session as any}
         sessionIsLocked={false}
+        refillCooldowns={refillCooldowns}
+        onCooldownsChange={setRefillCooldowns}
       />
 
       <AddGrillerModal

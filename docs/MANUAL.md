@@ -40,9 +40,16 @@ The main screen once joined. Everything is large-tap, mobile-first.
 - **Browse the Menu**: the catalog shows the store's items (the POS catalog,
   organized by category) so guests can see what's available.
 - **Order Refill**: tap **Order Refill** to request refillable items (and
-  flavors where applicable). Requests are rate-limited / cooldown-checked
-  server-side to prevent accidental spamming, and go straight to the assigned
-  kitchen station.
+  flavors where applicable). Orders go straight to the assigned kitchen station.
+  Two rules apply, both enforced server-side:
+  - **One flavor per meat.** Each meat takes a single flavor per order — e.g.
+    Pork → Bulgogi together with Beef → Galbi. Picking another flavor for the
+    same meat replaces the current one.
+  - **A 10-minute cooldown per meat, per phone.** After ordering Pork, that
+    guest's Pork is locked for 10 minutes while their Beef stays available and
+    starts its own 10 minutes when ordered. The clocks are per phone, so four
+    guests at one table can all order at the same time. Cooling items show a
+    live countdown in the refill list and cannot be selected.
 - **Request / Call Staff**: tap **Request** to send a free-text message to staff
   (call a server, ask about add-ons, anything). These appear on the kitchen's
   **Customer Requests** panel, where staff mark them done; response time is

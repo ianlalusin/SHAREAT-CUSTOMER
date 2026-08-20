@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { validateActiveParticipant } from "@/lib/server/customer-participants";
 import { getRefillOptionsMenu } from "@/lib/server/refill-options-cache";
+import { REFILL_COOLDOWN_MS, toNextAllowedMap } from "@/lib/refill-cooldown";
 
 export const runtime = "nodejs";
 
@@ -33,8 +34,9 @@ export async function GET(req: Request) {
     if (sess.customerAccessEnabled !== true) return bad("Customer access disabled.", 403);
     if (Number(sess.customerAccessExpiresAtMs || 0) <= Date.now()) return bad("Customer access expired.", 403);
 
+    let participantInfo;
     try {
-      await validateActiveParticipant(db, storeId, sessionId, participantId);
+      participantInfo = await validateActiveParticipant(db, storeId, sessionId, participantId);
     } catch (e: any) {
       return bad(e.message, e.httpStatus || 403);
     }
@@ -60,6 +62,12 @@ export async function GET(req: Request) {
       refills,
       storeFlavors,
       currentPackage,
+      // Per-meat countdowns for this phone, off the participant read above —
+      // no extra Firestore reads.
+      refillCooldowns: {
+        cooldownMs: REFILL_COOLDOWN_MS,
+        nextAllowedAt: toNextAllowedMap(participantInfo.refillCooldowns, Date.now()),
+      },
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });

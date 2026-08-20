@@ -1,6 +1,8 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { createHash } from "crypto";
 import type { Firestore } from "firebase-admin/firestore";
+import type { CooldownMap } from "../refill-cooldown";
+import { readCooldownMap } from "./refill-cooldown";
 
 export interface ParticipantSlot {
   participantId: string;
@@ -121,7 +123,7 @@ export async function validateActiveParticipant(
   storeId: string,
   sessionId: string,
   participantId: string
-): Promise<{ slotNumber: number; joinMethod: string }> {
+): Promise<{ slotNumber: number; joinMethod: string; refillCooldowns: CooldownMap }> {
   const snap = await db
     .doc(`stores/${storeId}/activeSessions/${sessionId}/customerParticipants/${participantId}`)
     .get();
@@ -132,7 +134,13 @@ export async function validateActiveParticipant(
   if (data.status !== "active") {
     throw Object.assign(new Error("Participant access has been removed."), { httpStatus: 403 });
   }
-  return { slotNumber: Number(data.slotNumber), joinMethod: String(data.joinMethod || "pin") };
+  // Returned from this existing read so callers can surface refill countdowns
+  // without spending another Firestore read on the same doc.
+  return {
+    slotNumber: Number(data.slotNumber),
+    joinMethod: String(data.joinMethod || "pin"),
+    refillCooldowns: readCooldownMap(data),
+  };
 }
 
 export async function endAllParticipants(

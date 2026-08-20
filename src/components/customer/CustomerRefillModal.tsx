@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
@@ -17,6 +17,13 @@ import { CenterAlert } from "./CenterAlert";
 
 import { getAuth } from "firebase/auth";
 import { useFirebase } from "@/firebase";
+import { formatCountdown } from "@/lib/refill-cooldown";
+
+export type RefillCooldowns = {
+  cooldownMs: number;
+  /** refillId -> epoch ms when that refill becomes orderable again. */
+  nextAllowedAt: Record<string, number>;
+};
 
 type StoreRefill = {
   id?: string;
@@ -75,6 +82,8 @@ export function CustomerRefillModal(props: {
   onOpenChange: (open: boolean) => void;
   session: CustomerSession;
   sessionIsLocked?: boolean;
+  refillCooldowns?: RefillCooldowns | null;
+  onCooldownsChange?: (cooldowns: RefillCooldowns) => void;
 }) {
   const isMobile = useIsMobile();
   const handleOpenChange = (open: boolean) => {
@@ -85,6 +94,8 @@ export function CustomerRefillModal(props: {
     <CustomerRefillContent
       session={props.session}
       sessionIsLocked={props.sessionIsLocked}
+      refillCooldowns={props.refillCooldowns}
+      onCooldownsChange={props.onCooldownsChange}
       onClose={() => props.onOpenChange(false)}
     />
   );
@@ -95,7 +106,7 @@ export function CustomerRefillModal(props: {
         <DrawerContent>
           <DrawerHeader className="text-left">
             <DrawerTitle>Order Refill</DrawerTitle>
-            <DrawerDescription>Select refill items and flavors.</DrawerDescription>
+            <DrawerDescription>Choose 1 flavor per meat. Each meat can be refilled every 10 minutes.</DrawerDescription>
           </DrawerHeader>
           {content}
         </DrawerContent>
@@ -108,7 +119,7 @@ export function CustomerRefillModal(props: {
       <DialogContent className="max-w-4xl p-0 gap-0">
         <DialogHeader className="p-4 pb-0">
           <DialogTitle>Order Refill</DialogTitle>
-          <DialogDescription>Select refill items and flavors.</DialogDescription>
+          <DialogDescription>Choose 1 flavor per meat. Each meat can be refilled every 10 minutes.</DialogDescription>
         </DialogHeader>
         {content}
       </DialogContent>
@@ -119,10 +130,14 @@ export function CustomerRefillModal(props: {
 function CustomerRefillContent({
   session,
   sessionIsLocked,
+  refillCooldowns,
+  onCooldownsChange,
   onClose,
 }: {
   session: CustomerSession;
   sessionIsLocked?: boolean;
+  refillCooldowns?: RefillCooldowns | null;
+  onCooldownsChange?: (cooldowns: RefillCooldowns) => void;
   onClose: () => void;
 }) {
   const { toast } = useToast();
@@ -142,6 +157,31 @@ function CustomerRefillContent({
     message: "",
   });
   const [otherQty, setOtherQty] = useState<Record<string, number>>({});
+
+  // refillId -> epoch ms when that refill unlocks again. Seeded from the
+  // dashboard so the list never flashes "available" before our own fetch lands.
+  const [nextAllowedAt, setNextAllowedAt] = useState<Record<string, number>>(
+    () => refillCooldowns?.nextAllowedAt ?? {}
+  );
+  const [cooldownMs, setCooldownMs] = useState(() => refillCooldowns?.cooldownMs ?? 0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  const applyCooldowns = (next: Record<string, number>, nextCooldownMs?: number) => {
+    const ms = nextCooldownMs ?? cooldownMs;
+    if (nextCooldownMs && nextCooldownMs !== cooldownMs) setCooldownMs(nextCooldownMs);
+    setNextAllowedAt(next);
+    onCooldownsChange?.({ cooldownMs: ms, nextAllowedAt: next });
+  };
+
+  const remainingFor = (refillId: string) => Math.max(0, (nextAllowedAt[refillId] ?? 0) - nowMs);
+
+  // Tick only while something is actually counting down.
+  const hasActiveCooldown = Object.values(nextAllowedAt).some((at) => at > nowMs);
+  useEffect(() => {
+    if (!hasActiveCooldown) return;
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [hasActiveCooldown]);
 
   useEffect(() => {
     let cancelled = false;
@@ -179,6 +219,13 @@ function CustomerRefillContent({
         setGlobalRefills(Array.isArray(json.refills) ? json.refills : []);
         setStoreFlavors(Array.isArray(json.storeFlavors) ? json.storeFlavors : []);
         setCurrentPackage(json.currentPackage ?? null);
+        if (json.refillCooldowns?.nextAllowedAt) {
+          setNowMs(Date.now());
+          applyCooldowns(
+            json.refillCooldowns.nextAllowedAt as Record<string, number>,
+            Number(json.refillCooldowns.cooldownMs) || undefined
+          );
+        }
         setIsLoading(false);
       } catch (e: any) {
         if (cancelled) return;
@@ -247,6 +294,7 @@ function CustomerRefillContent({
 
   const handleSelectRefill = (refill: StoreRefill) => {
     const id = refill.refillId;
+    if (remainingFor(id) > 0) return; // still cooling down — the row is disabled
 
     setCart((prev) => {
       const next = new Map(prev);
@@ -263,31 +311,20 @@ function CustomerRefillContent({
     setActiveRefillId((cur) => (cur === OTHER_REFILLS_ID ? null : OTHER_REFILLS_ID));
   };
 
-  const handleFlavorToggle = (flavorId: string) => {
+  /**
+   * One flavor per meat: picking another flavor replaces the current one, and
+   * picking the selected one again clears it. There is no "too many flavors"
+   * state to warn about because a second flavor can never be held.
+   */
+  const handleFlavorSelect = (flavorId: string) => {
     if (!activeRefillId) return;
     setCart((prev) => {
       const next = new Map(prev);
       const item = next.get(activeRefillId);
       if (!item) return prev;
 
-      const isSelected = item.flavorIds.includes(flavorId);
-      let newFlavorIds = item.flavorIds;
-
-      if (isSelected) {
-        newFlavorIds = item.flavorIds.filter((id) => id !== flavorId);
-      } else {
-        if (item.flavorIds.length >= 3) {
-          setAlertState({
-            open: true,
-            title: "Flavor limit reached",
-            message: "Maximum of 3 flavors per refill. Uncheck one to pick another.",
-          });
-          return prev;
-        }
-        newFlavorIds = [...item.flavorIds, flavorId];
-      }
-
-      next.set(activeRefillId, { ...item, flavorIds: newFlavorIds });
+      const isSelected = item.flavorIds[0] === flavorId;
+      next.set(activeRefillId, { ...item, flavorIds: isSelected ? [] : [flavorId] });
       return next;
     });
   };
@@ -336,7 +373,7 @@ function CustomerRefillContent({
         setAlertState({
           open: true,
           title: "Flavor required",
-          message: `Please choose at least one flavor for "${item.refill.refillName}" before sending the order.`,
+          message: `Please choose a flavor for "${item.refill.refillName}" before sending the order.`,
         });
         return;
       }
@@ -350,12 +387,10 @@ function CustomerRefillContent({
       const idToken = await user.getIdToken();
 
       const items = Array.from(cart.values()).map((item) => {
-        const flavorNames = item.flavorIds
-          .map((id) => storeFlavors.find((f) => f.flavorId === id)?.flavorName)
-          .filter(Boolean) as string[];
-
-        const flavorNote = flavorNames.length ? `Flavors: ${flavorNames.join(", ")}` : "";
-        const notes = [item.notes.trim(), flavorNote].filter(Boolean).join(" | ");
+        // Flavors no longer ride along in `notes` — the server resolves them from
+        // flavorIds into the ticket's own `flavorNote`, which is what the KDS
+        // card renders. Duplicating them here would print the flavor twice.
+        const notes = item.notes.trim();
 
         return {
           // server accepts itemId/itemName too (it will fallback to refillId/refillName)
@@ -369,23 +404,31 @@ function CustomerRefillContent({
 
           qty: 1,
           notes,
+          // Sent so the server can enforce the 1-flavor-per-meat rule and write
+          // a real flavorNote on the ticket — `notes` alone is not verifiable.
+          flavorIds: item.flavorIds,
         };
       });
 
       const otherStation = otherRefills.find((r) => !!r.kitchenLocationId) || otherRefills[0];
 
       if (hasOther) {
-        const byStation = new Map<string, { name?: string | null; entries: Array<[string, number]> }>();
+        const byStation = new Map<
+          string,
+          { name?: string | null; entries: Array<[string, number]>; ids: string[] }
+        >();
 
         for (const r of otherRefills) {
           const qty = Number(otherQty[r.refillId] || 0);
           if (qty <= 0) continue;
+          if (remainingFor(r.refillId) > 0) continue; // still cooling down
           const stationId = String(r.kitchenLocationId || "");
           if (!stationId) continue;
 
-          const bucket = byStation.get(stationId) || { name: r.kitchenLocationName, entries: [] };
+          const bucket = byStation.get(stationId) || { name: r.kitchenLocationName, entries: [], ids: [] };
           bucket.name = bucket.name || r.kitchenLocationName;
           bucket.entries.push([r.refillName, qty]);
+          bucket.ids.push(r.refillId);
           byStation.set(stationId, bucket);
         }
 
@@ -400,6 +443,8 @@ function CustomerRefillContent({
             qty: 1,
             notes: "",
             refillRequest: Object.fromEntries(bucket.entries),
+            // Each side item gets its own cooldown, same per-type rule as meats.
+            refillIds: bucket.ids,
           } as any);
         }
       }
@@ -414,7 +459,35 @@ function CustomerRefillContent({
       });
 
       const json = (await res.json().catch(() => ({}))) as any;
+
+      if (res.status === 429) {
+        // Server is the authority on the countdown — resync and show why.
+        const blocked: Array<{ refillId: string; nextAllowedAtMs: number }> = Array.isArray(json?.blocked)
+          ? json.blocked
+          : [];
+        if (blocked.length) {
+          const merged = { ...nextAllowedAt };
+          for (const b of blocked) merged[b.refillId] = b.nextAllowedAtMs;
+          setNowMs(Date.now());
+          applyCooldowns(merged);
+        }
+        setAlertState({
+          open: true,
+          title: "Still cooling down",
+          message: json?.error || "That refill isn't available yet.",
+        });
+        return;
+      }
+
       if (!res.ok || !json?.ok) throw new Error(json?.error || "Failed to submit refill.");
+
+      if (json.refillCooldowns?.nextAllowedAt) {
+        setNowMs(Date.now());
+        applyCooldowns(
+          json.refillCooldowns.nextAllowedAt as Record<string, number>,
+          Number(json.refillCooldowns.cooldownMs) || undefined
+        );
+      }
 
       toast({ title: `Sent ${items.length} refill(s).`, description: "Status: Preparing" });
       setCart(new Map());
@@ -448,28 +521,48 @@ function CustomerRefillContent({
         <div className="md:col-span-1 border-r pr-4 flex flex-col">
           <h3 className="font-semibold mb-2">1. Select Refills</h3>
           <ScrollArea className="flex-1">
-            <div className="space-y-1">
+            {/* Two cards per row: Pork | Beef, Chicken | Seafood, then Other Refills. */}
+            <div className="grid grid-cols-2 gap-2">
               {isLoading ? (
-                <Loader2 className="mx-auto my-16 animate-spin" />
+                <Loader2 className="col-span-2 mx-auto my-16 animate-spin" />
               ) : (
                 mainRefills.map((refill) => {
                   const selected = cart.has(refill.refillId);
+                  const remainingMs = remainingFor(refill.refillId);
+                  const cooling = remainingMs > 0;
                   return (
                     <button
                       key={refill.refillId}
+                      type="button"
+                      disabled={cooling}
+                      aria-label={
+                        cooling
+                          ? `${refill.refillName} — available again in ${formatCountdown(remainingMs)}`
+                          : refill.refillName
+                      }
                       onClick={() => handleSelectRefill(refill)}
                       className={cn(
-                        "w-full text-left rounded-2xl px-4 py-3 border transition-all",
-                        "hover:shadow-sm active:scale-[0.99]",
-                        selected
-                          ? "bg-primary text-white border-primary"
-                          : "bg-white text-primary border-primary/30"
+                        "relative flex min-h-[76px] flex-col items-center justify-center gap-1",
+                        "rounded-2xl border px-3 py-4 text-center transition-all",
+                        cooling
+                          ? "bg-muted text-muted-foreground border-muted-foreground/20 cursor-not-allowed"
+                          : cn(
+                              "hover:shadow-sm active:scale-[0.99]",
+                              selected
+                                ? "bg-primary text-white border-primary"
+                                : "bg-white text-primary border-primary/30"
+                            )
                       )}
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="font-black text-lg">{refill.refillName}</div>
-                        {selected ? <Check className="h-5 w-5 text-white" /> : null}
-                      </div>
+                      <span className="font-black text-base leading-tight break-words">
+                        {refill.refillName}
+                      </span>
+                      {cooling ? (
+                        <span className="font-mono text-xs tabular-nums">{formatCountdown(remainingMs)}</span>
+                      ) : null}
+                      {selected && !cooling ? (
+                        <Check className="absolute right-2 top-2 h-4 w-4 text-white" />
+                      ) : null}
                     </button>
                   );
                 })
@@ -480,22 +573,23 @@ function CustomerRefillContent({
                   type="button"
                   onClick={handleSelectOtherRefills}
                   className={cn(
-                    "w-full text-left rounded-2xl px-4 py-3 border transition-all",
+                    "relative col-span-2 flex min-h-[76px] flex-col items-center justify-center",
+                    "rounded-2xl border px-3 py-4 text-center transition-all",
                     "hover:shadow-sm active:scale-[0.99]",
                     activeRefillId === OTHER_REFILLS_ID
                       ? "bg-primary text-white border-primary"
                       : "bg-white text-primary border-primary/30"
                   )}
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="font-black text-lg">Other Refills</div>
-                    {Object.values(otherQty).some((v) => Number(v || 0) > 0) ? <Check className="h-5 w-5 text-white" /> : null}
-                  </div>
+                  <span className="font-black text-base leading-tight">Other Refills</span>
+                  {Object.values(otherQty).some((v) => Number(v || 0) > 0) ? (
+                    <Check className="absolute right-2 top-2 h-4 w-4 text-white" />
+                  ) : null}
                 </button>
               ) : null}
 
               {mainRefills.length === 0 && otherRefills.length === 0 && !isLoading && (
-                <p className="text-center text-sm text-muted-foreground py-10">No refills available for this package.</p>
+                <p className="col-span-2 text-center text-sm text-muted-foreground py-10">No refills available for this package.</p>
               )}
             </div>
           </ScrollArea>
@@ -503,7 +597,15 @@ function CustomerRefillContent({
 
         {/* Right: flavors + notes */}
         <div className="md:col-span-2 flex flex-col gap-4">
-          <h3 className="font-semibold">2. Customize Selection</h3>
+          <div className="space-y-1">
+            <h3 className="font-semibold">2. Customize Selection</h3>
+            {defaultFlavorNames ? (
+              <p className="text-xs text-muted-foreground">
+                Flavors in <span className="text-destructive font-medium">red</span> are from your
+                initial order ({defaultFlavorNames}).
+              </p>
+            ) : null}
+          </div>
 
           {activeRefillId === OTHER_REFILLS_ID ? (
             <div className="flex-1 flex flex-col gap-4">
@@ -513,6 +615,20 @@ function CustomerRefillContent({
 
                   {otherRefills.map((r) => {
                     const v = Number(otherQty[r.refillId] || 0);
+                    const remainingMs = remainingFor(r.refillId);
+                    if (remainingMs > 0) {
+                      return (
+                        <div key={r.refillId} className="flex items-center justify-between gap-3 opacity-60">
+                          <div>
+                            <p className="font-medium">{r.refillName}</p>
+                            <p className="text-xs text-muted-foreground">Available again soon</p>
+                          </div>
+                          <span className="font-mono text-sm tabular-nums text-muted-foreground">
+                            {formatCountdown(remainingMs)}
+                          </span>
+                        </div>
+                      );
+                    }
                     return (
                       <div key={r.refillId} className="flex items-center justify-between gap-3">
                         <div>
@@ -564,16 +680,21 @@ function CustomerRefillContent({
             <div className="flex-1 flex flex-col gap-4">
               <div className={cn("border rounded-lg", !needsFlavors && "bg-muted/50")}>
                 <div className="p-4 space-y-2">
-                  <h3 className="font-semibold">Flavors {needsFlavors ? "(up to 3)" : ""}</h3>
+                  <h3 className="font-semibold">
+                    {needsFlavors ? "Flavor — choose 1 per meat" : "Flavors"}
+                  </h3>
 
                   {needsFlavors ? (
-                    <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                    <RadioGroup
+                      value={activeCartItem.flavorIds[0] ?? ""}
+                      onValueChange={handleFlavorSelect}
+                      className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto"
+                    >
                       {sortedAllowedFlavors.map((flavor) => (
                         <div key={flavor.flavorId} className="flex items-center gap-2">
-                          <Checkbox
+                          <RadioGroupItem
                             id={`flavor-${flavor.flavorId}`}
-                            checked={activeCartItem.flavorIds.includes(flavor.flavorId)}
-                            onCheckedChange={() => handleFlavorToggle(flavor.flavorId)}
+                            value={flavor.flavorId}
                           />
                           <Label
                             htmlFor={`flavor-${flavor.flavorId}`}
@@ -586,7 +707,7 @@ function CustomerRefillContent({
                           </Label>
                         </div>
                       ))}
-                    </div>
+                    </RadioGroup>
                   ) : (
                     <p className="text-sm text-muted-foreground">This item does not require flavors.</p>
                   )}

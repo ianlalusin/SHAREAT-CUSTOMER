@@ -2,6 +2,13 @@ import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { FieldValue } from "firebase-admin/firestore";
 import { validateActiveParticipant } from "@/lib/server/customer-participants";
+import {
+  claimRefillCooldowns,
+  releaseRefillCooldowns,
+  type ClaimedCooldowns,
+} from "@/lib/server/refill-cooldown";
+import { REFILL_COOLDOWN_MS } from "@/lib/refill-cooldown";
+import { getRefillOptionsMenu } from "@/lib/server/refill-options-cache";
 
 export const runtime = "nodejs";
 
@@ -71,13 +78,49 @@ export async function POST(req: Request) {
     if (!kitchenLocationId) return bad("First refill has no kitchenLocationId.", 500);
 
     const initialFlavorIds = Array.isArray(active.initialFlavorIds) ? active.initialFlavorIds : [];
-    const notes = initialFlavorIds.length > 0 ? `Flavors: ${initialFlavorIds.join(", ")}` : "";
+
+    // Flavors belong in flavorNote (rendered inline with the item on the KDS),
+    // not in notes — notes is the guest's own text. This used to write raw
+    // flavor IDs into notes.
+    let flavorNote = "";
+    if (initialFlavorIds.length) {
+      try {
+        const menu = await getRefillOptionsMenu(db, storeId);
+        const nameById = new Map(menu.storeFlavors.map((f) => [f.flavorId, f.flavorName]));
+        flavorNote = initialFlavorIds.map((id: string) => nameById.get(id) || id).join(", ");
+      } catch {
+        flavorNote = initialFlavorIds.join(", ");
+      }
+    }
+    const notes = "";
+
+    // Same per-meat, per-phone cooldown as /submit-refill. No UI calls this route
+    // today, but it is a live endpoint that writes refill tickets — leaving it
+    // ungated would be an open bypass of the cooldown.
+    let claimed: ClaimedCooldowns;
+    try {
+      claimed = await claimRefillCooldowns(db, {
+        storeId,
+        sessionId,
+        participantId,
+        refillIds: [firstRefillId],
+        labels: { [firstRefillId]: String(firstRefill.refillName || firstRefill.name || "This refill") },
+      });
+    } catch (e: any) {
+      if (e?.httpStatus === 429) {
+        return NextResponse.json(
+          { ok: false, error: e.message, blocked: e.blocked ?? [], cooldownMs: REFILL_COOLDOWN_MS },
+          { status: 429 }
+        );
+      }
+      return bad(e?.message ?? "Could not start your refill.", e?.httpStatus || 403);
+    }
 
     const ticketRef = db.collection(`stores/${storeId}/sessions/${sessionId}/kitchentickets`).doc();
     const rtRef = db.doc(`stores/${storeId}/rtKdsTickets/${kitchenLocationId}`);
     const createdAtClientMs = Date.now();
 
-    await db.runTransaction(async (tx: any) => {
+    const writeTicket = () => db.runTransaction(async (tx: any) => {
       const rtSnap = await tx.get(rtRef);
       const rt = rtSnap.exists ? (rtSnap.data() as any) : {};
 
@@ -102,6 +145,7 @@ export async function POST(req: Request) {
         itemName: `REFILL - ${packageName || "PACKAGE"}`,
         kitchenLocationId,
         kitchenLocationName,
+        flavorNote: flavorNote || null,
         notes,
         qty: 1,
         sessionId,
@@ -132,6 +176,14 @@ export async function POST(req: Request) {
         meta: { source: "createKitchenTickets", updatedAt: FieldValue.serverTimestamp() },
       }, { merge: true });
     });
+
+    try {
+      await writeTicket();
+    } catch (e: any) {
+      // Hand the cooldown back — a failed order must not cost the guest 10 minutes.
+      await releaseRefillCooldowns(db, { storeId, sessionId, participantId, claimed });
+      throw e;
+    }
 
     return NextResponse.json({
       ok: true,

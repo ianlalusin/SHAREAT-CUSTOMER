@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { validateActiveParticipant } from "@/lib/server/customer-participants";
+import { REFILL_COOLDOWN_MS, toNextAllowedMap } from "@/lib/refill-cooldown";
 
 export const runtime = "nodejs";
 
@@ -61,6 +62,12 @@ export async function GET(req: Request) {
         participantId,
         slotNumber: participantInfo.slotNumber,
         participantStatus: "active",
+        // Per-meat refill countdowns for this phone. Server-hydrated so they
+        // survive a page reload, unlike the in-memory assistance cooldown.
+        refillCooldowns: {
+          cooldownMs: REFILL_COOLDOWN_MS,
+          nextAllowedAt: toNextAllowedMap(participantInfo.refillCooldowns, Date.now()),
+        },
       },
     });
   } catch (e: any) {
