@@ -25,6 +25,15 @@ export type SessionOrder = {
   orderedBySlot: number | null;
   orderedByMe: boolean;
   lineTotal: number | null;
+  /** True once `lineTotal` is on the bill rather than an expectation. */
+  billed: boolean;
+};
+
+/** The line subtotal on the tab so far — see lib/catalog/running-bill.ts. */
+export type RunningBill = {
+  runningTotal: number;
+  lineCount: number;
+  hasBillAdjustments: boolean;
 };
 
 /** Still on its way from the kitchen — the states worth warning a diner about. */
@@ -32,6 +41,7 @@ export const IN_FLIGHT: ReadonlySet<string> = new Set(["preparing", "partially_s
 
 export function useSessionOrders(enabled: boolean) {
   const [orders, setOrders] = useState<SessionOrder[]>([]);
+  const [bill, setBill] = useState<RunningBill | null>(null);
   const [isLoading, setIsLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,6 +57,7 @@ export function useSessionOrders(enabled: boolean) {
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not load your orders.");
       setOrders(Array.isArray(json.orders) ? json.orders : []);
+      setBill(json.bill ?? null);
       setError(null);
     } catch (e: any) {
       setError(e?.message || "Could not load your orders.");
@@ -65,7 +76,7 @@ export function useSessionOrders(enabled: boolean) {
     return () => clearInterval(timer);
   }, [enabled, refresh]);
 
-  return { orders, isLoading, error, refresh };
+  return { orders, bill, isLoading, error, refresh };
 }
 
 /** Quantity of `itemId` the table has in flight right now. */

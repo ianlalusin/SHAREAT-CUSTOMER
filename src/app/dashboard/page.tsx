@@ -73,6 +73,7 @@ export default function DashboardPage() {
   // menu (which warns about repeat orders) and the history panel agree.
   const {
     orders,
+    bill: runningBill,
     isLoading: ordersLoading,
     error: ordersError,
     refresh: refreshOrders,
@@ -337,7 +338,7 @@ export default function DashboardPage() {
 
         <CustomerCatalog orders={orders} onOrderPlaced={refreshOrders} />
 
-        <SessionOrdersPanel orders={orders} isLoading={ordersLoading} error={ordersError} />
+        <SessionOrdersPanel orders={orders} bill={runningBill} isLoading={ordersLoading} error={ordersError} />
       </div>
 
       {/* Sharelebrator card — opens in a bottom drawer */}

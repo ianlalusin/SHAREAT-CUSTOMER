@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { validateActiveParticipant } from "@/lib/server/customer-participants";
+import { computeRunningBill } from "@/lib/catalog/running-bill";
 
 /**
  * Everything this TABLE has ordered — not just this phone.
@@ -11,8 +12,17 @@ import { validateActiveParticipant } from "@/lib/server/customer-participants";
  * point: it is what stops the table double-ordering.
  *
  * The kitchen tickets ARE the order history, so there is no second collection
- * to keep in step — refills and self-ordered add-ons both appear, which is also
- * what a diner expects to see.
+ * to keep in step.
+ *
+ * Refills are deliberately EXCLUDED. They are included in the package, cost
+ * nothing extra, and a table works through a lot of them — listing every one
+ * buries the handful of items the diner actually chose and paid for, which is
+ * what this panel is for. Refill progress has its own surface in the refill
+ * flow.
+ *
+ * The response also carries the running bill, so the diner can see what they
+ * have run up without flagging down a server. See `running-bill.ts` for why
+ * that figure is deliberately the line subtotal and not a full total.
  */
 
 export const runtime = "nodejs";
@@ -62,13 +72,24 @@ export async function GET(req: Request) {
       return bad(e.message, e.httpStatus || 403);
     }
 
-    const snap = await db
-      .collection(`stores/${storeId}/sessions/${sessionId}/kitchentickets`)
-      .orderBy("createdAtClientMs", "desc")
-      .limit(MAX_ORDERS)
-      .get();
+    const [snap, linesSnap, sessionSnap] = await Promise.all([
+      db
+        .collection(`stores/${storeId}/sessions/${sessionId}/kitchentickets`)
+        .orderBy("createdAtClientMs", "desc")
+        .limit(MAX_ORDERS)
+        .get(),
+      db.collection(`stores/${storeId}/sessions/${sessionId}/sessionBillLines`).get(),
+      db.doc(`stores/${storeId}/sessions/${sessionId}`).get(),
+    ]);
 
-    const orders = snap.docs.map((d) => {
+    const bill = computeRunningBill(
+      linesSnap.docs.map((d) => d.data()),
+      sessionSnap.data()
+    );
+
+    const orders = snap.docs
+      .filter((d) => String((d.data() as any)?.type || "") !== "refill")
+      .map((d) => {
       const t = d.data() as any;
       const qtyOrdered = Number(t.qtyOrdered ?? t.qty ?? 0) || 0;
       const qtyServed = Number(t.qtyServed ?? 0) || 0;
@@ -93,12 +114,26 @@ export async function GET(req: Request) {
         orderedBySlot: t.createdBySlotNumber ?? null,
         /** True for the phone asking, so the UI can say "you". */
         orderedByMe: String(t.createdByParticipantId || "") === participantId,
-        /** Staff-placed items have no price here; refills are included in the package. */
-        lineTotal: unitPrice > 0 ? (unitPrice + modifiersTotal) * qtyOrdered : null,
+        /**
+         * What this order actually costs.
+         *
+         * Once the kitchen has served any of it, that is the quantity being
+         * billed — a 2-ordered / 1-served line costs the price of ONE. Showing
+         * the ordered value there would quote a diner a number their bill will
+         * never match. While it is still preparing, the ordered value is the
+         * right expectation to set.
+         *
+         * Null for staff-placed items, which carry no price on the ticket.
+         */
+        lineTotal: unitPrice > 0
+          ? (unitPrice + modifiersTotal) * (qtyServed > 0 ? qtyServed : qtyOrdered)
+          : null,
+        /** True once the amount above is on the bill rather than an expectation. */
+        billed: qtyServed > 0,
       };
     });
 
-    return NextResponse.json({ ok: true, orders });
+    return NextResponse.json({ ok: true, orders, bill });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
   }
