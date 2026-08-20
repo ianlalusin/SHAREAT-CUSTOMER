@@ -7,8 +7,8 @@ import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
 
 export const runtime = "nodejs";
 
-function bad(msg: string, status = 400) {
-  return NextResponse.json({ ok: false, error: msg }, { status });
+function bad(msg: string, status = 400, code?: string) {
+  return NextResponse.json({ ok: false, error: msg, ...(code ? { code } : {}) }, { status });
 }
 
 type LoginBody = {
@@ -121,7 +121,7 @@ export async function POST(req: Request) {
         storeName,
         sessionId,
       });
-      return bad("Incorrect phone or password.", 401);
+      return bad("Incorrect phone or password.", 401, "bad_password");
     }
     customerName = data.name;
     await writeLoyaltyLog({

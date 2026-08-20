@@ -19,10 +19,13 @@ export function SharelebratorLoginDialog({ open, onOpenChange, onLinked }: Props
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** True only for a wrong password — not for "account not found", where a reset cannot help. */
+  const [canAskManager, setCanAskManager] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setCanAskManager(false);
     setSubmitting(true);
     try {
       const user = getAuth().currentUser;
@@ -35,7 +38,10 @@ export function SharelebratorLoginDialog({ open, onOpenChange, onLinked }: Props
         body: JSON.stringify({ mode: "login", phone, password }),
       });
       const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || "Failed to link.");
+      if (!res.ok || !json.ok) {
+        if (json.code === "bad_password") setCanAskManager(true);
+        throw new Error(json.error || "Failed to link.");
+      }
       onLinked(json.name);
       onOpenChange(false);
       setPhone("");
@@ -76,7 +82,16 @@ export function SharelebratorLoginDialog({ open, onOpenChange, onLinked }: Props
               disabled={submitting}
             />
           </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && (
+            <div className="space-y-1">
+              <p className="text-sm text-destructive">{error}</p>
+              {canAskManager && (
+                <p className="text-xs text-muted-foreground">
+                  Forgot your password? Ask our manager to reset it for you.
+                </p>
+              )}
+            </div>
+          )}
           <DialogFooter>
             <Button type="submit" disabled={submitting} className="w-full">
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
