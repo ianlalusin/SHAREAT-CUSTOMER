@@ -8,6 +8,7 @@ import { DashboardHeader } from "@/components/dashboard/Header";
 import { Button } from "@/components/ui/button";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { CustomerCatalog } from "@/components/customer/CustomerCatalog";
+import type { CatalogCategory } from "@/lib/catalog/types";
 import { PreviewLoyaltyCard } from "@/components/admin/preview/PreviewLoyaltyCard";
 import { useToast } from "@/hooks/use-toast";
 import { getMockSession, getMockLoyaltyData } from "@/lib/preview/mock-data";
@@ -17,7 +18,6 @@ interface Props {
   storeName: string;
 }
 
-type CatalogItem = { id: string; name: string; category: string; price: number; imageUrl?: string | null };
 
 /**
  * The admin/manager "Preview" screen: a visual twin of the real customer
@@ -34,7 +34,7 @@ export function PreviewDashboard({ storeId, storeName }: Props) {
   const loyalty = useMemo(() => getMockLoyaltyData(storeId), [storeId]);
 
   const [isCardOpen, setIsCardOpen] = useState(false);
-  const [items, setItems] = useState<CatalogItem[]>([]);
+  const [categories, setCategories] = useState<CatalogCategory[]>([]);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
   const [itemsError, setItemsError] = useState<string | null>(null);
 
@@ -53,11 +53,11 @@ export function PreviewDashboard({ storeId, storeName }: Props) {
         const json = await res.json().catch(() => ({}));
         if (!res.ok || !json?.ok) throw new Error(json?.error || "Failed to load catalog.");
         if (cancelled) return;
-        setItems(Array.isArray(json.items) ? json.items : []);
+        setCategories(Array.isArray(json.categories) ? json.categories : []);
       } catch (e: any) {
         if (cancelled) return;
         setItemsError(e?.message || "Unable to load menu.");
-        setItems([]);
+        setCategories([]);
       } finally {
         if (!cancelled) setIsLoadingItems(false);
       }
@@ -133,7 +133,7 @@ export function PreviewDashboard({ storeId, storeName }: Props) {
         ) : itemsError ? (
           <div className="py-10 text-center text-sm text-destructive">{itemsError}</div>
         ) : (
-          <CustomerCatalog overrideItems={items} />
+          <CustomerCatalog overrideCategories={categories} />
         )}
       </div>
 

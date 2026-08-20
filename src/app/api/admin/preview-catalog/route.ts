@@ -1,19 +1,12 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import { projectCatalog } from "@/lib/catalog/project";
 
 export const runtime = "nodejs";
 
 function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
 }
-
-type CatalogItem = {
-  id: string;
-  name: string;
-  category: string;
-  price: number;
-  imageUrl: string | null;
-};
 
 /**
  * Read-only catalog fetch for the admin/manager "Preview" page — same source
@@ -53,24 +46,15 @@ export async function GET(req: Request) {
     if (!isPlatformAdmin && !assigned.includes(storeId)) return bad("No access to this store.", 403);
 
     const cacheSnap = await db.doc(`stores/${storeId}/catalogCache/main`).get();
-    if (!cacheSnap.exists) return NextResponse.json({ ok: true, items: [] as CatalogItem[] });
+    // An unconfigured store previews as an empty menu rather than an error —
+    // the real customer route 404s here instead, deliberately.
+    if (!cacheSnap.exists) return NextResponse.json({ ok: true, categories: [] });
 
-    const cache = cacheSnap.data() as any;
-    const rawItems = Array.isArray(cache.items) ? (cache.items as any[]) : [];
+    // Same projection the customer route uses, so preview cannot drift from
+    // what a diner actually sees.
+    const categories = projectCatalog(cacheSnap.data());
 
-    const items: CatalogItem[] = rawItems
-      .map((x) => ({
-        id: String(x.id ?? ""),
-        name: String(x.name ?? ""),
-        category: String(x.category ?? ""),
-        price: Number(x.price ?? 0),
-        imageUrl: x.imageUrl ?? null,
-        isAvailable: x.isAvailable,
-      }))
-      .filter((x) => !!x.id && (!!x.isAvailable || x.isAvailable === undefined))
-      .map(({ id, name, category, price, imageUrl }) => ({ id, name, category, price, imageUrl }));
-
-    return NextResponse.json({ ok: true, items });
+    return NextResponse.json({ ok: true, categories });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
   }

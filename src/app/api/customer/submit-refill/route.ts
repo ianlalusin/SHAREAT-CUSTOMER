@@ -9,6 +9,7 @@ import {
 } from "@/lib/server/refill-cooldown";
 import { REFILL_COOLDOWN_MS, toNextAllowedMap, type CooldownMap } from "@/lib/refill-cooldown";
 import { getRefillOptionsMenu } from "@/lib/server/refill-options-cache";
+import { writeKitchenTicket } from "@/lib/server/kitchen-ticket-write";
 
 export const runtime = "nodejs";
 
@@ -163,67 +164,30 @@ export async function POST(req: Request) {
       for (const item of normalized) {
         const flavorNote = item.flavorIds.map((id) => flavorNameById.get(id) || id).join(", ");
 
-        const ticketRef = db.collection(`stores/${storeId}/sessions/${sessionId}/kitchentickets`).doc();
-        const rtRef = db.doc(`stores/${storeId}/rtKdsTickets/${item.kitchenLocationId}`);
-        const createdAtClientMs = Date.now();
-
-        await db.runTransaction(async (tx: any) => {
-          const rtSnap = await tx.get(rtRef);
-          const rt = rtSnap.exists ? (rtSnap.data() as any) : {};
-
-          const activeIds: string[] = Array.isArray(rt.activeIds) ? [...rt.activeIds] : [];
-          const tickets: Record<string, any> = rt.tickets && typeof rt.tickets === "object" ? { ...rt.tickets } : {};
-          const sessionIndex: Record<string, string[]> =
-            rt.sessionIndex && typeof rt.sessionIndex === "object" ? { ...rt.sessionIndex } : {};
-
-          const ticket = {
-            billLineId: null,
-            createdAt: FieldValue.serverTimestamp(),
-            createdAtClientMs,
+        const ticketId = await writeKitchenTicket(db, {
+          storeId,
+          sessionId,
+          kitchenLocationId: item.kitchenLocationId,
+          kitchenLocationName: item.kitchenLocationName,
+          type: "refill",
+          itemId: item.itemId,
+          itemName: item.itemName,
+          qty: item.qty,
+          notes: item.notes,
+          session: { tableNumber, sessionLabel, sessionMode, customerName, guestCount },
+          actor: {
             createdByUid,
-            createdByParticipantId: participantId,
-            createdBySlotNumber: participantInfo.slotNumber,
-            createdByJoinMethod: participantInfo.joinMethod,
-            customerName,
-            durationMs: 0,
+            participantId,
+            slotNumber: participantInfo.slotNumber,
+            joinMethod: participantInfo.joinMethod,
+          },
+          extra: {
             flavorNote: flavorNote || null,
-            guestCount,
-            id: ticketRef.id,
-            itemId: item.itemId,
-            itemName: item.itemName,
-            kitchenLocationId: item.kitchenLocationId,
-            kitchenLocationName: item.kitchenLocationName,
-            notes: item.notes,
-            qty: item.qty,
             refillRequest: item.refillRequest,
-            sessionId,
-            sessionLabel,
-            sessionMode,
-            status: "preparing",
-            storeId,
-            tableNumber,
-            type: "refill",
-            updatedAt: FieldValue.serverTimestamp(),
-          };
-
-          tx.set(ticketRef, ticket, { merge: false });
-
-          tickets[ticketRef.id] = ticket;
-          if (!activeIds.includes(ticketRef.id)) activeIds.unshift(ticketRef.id);
-          const idxArr = Array.isArray(sessionIndex[sessionId]) ? [...sessionIndex[sessionId]] : [];
-          if (!idxArr.includes(ticketRef.id)) idxArr.unshift(ticketRef.id);
-          sessionIndex[sessionId] = idxArr;
-
-          tx.set(rtRef, {
-            kitchenLocationId: item.kitchenLocationId,
-            activeIds,
-            sessionIndex,
-            tickets,
-            meta: { source: "createKitchenTickets", updatedAt: FieldValue.serverTimestamp() },
-          }, { merge: true });
+          },
         });
 
-        createdTicketIds.push(ticketRef.id);
+        createdTicketIds.push(ticketId);
       }
     } catch (e: any) {
       // Hand the cooldown back — a failed order must not cost the guest 10 minutes.

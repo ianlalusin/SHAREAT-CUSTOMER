@@ -11,6 +11,8 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } f
 import { CustomerRefillModal, type RefillCooldowns } from "@/components/customer/CustomerRefillModal";
 import { AddGrillerModal } from "@/components/customer/AddGrillerModal";
 import { CustomerCatalog } from "@/components/customer/CustomerCatalog";
+import { SessionOrdersPanel } from "@/components/customer/SessionOrdersPanel";
+import { useSessionOrders } from "@/hooks/use-session-orders";
 import { useToast } from "@/hooks/use-toast";
 
 import { CustomerFeedbackModal } from "@/components/customer/CustomerFeedbackModal";
@@ -66,6 +68,15 @@ export default function DashboardPage() {
 
   const [session, setSession] = useState<SessionDTO | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
+
+  // The table's shared order history. Fetched once here and passed down, so the
+  // menu (which warns about repeat orders) and the history panel agree.
+  const {
+    orders,
+    isLoading: ordersLoading,
+    error: ordersError,
+    refresh: refreshOrders,
+  } = useSessionOrders(!!session);
   const [isCardOpen, setIsCardOpen] = useState(false);
 
   // Link state (for mini card + conditional rendering)
@@ -324,7 +335,9 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        <CustomerCatalog />
+        <CustomerCatalog orders={orders} onOrderPlaced={refreshOrders} />
+
+        <SessionOrdersPanel orders={orders} isLoading={ordersLoading} error={ordersError} />
       </div>
 
       {/* Sharelebrator card — opens in a bottom drawer */}

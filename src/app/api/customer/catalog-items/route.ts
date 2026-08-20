@@ -1,20 +1,12 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import { projectCatalog } from "@/lib/catalog/project";
 
 export const runtime = "nodejs";
 
 function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
 }
-
-type CatalogItem = {
-  id: string;
-  name: string;
-  category: string;
-  price: number;
-  imageUrl: string | null;
-  isAvailable?: boolean;
-};
 
 export async function GET(req: Request) {
   try {
@@ -43,31 +35,23 @@ export async function GET(req: Request) {
     if (s.customerAccessEnabled !== true) return bad("Customer access disabled.", 403);
     if (Number(s.customerAccessExpiresAtMs || 0) <= Date.now()) return bad("Customer access expired.", 403);
 
-    // store-scoped catalog cache (single doc).
-    // Prices for items linked to POS products are pre-resolved during the cache
-    // rebuild (see customer-catalog.ts → rebuildStoreCatalogCache). The customer
-    // path here reads ONLY the cache doc — one Firestore read per dashboard load
-    // regardless of inventory size. Real-time POS price changes require a cache
-    // rebuild, which already fires on every admin edit and is the right place
-    // to add a Firestore trigger or scheduled refresh if near-real-time is needed.
+    // store-scoped catalog cache (single doc), written by POS's
+    // rebuildCustomerCatalog. The customer path here reads ONLY the cache doc —
+    // one Firestore read per dashboard load regardless of inventory size. Price
+    // changes require a cache rebuild, which already fires on every manager
+    // inventory edit (POS: lib/customer-catalog/auto-publish.ts).
     const cacheSnap = await db.doc(`stores/${storeId}/catalogCache/main`).get();
     if (!cacheSnap.exists) return bad("Catalog cache not found for store.", 404);
 
+    // `projectCatalog` whitelists every field on the way out — the snapshot
+    // also carries internal kitchen routing that the browser must not receive.
     const cache = cacheSnap.data() as any;
-    const rawItems = Array.isArray(cache.items) ? (cache.items as any[]) : [];
+    const categories = projectCatalog(cache);
+    // The store-level self-ordering switch. The client needs BOTH this and an
+    // item's own `orderable` before it offers an Add button.
+    const orderingEnabled = cache?.orderingEnabled === true;
 
-    const items: CatalogItem[] = rawItems
-      .map((x) => ({
-        id: String(x.id ?? ""),
-        name: String(x.name ?? ""),
-        category: String(x.category ?? ""),
-        price: Number(x.price ?? 0),
-        imageUrl: x.imageUrl ?? null,
-        isAvailable: x.isAvailable,
-      }))
-      .filter((x) => !!x.id && (!!x.isAvailable || x.isAvailable === undefined));
-
-    return NextResponse.json({ ok: true, items });
+    return NextResponse.json({ ok: true, categories, orderingEnabled });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
   }
