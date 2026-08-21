@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { collection, doc, getDocs, onSnapshot } from "firebase/firestore";
+import { collection, doc, getDocs, onSnapshot, query, where } from "firebase/firestore";
 import { Loader2, Plus, Bell, Star, Flame } from "lucide-react";
 
 import { DashboardHeader } from "@/components/dashboard/Header";
@@ -191,7 +191,15 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!firestore || !session) return;
     let cancelled = false;
-    const adsRef = collection(firestore, "stores", session.storeId, "flashAds");
+    // The where() is required, not an optimisation: the security rule serves
+    // this collection only on a query constrained to active ads, so an
+    // unfiltered read comes back permission-denied (which is exactly what it
+    // did before the rule existed — every load logged an error and no ad ever
+    // showed). It also stops draft ads travelling to the device at all.
+    const adsRef = query(
+      collection(firestore, "stores", session.storeId, "flashAds"),
+      where("active", "==", true)
+    );
     getDocs(adsRef)
       .then((snap) => {
         if (cancelled) return;
@@ -205,7 +213,9 @@ export default function DashboardPage() {
               active: data.active === true,
             };
           })
-          .filter((a) => a.active && a.imageUrl);
+          // active is guaranteed by the query above; an ad with no image would
+          // render an empty overlay, so that one still has to be checked here.
+          .filter((a) => a.imageUrl);
         setFlashAds(active);
       })
       .catch((err) => {
