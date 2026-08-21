@@ -83,7 +83,7 @@ export function CustomerFeedbackModal({ open, onOpenChange, customerName }: Prop
         {!submitted ? (
           <>
             <DialogHeader>
-              <DialogTitle>Feedback</DialogTitle>
+              <DialogTitle>Rate our Service</DialogTitle>
               <DialogDescription>
                 Hello, <span className="font-semibold">{customerName}</span>, help us provide more fun and exciting sharelebration.
               </DialogDescription>

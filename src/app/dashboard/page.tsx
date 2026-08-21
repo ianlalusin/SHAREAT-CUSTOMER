@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { collection, doc, getDocs, onSnapshot } from "firebase/firestore";
-import { Loader2, Plus, MessageSquare, Bell, Star, Flame } from "lucide-react";
+import { Loader2, Plus, Bell, Star, Flame } from "lucide-react";
 
 import { DashboardHeader } from "@/components/dashboard/Header";
 import { Button } from "@/components/ui/button";
@@ -363,8 +363,8 @@ export default function DashboardPage() {
             style={{ animation: 'feedbackPulse 18s infinite' }}
             onClick={() => setIsFeedbackOpen(true)}
           >
-            <MessageSquare className="h-5 w-5" />
-            Submit Feedback
+            <Star className="h-5 w-5" />
+            Rate our Service
           </Button>
         </>
       )}

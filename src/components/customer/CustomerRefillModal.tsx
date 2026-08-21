@@ -646,7 +646,7 @@ function CustomerRefillContent({
                         inKitchen
                           ? `${refill.refillName} — still with the kitchen`
                           : remainingMs > 0
-                            ? `${refill.refillName} — available again in ${formatCountdown(remainingMs)}`
+                            ? `${refill.refillName} — order again in ${formatCountdown(remainingMs)}`
                             : refill.refillName
                       }
                       onClick={() => handleSelectRefill(refill)}
@@ -673,7 +673,12 @@ function CustomerRefillContent({
                       {inKitchen ? (
                         <span className="text-[11px] font-semibold leading-tight">On its way</span>
                       ) : remainingMs > 0 ? (
-                        <span className="font-mono text-xs tabular-nums">{formatCountdown(remainingMs)}</span>
+                        // Name the wait: a bare countdown gave no clue what it
+                        // was counting down to.
+                        <span className="text-[11px] font-semibold leading-tight">
+                          Order again in{" "}
+                          <span className="font-mono tabular-nums">{formatCountdown(remainingMs)}</span>
+                        </span>
                       ) : null}
                       {selected && !cooling ? (
                         <Check className="absolute right-2 top-2 h-4 w-4 text-white" />
@@ -742,7 +747,7 @@ function CustomerRefillContent({
                           <div>
                             <p className="font-medium">{r.refillName}</p>
                             <p className="text-xs text-muted-foreground">
-                              {inKitchen ? "On its way" : "Available again soon"}
+                              {inKitchen ? "On its way" : "Order again in"}
                             </p>
                           </div>
                           {inKitchen ? null : (
