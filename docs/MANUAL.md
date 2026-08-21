@@ -45,11 +45,14 @@ The main screen once joined. Everything is large-tap, mobile-first.
   - **One flavor per meat.** Each meat takes a single flavor per order — e.g.
     Pork → Bulgogi together with Beef → Galbi. Picking another flavor for the
     same meat replaces the current one.
-  - **A 10-minute cooldown per meat, per phone.** After ordering Pork, that
-    guest's Pork is locked for 10 minutes while their Beef stays available and
-    starts its own 10 minutes when ordered. The clocks are per phone, so four
-    guests at one table can all order at the same time. Cooling items show a
-    live countdown in the refill list and cannot be selected.
+  - **Order it again once it arrives.** After ordering Pork, that guest's Pork
+    stays locked while it is still with the kitchen — and for at least a minute
+    — then frees up as soon as the kitchen marks it served or cancelled. Their
+    Beef is unaffected and has its own clock. The clocks are per phone, so four
+    guests at one table can all order at the same time. A blocked meat shows
+    either "On its way" (still with the kitchen) or a short countdown, and
+    cannot be selected. If the kitchen never closes a ticket the block lifts on
+    its own after 10 minutes, so a forgotten order can never lock a guest out.
 - **Request / Call Staff**: tap **Request** to send a free-text message to staff
   (call a server, ask about add-ons, anything). These appear on the kitchen's
   **Customer Requests** panel, where staff mark them done; response time is

@@ -7,9 +7,10 @@ import {
   releaseRefillCooldowns,
   type ClaimedCooldowns,
 } from "@/lib/server/refill-cooldown";
-import { REFILL_COOLDOWN_MS, toNextAllowedMap, type CooldownMap } from "@/lib/refill-cooldown";
+import { REFILL_COOLDOWN_MS, blockedRefillsDetailed, toNextAllowedMap, type CooldownMap } from "@/lib/refill-cooldown";
 import { getRefillOptionsMenu } from "@/lib/server/refill-options-cache";
 import { writeKitchenTicket } from "@/lib/server/kitchen-ticket-write";
+import { outstandingRefillIds } from "@/lib/server/refill-outstanding";
 
 export const runtime = "nodejs";
 
@@ -133,19 +134,55 @@ export async function POST(req: Request) {
       }
     }
 
+    // ---- refuse anything still sitting in the kitchen ---------------------
+    // Checked BEFORE the claim, alongside the other validation: the same reason
+    // item validation moved out of the write loop — a refusal must not leave
+    // half an order already with the kitchen. The claim below stays the race
+    // guard for double taps.
+    const requestedIds = normalized.flatMap((n) => n.cooldownIds);
+    const outstanding = await outstandingRefillIds(db, storeId, sessionId, participantId);
+    const stillCooking = blockedRefillsDetailed(
+      participantInfo.refillCooldowns,
+      outstanding,
+      requestedIds,
+      Date.now()
+    ).filter((b) => b.reason === "in_kitchen");
+
+    if (stillCooking.length) {
+      const names = stillCooking.map((b) => labels[b.refillId] || b.refillId);
+      const error =
+        names.length === 1
+          ? `Your ${names[0]} is still with the kitchen. You can order it again once it arrives.`
+          : `These are still with the kitchen: ${names.join(", ")}. You can order them again once they arrive.`;
+      return NextResponse.json(
+        {
+          ok: false,
+          error,
+          blocked: stillCooking.map((b) => ({ ...b, refillName: labels[b.refillId] || b.refillId })),
+          cooldownMs: REFILL_COOLDOWN_MS,
+        },
+        { status: 429 }
+      );
+    }
+
     let claimed: ClaimedCooldowns;
     try {
       claimed = await claimRefillCooldowns(db, {
         storeId,
         sessionId,
         participantId,
-        refillIds: normalized.flatMap((n) => n.cooldownIds),
+        refillIds: requestedIds,
         labels,
       });
     } catch (e: any) {
       if (e?.httpStatus === 429) {
         return NextResponse.json(
-          { ok: false, error: e.message, blocked: e.blocked ?? [], cooldownMs: REFILL_COOLDOWN_MS },
+          {
+            ok: false,
+            error: e.message,
+            blocked: (e.blocked ?? []).map((b: any) => ({ reason: "cooldown", ...b })),
+            cooldownMs: REFILL_COOLDOWN_MS,
+          },
           { status: 429 }
         );
       }
@@ -184,13 +221,18 @@ export async function POST(req: Request) {
           extra: {
             flavorNote: flavorNote || null,
             refillRequest: item.refillRequest,
+            // The refill types this ticket covers, so the in-kitchen block can
+            // recognise it. `refillRequest` cannot serve this: it is keyed by
+            // display name for the KDS card, not by refill id — and a bundle's
+            // own `itemId` is just the label "OTHER_REFILLS".
+            refillIds: item.cooldownIds,
           },
         });
 
         createdTicketIds.push(ticketId);
       }
     } catch (e: any) {
-      // Hand the cooldown back — a failed order must not cost the guest 10 minutes.
+      // Hand the cooldown back — a failed order must not cost the guest their next one.
       await releaseRefillCooldowns(db, { storeId, sessionId, participantId, claimed });
       throw e;
     }

@@ -9,6 +9,7 @@ import {
 } from "@/lib/server/refill-cooldown";
 import { REFILL_COOLDOWN_MS } from "@/lib/refill-cooldown";
 import { getRefillOptionsMenu } from "@/lib/server/refill-options-cache";
+import { outstandingRefillIds } from "@/lib/server/refill-outstanding";
 
 export const runtime = "nodejs";
 
@@ -94,9 +95,24 @@ export async function POST(req: Request) {
     }
     const notes = "";
 
-    // Same per-meat, per-phone cooldown as /submit-refill. No UI calls this route
+    // Same per-meat, per-phone rules as /submit-refill. No UI calls this route
     // today, but it is a live endpoint that writes refill tickets — leaving it
-    // ungated would be an open bypass of the cooldown.
+    // ungated would be an open bypass.
+    const refillLabel = String(firstRefill.refillName || firstRefill.name || "This refill");
+
+    const outstanding = await outstandingRefillIds(db, storeId, sessionId, participantId);
+    if (outstanding.has(firstRefillId)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Your ${refillLabel} is still with the kitchen. You can order it again once it arrives.`,
+          blocked: [{ refillId: firstRefillId, refillName: refillLabel, reason: "in_kitchen", nextAllowedAtMs: 0 }],
+          cooldownMs: REFILL_COOLDOWN_MS,
+        },
+        { status: 429 }
+      );
+    }
+
     let claimed: ClaimedCooldowns;
     try {
       claimed = await claimRefillCooldowns(db, {
@@ -104,12 +120,17 @@ export async function POST(req: Request) {
         sessionId,
         participantId,
         refillIds: [firstRefillId],
-        labels: { [firstRefillId]: String(firstRefill.refillName || firstRefill.name || "This refill") },
+        labels: { [firstRefillId]: refillLabel },
       });
     } catch (e: any) {
       if (e?.httpStatus === 429) {
         return NextResponse.json(
-          { ok: false, error: e.message, blocked: e.blocked ?? [], cooldownMs: REFILL_COOLDOWN_MS },
+          {
+            ok: false,
+            error: e.message,
+            blocked: (e.blocked ?? []).map((b: any) => ({ reason: "cooldown", ...b })),
+            cooldownMs: REFILL_COOLDOWN_MS,
+          },
           { status: 429 }
         );
       }
@@ -143,6 +164,9 @@ export async function POST(req: Request) {
         id: ticketRef.id,
         itemId: `repeat_first_order_${packageOfferingId || "package"}`,
         itemName: `REFILL - ${packageName || "PACKAGE"}`,
+        // This ticket's itemId is a package marker, not a refill id, so the
+        // in-kitchen block would never match it without this list.
+        refillIds: [firstRefillId],
         kitchenLocationId,
         kitchenLocationName,
         flavorNote: flavorNote || null,
@@ -180,7 +204,7 @@ export async function POST(req: Request) {
     try {
       await writeTicket();
     } catch (e: any) {
-      // Hand the cooldown back — a failed order must not cost the guest 10 minutes.
+      // Hand the cooldown back — a failed order must not cost the guest their next one.
       await releaseRefillCooldowns(db, { storeId, sessionId, participantId, claimed });
       throw e;
     }

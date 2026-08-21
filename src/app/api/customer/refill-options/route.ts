@@ -3,6 +3,7 @@ import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { validateActiveParticipant } from "@/lib/server/customer-participants";
 import { getRefillOptionsMenu } from "@/lib/server/refill-options-cache";
 import { REFILL_COOLDOWN_MS, toNextAllowedMap } from "@/lib/refill-cooldown";
+import { outstandingRefillIds } from "@/lib/server/refill-outstanding";
 
 export const runtime = "nodejs";
 
@@ -65,6 +66,10 @@ export async function GET(req: Request) {
       // Per-meat countdowns for this phone, off the participant read above —
       // no extra Firestore reads.
       refillCooldowns: {
+        // Refills whose ticket is still with the kitchen. Distinct from a
+        // countdown: there is no known arrival time, so the UI must not show a
+        // timer for these.
+        awaitingRefillIds: [...(await outstandingRefillIds(db, storeId, sessionId, participantId))],
         cooldownMs: REFILL_COOLDOWN_MS,
         nextAllowedAt: toNextAllowedMap(participantInfo.refillCooldowns, Date.now()),
       },

@@ -121,7 +121,7 @@ export async function claimRefillCooldowns(
 
 /**
  * Puts the previous stamps back when ticket creation fails after a successful
- * claim — a failed order must not cost the guest 10 minutes.
+ * claim — a failed order must not cost the guest their next one.
  */
 export async function releaseRefillCooldowns(
   db: Firestore,

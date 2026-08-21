@@ -107,7 +107,7 @@ export function CustomerRefillModal(props: {
         <DrawerContent>
           <DrawerHeader className="text-left">
             <DrawerTitle>Order Refill</DrawerTitle>
-            <DrawerDescription>Choose 1 flavor per meat. Each meat can be refilled every 10 minutes.</DrawerDescription>
+            <DrawerDescription>Choose 1 flavor per meat. Order each meat again once it arrives.</DrawerDescription>
           </DrawerHeader>
           {content}
         </DrawerContent>
@@ -120,7 +120,7 @@ export function CustomerRefillModal(props: {
       <DialogContent className="max-w-4xl p-0 gap-0">
         <DialogHeader className="p-4 pb-0">
           <DialogTitle>Order Refill</DialogTitle>
-          <DialogDescription>Choose 1 flavor per meat. Each meat can be refilled every 10 minutes.</DialogDescription>
+          <DialogDescription>Choose 1 flavor per meat. Order each meat again once it arrives.</DialogDescription>
         </DialogHeader>
         {content}
       </DialogContent>
@@ -174,7 +174,16 @@ function CustomerRefillContent({
     onCooldownsChange?.({ cooldownMs: ms, nextAllowedAt: next });
   };
 
+  /**
+   * Refills whose last ticket is still with the kitchen. A different block from
+   * the countdown: there is no known arrival time, so these never show a timer.
+   */
+  const [awaiting, setAwaiting] = useState<Set<string>>(new Set());
+
   const remainingFor = (refillId: string) => Math.max(0, (nextAllowedAt[refillId] ?? 0) - nowMs);
+  const isAwaiting = (refillId: string) => awaiting.has(refillId);
+  /** Unavailable for either reason. */
+  const isBlocked = (refillId: string) => isAwaiting(refillId) || remainingFor(refillId) > 0;
 
   // Tick only while something is actually counting down.
   const hasActiveCooldown = Object.values(nextAllowedAt).some((at) => at > nowMs);
@@ -183,6 +192,51 @@ function CustomerRefillContent({
     const id = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(id);
   }, [hasActiveCooldown]);
+
+  /**
+   * Re-check what the kitchen still holds while the modal is open and something
+   * is outstanding.
+   *
+   * A countdown can be computed locally; "has it arrived yet" cannot — only the
+   * server knows, so without this a guest would sit looking at "On its way"
+   * after their food had already been served. Polling stops the moment nothing
+   * is awaiting, so an idle modal costs nothing.
+   */
+  useEffect(() => {
+    if (awaiting.size === 0) return;
+    let cancelled = false;
+
+    const check = async () => {
+      try {
+        const user = getAuth().currentUser;
+        if (!user) return;
+        const idToken = await user.getIdToken();
+        const res = await fetch("/api/customer/refill-options", {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        const json = (await res.json().catch(() => ({}))) as any;
+        if (cancelled || !res.ok || !json?.ok) return;
+        setAwaiting(new Set<string>(json.refillCooldowns?.awaitingRefillIds ?? []));
+        if (json.refillCooldowns?.nextAllowedAt) {
+          setNowMs(Date.now());
+          applyCooldowns(
+            json.refillCooldowns.nextAllowedAt as Record<string, number>,
+            Number(json.refillCooldowns.cooldownMs) || undefined
+          );
+        }
+      } catch {
+        // Transient: the next tick retries, and the server refuses anything
+        // that is genuinely still blocked.
+      }
+    };
+
+    const id = setInterval(check, 15_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [awaiting.size]);
 
   useEffect(() => {
     let cancelled = false;
@@ -227,6 +281,7 @@ function CustomerRefillContent({
             Number(json.refillCooldowns.cooldownMs) || undefined
           );
         }
+        setAwaiting(new Set<string>(json.refillCooldowns?.awaitingRefillIds ?? []));
         setIsLoading(false);
       } catch (e: any) {
         if (cancelled) return;
@@ -312,7 +367,7 @@ function CustomerRefillContent({
   // removed, after which the flavor picker could never reappear.
   const handleSelectRefill = (refill: StoreRefill) => {
     const id = refill.refillId;
-    if (remainingFor(id) > 0) return; // still cooling down — the row is disabled
+    if (isBlocked(id)) return; // cooling down or still with the kitchen — the row is disabled
 
     const next = applyRefillTap<CartItem>({
       cart,
@@ -447,7 +502,7 @@ function CustomerRefillContent({
         for (const r of otherRefills) {
           const qty = Number(otherQty[r.refillId] || 0);
           if (qty <= 0) continue;
-          if (remainingFor(r.refillId) > 0) continue; // still cooling down
+          if (isBlocked(r.refillId)) continue; // cooling down or still with the kitchen
           const stationId = String(r.kitchenLocationId || "");
           if (!stationId) continue;
 
@@ -475,6 +530,19 @@ function CustomerRefillContent({
         }
       }
 
+      // Every line the guest picked got filtered out as blocked — reachable
+      // when the poll marks something in-kitchen while the modal sits open.
+      // Say why, rather than posting an empty order and surfacing the server's
+      // generic "No refill items." 400.
+      if (!items.length) {
+        setAlertState({
+          open: true,
+          title: "Still with the kitchen",
+          message: "Those refills are still on their way. You can order them again once they arrive.",
+        });
+        return;
+      }
+
       const res = await fetch("/api/customer/submit-refill", {
         method: "POST",
         headers: {
@@ -488,18 +556,28 @@ function CustomerRefillContent({
 
       if (res.status === 429) {
         // Server is the authority on the countdown — resync and show why.
-        const blocked: Array<{ refillId: string; nextAllowedAtMs: number }> = Array.isArray(json?.blocked)
-          ? json.blocked
-          : [];
-        if (blocked.length) {
+        const blocked: Array<{ refillId: string; nextAllowedAtMs: number; reason?: string }> =
+          Array.isArray(json?.blocked) ? json.blocked : [];
+
+        const kitchenHeld = blocked.filter((b) => b.reason === "in_kitchen");
+        const cooling = blocked.filter((b) => b.reason !== "in_kitchen");
+
+        if (cooling.length) {
           const merged = { ...nextAllowedAt };
-          for (const b of blocked) merged[b.refillId] = b.nextAllowedAtMs;
+          for (const b of cooling) merged[b.refillId] = b.nextAllowedAtMs;
           setNowMs(Date.now());
           applyCooldowns(merged);
         }
+        if (kitchenHeld.length) {
+          setAwaiting((prev) => {
+            const next = new Set(prev);
+            for (const b of kitchenHeld) next.add(b.refillId);
+            return next;
+          });
+        }
         setAlertState({
           open: true,
-          title: "Still cooling down",
+          title: kitchenHeld.length ? "Still with the kitchen" : "Still cooling down",
           message: json?.error || "That refill isn't available yet.",
         });
         return;
@@ -555,16 +633,21 @@ function CustomerRefillContent({
                 mainRefills.map((refill) => {
                   const selected = cart.has(refill.refillId);
                   const remainingMs = remainingFor(refill.refillId);
-                  const cooling = remainingMs > 0;
+                  const inKitchen = isAwaiting(refill.refillId);
+                  // One disabled look, two reasons — only the countdown case
+                  // has a time to show.
+                  const cooling = inKitchen || remainingMs > 0;
                   return (
                     <button
                       key={refill.refillId}
                       type="button"
                       disabled={cooling}
                       aria-label={
-                        cooling
-                          ? `${refill.refillName} — available again in ${formatCountdown(remainingMs)}`
-                          : refill.refillName
+                        inKitchen
+                          ? `${refill.refillName} — still with the kitchen`
+                          : remainingMs > 0
+                            ? `${refill.refillName} — available again in ${formatCountdown(remainingMs)}`
+                            : refill.refillName
                       }
                       onClick={() => handleSelectRefill(refill)}
                       className={cn(
@@ -587,7 +670,9 @@ function CustomerRefillContent({
                       <span className="font-black text-base leading-tight break-words">
                         {refill.refillName}
                       </span>
-                      {cooling ? (
+                      {inKitchen ? (
+                        <span className="text-[11px] font-semibold leading-tight">On its way</span>
+                      ) : remainingMs > 0 ? (
                         <span className="font-mono text-xs tabular-nums">{formatCountdown(remainingMs)}</span>
                       ) : null}
                       {selected && !cooling ? (
@@ -646,16 +731,25 @@ function CustomerRefillContent({
                   {otherRefills.map((r) => {
                     const v = Number(otherQty[r.refillId] || 0);
                     const remainingMs = remainingFor(r.refillId);
-                    if (remainingMs > 0) {
+                    const inKitchen = isAwaiting(r.refillId);
+                    // Same two reasons as the meat tiles above. Checking only
+                    // the countdown here would leave an in-kitchen side looking
+                    // orderable, and the submit builder silently drops blocked
+                    // ids — so the guest would press Send and get nothing.
+                    if (inKitchen || remainingMs > 0) {
                       return (
                         <div key={r.refillId} className="flex items-center justify-between gap-3 opacity-60">
                           <div>
                             <p className="font-medium">{r.refillName}</p>
-                            <p className="text-xs text-muted-foreground">Available again soon</p>
+                            <p className="text-xs text-muted-foreground">
+                              {inKitchen ? "On its way" : "Available again soon"}
+                            </p>
                           </div>
-                          <span className="font-mono text-sm tabular-nums text-muted-foreground">
-                            {formatCountdown(remainingMs)}
-                          </span>
+                          {inKitchen ? null : (
+                            <span className="font-mono text-sm tabular-nums text-muted-foreground">
+                              {formatCountdown(remainingMs)}
+                            </span>
+                          )}
                         </div>
                       );
                     }
@@ -703,7 +797,7 @@ function CustomerRefillContent({
               </div>
 
               <div className="flex-1 flex items-center justify-center text-center text-muted-foreground bg-muted/50 rounded-lg">
-                <p>Optional add-ons. Each one can be re-ordered every 10 minutes.</p>
+                <p>Optional add-ons. Order each one again once it arrives.</p>
               </div>
             </div>
           ) : activeCartItem ? (
