@@ -113,7 +113,13 @@ export function CustomerFeedbackModal({ open, onOpenChange, customerName }: Prop
               </div>
 
               <div className="space-y-2">
-                <div className="font-semibold">Why did you give us {rating || 0} star{rating === 1 ? "" : "s"}?</div>
+                {/* Before a rating exists there is no "0 stars" to explain — asking
+                    why they gave a score they have not given reads as a bug. */}
+                <div className="font-semibold">
+                  {rating === 0
+                    ? "Tap a star above to rate us."
+                    : `Why did you give us ${rating} star${rating === 1 ? "" : "s"}?`}
+                </div>
                 <Textarea
                   value={suggestion}
                   onChange={(e) => setSuggestion(e.target.value)}
