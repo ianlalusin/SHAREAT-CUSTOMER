@@ -206,6 +206,13 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
         <SharelebratorLinkCard
           takenBy={takenBy}
           onCard={(card) => setReadOnlyCard(card)}
+          onRecognised={() => {
+            // They are the cardholder, and the server has just re-bound this
+            // device to the link — /me will hand over the real card now.
+            setReadOnlyCard(null);
+            setLoading(true);
+            fetchMe().finally(() => setLoading(false));
+          }}
           storeId={storeId}
           sessionId={sessionId}
           onLinked={() => {

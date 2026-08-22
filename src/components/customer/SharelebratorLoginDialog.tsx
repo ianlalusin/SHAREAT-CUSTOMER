@@ -19,9 +19,16 @@ interface Props {
   linkToSession?: boolean;
   /** The card itself, returned only in no-link mode. */
   onCard?: (card: any) => void;
+  /**
+   * Called instead of onCard when the credentials turn out to own the card this
+   * session is already linked to — they are the cardholder returning, not a
+   * second diner, so the caller should show the real card rather than a
+   * read-only copy.
+   */
+  onRecognised?: (name: string) => void;
 }
 
-export function SharelebratorLoginDialog({ open, onOpenChange, onLinked, linkToSession = true, onCard }: Props) {
+export function SharelebratorLoginDialog({ open, onOpenChange, onLinked, linkToSession = true, onCard, onRecognised }: Props) {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -50,6 +57,7 @@ export function SharelebratorLoginDialog({ open, onOpenChange, onLinked, linkToS
         throw new Error(json.error || "Failed to link.");
       }
       if (linkToSession) onLinked(json.name);
+      else if (json.linked) onRecognised?.(json.name);
       else onCard?.(json.card);
       onOpenChange(false);
       setPhone("");
@@ -103,7 +111,7 @@ export function SharelebratorLoginDialog({ open, onOpenChange, onLinked, linkToS
           <DialogFooter>
             <Button type="submit" disabled={submitting} className="w-full">
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Sign In & Link
+              {linkToSession ? "Sign In & Link" : "Sign In"}
             </Button>
           </DialogFooter>
         </form>

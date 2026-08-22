@@ -20,9 +20,11 @@ interface Props {
   takenBy?: string | null;
   /** Their own card, when they signed in without claiming the session. */
   onCard?: (card: any) => void;
+  /** They signed in as the cardholder this session is already linked to. */
+  onRecognised?: (name: string) => void;
 }
 
-export function SharelebratorLinkCard({ storeId: _storeId, sessionId: _sessionId, onLinked, takenBy, onCard }: Props) {
+export function SharelebratorLinkCard({ storeId: _storeId, sessionId: _sessionId, onLinked, takenBy, onCard, onRecognised }: Props) {
   const [loginOpen, setLoginOpen] = useState(false);
   const [signupOpen, setSignupOpen] = useState(false);
 
@@ -39,7 +41,7 @@ export function SharelebratorLinkCard({ storeId: _storeId, sessionId: _sessionId
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
               {takenBy
-                ? "Open your own card to check your points. This meal will keep earning for the card already linked."
+                ? "Sign in to check your points. If this table's card is yours, signing in brings it back."
                 : "Link this session to your Sharelebrator card to earn points."}
             </p>
             <div className="grid grid-cols-2 gap-2">
@@ -60,6 +62,7 @@ export function SharelebratorLinkCard({ storeId: _storeId, sessionId: _sessionId
         onLinked={(name) => onLinked?.(name)}
         linkToSession={!takenBy}
         onCard={onCard}
+        onRecognised={onRecognised}
       />
       <SharelebratorSignupDialog
         open={signupOpen}

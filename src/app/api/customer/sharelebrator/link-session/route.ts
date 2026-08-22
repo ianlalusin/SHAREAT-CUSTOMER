@@ -206,12 +206,47 @@ export async function POST(req: Request) {
     return bad("Unknown mode.");
   }
 
-  // Authenticated, but not claiming the table: hand back the card and write
-  // nothing to the session.
+  // Authenticated, but not claiming the table.
   if (!linkToSession) {
     const card = await loadLoyaltyCard(db, phone);
     if (!card) return bad("Account not found.", 404);
-    return NextResponse.json({ ok: true, phone, name: customerName, linked: false, card });
+
+    /**
+     * They just proved they own the card this session is already linked to, so
+     * they are not a stranger at the table — they ARE the cardholder.
+     *
+     * `participantId` is derived from a device id in localStorage, so signing
+     * out and back in mints a new one. Identity by participant alone therefore
+     * locked the real cardholder out of their own card after a logout, and told
+     * them their meal was earning for someone with their own name. The card is
+     * the identity here; the participant is only a shortcut for it.
+     *
+     * Re-bind so /me recognises this device from now on. Skipped once the
+     * session is locked — the bill is settled and nothing about the link should
+     * move — but they still get the card back, having proved it is theirs.
+     */
+    const ownerSnap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
+    const ownerData = ownerSnap.exists ? (ownerSnap.data() as any) : null;
+    const isSessionCardholder = !!ownerData && ownerData.linkedCustomerPhone === phone;
+
+    if (isSessionCardholder && !ownerData.linkedCustomerLockedAt && participantId) {
+      const rebind = { linkedByParticipantId: participantId };
+      const batch = db.batch();
+      batch.update(db.doc(`stores/${storeId}/activeSessions/${sessionId}`), rebind);
+      const sSnap = await db.doc(`stores/${storeId}/sessions/${sessionId}`).get();
+      if (sSnap.exists) batch.update(db.doc(`stores/${storeId}/sessions/${sessionId}`), rebind);
+      await batch.commit();
+    }
+
+    return NextResponse.json({
+      ok: true,
+      phone,
+      name: customerName,
+      // True when this IS the session's card: the client should drop the
+      // read-only view and show the real one.
+      linked: isSessionCardholder,
+      card,
+    });
   }
 
   // Write link to session — reject if already locked
