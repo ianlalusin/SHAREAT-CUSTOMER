@@ -3,6 +3,7 @@ import type { Firestore } from "firebase-admin/firestore";
 
 import { buildFeed, type RankableRecipe } from "@/lib/games/recipe/feed";
 import { applyVerdict, rankScore } from "@/lib/games/recipe/rank";
+import { effectOfEdit } from "@/lib/games/recipe/edit";
 import { EMPTY_COUNTS, EMPTY_FEED, type RecipeCounts, type RecipeFeed, type RecipeStatus, type RecipeStep, type Verdict } from "@/lib/games/recipe/types";
 import type { RecipeDraft, RecipeMode } from "@/lib/games/recipe/validate";
 
@@ -336,8 +337,6 @@ export async function hasVoted(db: Firestore, recipeId: string, voterKey: string
   return snap.exists;
 }
 
-/* ------------------------------------------------------------ moderation --- */
-
 /** Equality filter only — no orderBy. Sorted in memory. See `rebuildFeed`. */
 export async function listByStatus(db: Firestore, status: RecipeStatus, limit = 300): Promise<RecipeDoc[]> {
   const snap = await db.collection(RECIPES).where("status", "==", status).limit(limit).get();
@@ -350,6 +349,98 @@ export async function countPending(db: Firestore): Promise<number> {
   const snap = await db.collection(RECIPES).where("status", "==", "pending").count().get();
   return snap.data().count;
 }
+
+/* ------------------------------------------------------------------ edit --- */
+
+export type EditResult =
+  | { ok: true; resetRatings: boolean; reason: string }
+  | { ok: false; error: string; status?: number };
+
+/**
+ * Admin edit of a recipe's content.
+ *
+ * Admin-only by decision: the people who can already approve and hide are the
+ * only ones who can rewrite. That keeps the obvious hole shut — an author who
+ * could edit freely could build up ratings on a good recipe and then swap the
+ * contents underneath them.
+ *
+ * When the STEPS change the tallies are cleared and every vote doc deleted, so
+ * the next person rates what is actually there. Fixing a title or an author's
+ * name touches nothing anyone tasted and keeps the score, because an edit that
+ * costs an author their rating is an edit nobody makes.
+ *
+ * Status is left alone. An admin editing IS the review, so their own change
+ * does not send a live recipe back into the queue — but editing a pending one
+ * leaves it pending, still needing an explicit approve.
+ */
+export async function editRecipe(
+  db: Firestore,
+  recipeId: string,
+  draft: RecipeDraft,
+  mode: RecipeMode,
+  byUid: string
+): Promise<EditResult> {
+  const ref = db.doc(`${RECIPES}/${recipeId}`);
+
+  try {
+    const effect = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw Object.assign(new Error("Recipe not found."), { httpStatus: 404 });
+
+      const current = toRecipe(snap.id, snap.data() as Record<string, any>);
+      const effect = effectOfEdit(
+        { steps: current.steps, title: current.title, displayName: current.displayName },
+        { steps: draft.steps, title: draft.title, displayName: draft.displayName || current.displayName }
+      );
+
+      const patch: Record<string, any> = {
+        title: draft.title,
+        displayName: draft.displayName || current.displayName,
+        steps: draft.steps,
+        hasFreeText: mode === "custom",
+        editedByUid: byUid,
+        editedAtMs: Date.now(),
+      };
+
+      if (effect.resetRatings) {
+        patch.counts = EMPTY_COUNTS;
+        patch.scoreSum = 0;
+        patch.rankScore = rankScore(EMPTY_COUNTS, 0);
+      }
+
+      tx.update(ref, patch);
+      return effect;
+    });
+
+    // Outside the transaction: a recipe can hold more votes than a transaction
+    // may touch, and these deletes are what let people rate the new version.
+    // The tallies are already zeroed, so a partial failure here leaves stale
+    // vote docs that only block those same voters from rating again — bounded,
+    // and repaired by re-running the edit.
+    if (effect.resetRatings) await deleteAllVotes(db, recipeId);
+
+    await rebuildFeed(db).catch(() => {});
+    return { ok: true, resetRatings: effect.resetRatings, reason: effect.reason };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || "Could not save the edit.", status: e?.httpStatus || 500 };
+  }
+}
+
+async function deleteAllVotes(db: Firestore, recipeId: string): Promise<void> {
+  const votesRef = db.collection(`${RECIPES}/${recipeId}/votes`);
+  // Page through rather than reading every vote at once — a popular recipe's
+  // subcollection is unbounded.
+  for (;;) {
+    const snap = await votesRef.limit(400).get();
+    if (snap.empty) return;
+    const batch = db.batch();
+    for (const d of snap.docs) batch.delete(d.ref);
+    await batch.commit();
+    if (snap.size < 400) return;
+  }
+}
+
+/* ------------------------------------------------------------ moderation --- */
 
 export type ModerationAction = "approve" | "reject" | "hide" | "feature" | "unfeature";
 

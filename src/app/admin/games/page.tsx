@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
-import { ArrowLeft, Loader2, RefreshCw, Check, X, EyeOff, Star, StarOff, Sprout } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, Check, X, EyeOff, Star, StarOff, Sprout, Pencil } from "lucide-react";
 
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { RecipeStep } from "@/lib/games/recipe/types";
+import { RecipeEditDialog, type EditableRecipe } from "@/components/games/recipe/RecipeEditDialog";
 
 type GameRow = { id: string; title: string; tagline: string; configured: boolean; isActive: boolean };
 type QueueRow = {
@@ -41,6 +42,7 @@ export default function AdminGamesPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rebuilding, setRebuilding] = useState(false);
   const [seeding, setSeeding] = useState(false);
+  const [editing, setEditing] = useState<EditableRecipe | null>(null);
 
   const authed = useCallback(async () => {
     const user = getAuth().currentUser;
@@ -285,6 +287,13 @@ export default function AdminGamesPage() {
                   </ol>
 
                   <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" className="rounded-xl gap-1" disabled={busyId === r.id}
+                      onClick={() => setEditing({
+                        id: r.id, title: r.title, displayName: r.displayName,
+                        steps: r.steps, counts: r.counts,
+                      })}>
+                      <Pencil className="h-4 w-4" /> Edit
+                    </Button>
                     {r.status !== "published" && (
                       <Button size="sm" className="rounded-xl gap-1" disabled={busyId === r.id}
                         onClick={() => moderate(r.id, "approve")}>
@@ -317,6 +326,19 @@ export default function AdminGamesPage() {
           </CardContent>
         </Card>
       </div>
+
+      <RecipeEditDialog
+        recipe={editing}
+        onClose={() => setEditing(null)}
+        onSaved={(resetRatings) => {
+          setEditing(null);
+          loadQueue(status).catch(() => {});
+          toast({
+            title: "Recipe updated",
+            description: resetRatings ? "Ratings were cleared — the steps changed." : "Ratings kept.",
+          });
+        }}
+      />
     </main>
   );
 }
