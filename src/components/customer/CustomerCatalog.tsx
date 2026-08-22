@@ -25,6 +25,7 @@ function peso(n: number) {
 }
 
 const ALL = "All";
+const POPULAR = "Popular";
 const MAX_QTY = 20;
 
 /** One pick in an option group, as the order route expects it. */
@@ -139,12 +140,30 @@ export function CustomerCatalog({ overrideCategories, orders = [], onOrderPlaced
     };
   }, [overrideCategories]);
 
-  const categoryNames = useMemo(
-    () => [ALL, ...categories.map((c) => c.name).filter(Boolean)],
+  /**
+   * Popular is a view across the menu, not a category of its own: an item keeps
+   * its real category and appears here as well. Shown only when the store has
+   * actually flagged something, so a branch that does not use it sees the menu
+   * exactly as before.
+   */
+  const hasPopular = useMemo(
+    () => categories.some((c) => c.items.some((i) => i.popular)),
     [categories]
   );
 
+  const categoryNames = useMemo(
+    () => [
+      ALL,
+      ...(hasPopular ? [POPULAR] : []),
+      ...categories.map((c) => c.name).filter(Boolean),
+    ],
+    [categories, hasPopular]
+  );
+
   const visible = useMemo<CatalogEntry[]>(() => {
+    if (activeCategory === POPULAR) {
+      return categories.flatMap((c) => c.items.filter((i) => i.popular));
+    }
     const picked = activeCategory === ALL ? categories : categories.filter((c) => c.name === activeCategory);
     return picked.flatMap((c) => c.items);
   }, [categories, activeCategory]);

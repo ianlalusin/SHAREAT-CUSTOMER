@@ -56,6 +56,12 @@ export type CatalogEntry = {
   /** A family's price is its cheapest variant, shown as "from ₱X". */
   price: number;
   orderable: boolean;
+  /**
+   * Listed under "Popular" as well as its own category. Set per branch in POS
+   * (inventory.isPopular) and omitted entirely when false, so a catalogCache
+   * written before this existed simply has no popular items.
+   */
+  popular?: boolean;
   variants?: CatalogVariant[];
   optionGroups?: CatalogOptionGroup[];
 };

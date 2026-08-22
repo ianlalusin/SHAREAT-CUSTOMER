@@ -98,6 +98,9 @@ function entry(raw: any, categoryName: string): CatalogEntry {
     price: num(raw?.price),
     orderable: raw?.orderable === true,
   };
+  // This projection is a whitelist: a field POS publishes but that is not
+  // copied here never reaches the menu at all.
+  if (raw?.popular === true) e.popular = true;
   if (raw?.description) e.description = String(raw.description);
 
   if (kind === "group") {
