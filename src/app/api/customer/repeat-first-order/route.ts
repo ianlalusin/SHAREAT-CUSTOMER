@@ -100,7 +100,27 @@ export async function POST(req: Request) {
     // ungated would be an open bypass.
     const refillLabel = String(firstRefill.refillName || firstRefill.name || "This refill");
 
-    const { outstanding, servedAt } = await refillTicketState(db, storeId, sessionId, participantId);
+    const { outstanding, servedAt, firstServingPending } = await refillTicketState(
+      db,
+      storeId,
+      sessionId,
+      participantId
+    );
+
+    // Same gate as /submit-refill — this route writes refill tickets too, and
+    // leaving it open would be the bypass.
+    if (firstServingPending) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Your first serving is still with the kitchen. You can order refills once it arrives at your table.",
+          reason: "first_serving_pending",
+          cooldownMs: REFILL_COOLDOWN_MS,
+        },
+        { status: 429 }
+      );
+    }
+
     if (outstanding.has(firstRefillId)) {
       return NextResponse.json(
         {

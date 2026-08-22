@@ -3,9 +3,11 @@ import {
   refillIdsOnTicket,
   servedStampsFrom,
   ticketBlocks,
+  ticketIsPendingFirstServing,
   ticketServedAtMs,
 } from "@/lib/server/refill-outstanding";
 import { OUTSTANDING_BLOCK_MAX_MS } from "@/lib/refill-cooldown";
+import { FIRST_SERVING_BLOCK_MAX_MS, hasPendingFirstServing } from "@/lib/session-orders";
 
 const T0 = 1_700_000_000_000;
 const ME = "participant_1";
@@ -157,5 +159,62 @@ describe("servedStampsFrom", () => {
     const open = ticket({ status: "preparing" });
     const cancelled = ticket({ itemId: "beef", status: "cancelled" });
     expect(servedStampsFrom([open, cancelled], ME)).toEqual({});
+  });
+});
+
+describe("ticketIsPendingFirstServing", () => {
+  // Not this phone's ticket and not a refill: the cashier writes it at check-in,
+  // so it carries no createdByParticipantId this diner would match.
+  const pkg = (over: Record<string, any> = {}): Record<string, any> => ({
+    type: "package",
+    status: "preparing",
+    createdAtClientMs: T0,
+    itemName: "Unli Set A",
+    ...over,
+  });
+
+  it("blocks while the cashier's opening order is still with the kitchen", () => {
+    expect(ticketIsPendingFirstServing(pkg(), T0 + 5_000)).toBe(true);
+    expect(ticketIsPendingFirstServing(pkg({ status: "partially_served" }), T0 + 5_000)).toBe(true);
+    expect(ticketIsPendingFirstServing(pkg({ status: "ready" }), T0 + 5_000)).toBe(true);
+  });
+
+  it("does not care who created it — it is the table's order, not a diner's", () => {
+    expect(ticketIsPendingFirstServing(pkg({ createdByParticipantId: "anyone" }), T0 + 5_000)).toBe(true);
+  });
+
+  it("stops blocking once served or cancelled", () => {
+    expect(ticketIsPendingFirstServing(pkg({ status: "served" }), T0 + 5_000)).toBe(false);
+    expect(ticketIsPendingFirstServing(pkg({ status: "cancelled" }), T0 + 5_000)).toBe(false);
+  });
+
+  it("ignores refills and add-ons — only the opening package gates", () => {
+    expect(ticketIsPendingFirstServing(pkg({ type: "refill" }), T0 + 5_000)).toBe(false);
+    expect(ticketIsPendingFirstServing(pkg({ type: "addon" }), T0 + 5_000)).toBe(false);
+  });
+
+  it("releases the table once the valve expires", () => {
+    expect(ticketIsPendingFirstServing(pkg(), T0 + FIRST_SERVING_BLOCK_MAX_MS - 1)).toBe(true);
+    expect(ticketIsPendingFirstServing(pkg(), T0 + FIRST_SERVING_BLOCK_MAX_MS)).toBe(false);
+  });
+
+  it("never blocks on a ticket with no usable timestamp", () => {
+    expect(ticketIsPendingFirstServing(pkg({ createdAtClientMs: 0 }), T0)).toBe(false);
+    expect(ticketIsPendingFirstServing(pkg({ createdAtClientMs: "junk" }), T0)).toBe(false);
+    expect(ticketIsPendingFirstServing({}, T0)).toBe(false);
+  });
+
+  it("agrees with the client predicate on the same facts", () => {
+    // The UI refuses to open the modal and the API refuses the order; if these
+    // two ever disagreed, one of them would be lying to the diner.
+    const asOrder = {
+      id: "t", itemId: "", itemName: "Unli Set A", qty: 1, qtyServed: 0,
+      status: "preparing" as const, type: "package", createdAtMs: T0,
+      note: null, detail: null, orderedBySlot: null, orderedByMe: false,
+      lineTotal: null, billed: false,
+    };
+    for (const at of [T0 + 1, T0 + FIRST_SERVING_BLOCK_MAX_MS - 1, T0 + FIRST_SERVING_BLOCK_MAX_MS]) {
+      expect(ticketIsPendingFirstServing(pkg(), at)).toBe(hasPendingFirstServing([asOrder], at));
+    }
   });
 });

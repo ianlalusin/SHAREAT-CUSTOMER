@@ -1,5 +1,6 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { OUTSTANDING_BLOCK_MAX_MS, type CooldownMap } from "../refill-cooldown";
+import { FIRST_SERVING_BLOCK_MAX_MS } from "../session-orders";
 
 /**
  * What this phone's kitchen tickets say about each refill: which are still
@@ -117,11 +118,40 @@ export function servedStampsFrom(
   return out;
 }
 
+/**
+ * Is this the cashier's opening order, still with the kitchen?
+ *
+ * `package` is the check-in ticket POS writes for the unli set itself. Unlike
+ * every other check in this file it is deliberately NOT scoped to a
+ * participant: the cashier created it on the table's behalf, so it carries no
+ * diner's id and belongs to everyone at the session.
+ *
+ * Mirrors hasPendingFirstServing() in lib/session-orders.ts, which the dashboard
+ * uses to decide whether to open the refill modal at all, and shares its valve.
+ * The two must agree — if the UI refused what the API allowed, or the reverse,
+ * one of them would be lying to the diner. A test pins them together.
+ */
+export function ticketIsPendingFirstServing(
+  ticket: Record<string, any>,
+  nowMs: number
+): boolean {
+  if (String(ticket?.type || "") !== "package") return false;
+  if (CLOSED_STATUSES.has(String(ticket?.status || "").toLowerCase())) return false;
+
+  const createdAtMs = Number(ticket?.createdAtClientMs ?? 0);
+  // Cannot be aged out, so it could never expire the valve. Fail open.
+  if (!Number.isFinite(createdAtMs) || createdAtMs <= 0) return false;
+
+  return nowMs - createdAtMs < FIRST_SERVING_BLOCK_MAX_MS;
+}
+
 export type RefillTicketState = {
   /** Still with the kitchen. No known arrival time, so never show a timer. */
   outstanding: Set<string>;
   /** refillId -> when it last reached the table. Feeds the serve-anchored minute. */
   servedAt: CooldownMap;
+  /** The table's opening order has not arrived yet — refuse refills entirely. */
+  firstServingPending: boolean;
 };
 
 /** One scan, both answers. */
@@ -133,7 +163,8 @@ export async function refillTicketState(
   nowMs: number = Date.now()
 ): Promise<RefillTicketState> {
   const outstanding = new Set<string>();
-  if (!storeId || !sessionId || !participantId) return { outstanding, servedAt: {} };
+  if (!storeId || !sessionId || !participantId)
+    return { outstanding, servedAt: {}, firstServingPending: false };
 
   const snap = await db
     .collection(`stores/${storeId}/sessions/${sessionId}/kitchentickets`)
@@ -148,5 +179,9 @@ export async function refillTicketState(
     for (const id of refillIdsOnTicket(ticket)) outstanding.add(id);
   }
 
-  return { outstanding, servedAt: servedStampsFrom(tickets, participantId) };
+  return {
+    outstanding,
+    servedAt: servedStampsFrom(tickets, participantId),
+    firstServingPending: tickets.some((t) => ticketIsPendingFirstServing(t, nowMs)),
+  };
 }

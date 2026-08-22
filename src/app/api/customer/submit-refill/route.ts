@@ -146,7 +146,29 @@ export async function POST(req: Request) {
     // half an order already with the kitchen. The claim below stays the race
     // guard for double taps.
     const requestedIds = normalized.flatMap((n) => n.cooldownIds);
-    const { outstanding, servedAt } = await refillTicketState(db, storeId, sessionId, participantId);
+    const { outstanding, servedAt, firstServingPending } = await refillTicketState(
+      db,
+      storeId,
+      sessionId,
+      participantId
+    );
+
+    // The table's opening order has not landed yet. The dashboard already
+    // refuses to open the refill modal in this state; this is the control
+    // behind that courtesy message, so the gate is not merely cosmetic.
+    // Bounded by FIRST_SERVING_BLOCK_MAX_MS inside refillTicketState, so a
+    // package ticket the kitchen forgets cannot lock refills for the whole meal.
+    if (firstServingPending) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Your first serving is still with the kitchen. You can order refills once it arrives at your table.",
+          reason: "first_serving_pending",
+          cooldownMs: REFILL_COOLDOWN_MS,
+        },
+        { status: 429 }
+      );
+    }
     const stillCooking = blockedRefillsDetailed(
       participantInfo.refillCooldowns,
       outstanding,

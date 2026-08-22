@@ -12,7 +12,12 @@ import { getAuth } from "firebase/auth";
  */
 
 export type { SessionOrder, RunningBill } from "@/lib/session-orders";
-export { IN_FLIGHT, inFlightQty, hasPendingFirstServing } from "@/lib/session-orders";
+export {
+  FIRST_SERVING_BLOCK_MAX_MS,
+  IN_FLIGHT,
+  inFlightQty,
+  hasPendingFirstServing,
+} from "@/lib/session-orders";
 
 import type { SessionOrder, RunningBill } from "@/lib/session-orders";
 

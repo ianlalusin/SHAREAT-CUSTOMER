@@ -555,6 +555,20 @@ function CustomerRefillContent({
       const json = (await res.json().catch(() => ({}))) as any;
 
       if (res.status === 429) {
+        // The table's opening order has not arrived. Carries no `blocked` list —
+        // it is the whole order that is refused, not particular refills — so say
+        // that rather than falling through to "still cooling down".
+        if (json?.reason === "first_serving_pending") {
+          setAlertState({
+            open: true,
+            title: "Your first serving is on its way",
+            message:
+              json?.error ||
+              "The kitchen is still preparing your order. You can order refills once it arrives.",
+          });
+          return;
+        }
+
         // Server is the authority on the countdown — resync and show why.
         const blocked: Array<{ refillId: string; nextAllowedAtMs: number; reason?: string }> =
           Array.isArray(json?.blocked) ? json.blocked : [];
