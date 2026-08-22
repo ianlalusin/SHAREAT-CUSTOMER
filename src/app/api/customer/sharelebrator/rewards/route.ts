@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { FieldValue } from "firebase-admin/firestore";
+import { isRewardOfferedAtStore } from "@/lib/loyaltyRewardScope";
 
 export const runtime = "nodejs";
 
@@ -99,9 +100,23 @@ export async function GET(req: Request) {
     const pointsReserved = Number(cData.pointsReserved ?? 0);
     const available = Math.max(0, pointsBalance - pointsReserved);
 
+    /**
+     * The branch this member is sitting in, from their own token — never from
+     * the request body, which the client controls.
+     *
+     * A loyalty-card login carries no store: they are browsing their card, not
+     * at a table, so there is no branch whose catalogue to apply and the
+     * globally active list is the honest answer. Claiming still requires a
+     * store (see the redeem route), which is where the manager's switch bites.
+     */
+    const storeId = decoded.customer === true ? String(decoded.storeId || "") : "";
+
     const rewards = rewardsSnap.docs
       .map((d: any) => ({ id: d.id, ...d.data() }))
-      .filter((r: any) => r.isActive !== false)
+      // Global switch, then the branch's own. A manager who switches a reward
+      // off in Collections -> Loyalty means diners at that branch should not be
+      // offered it at all.
+      .filter((r: any) => (storeId ? isRewardOfferedAtStore(r, storeId) : r.isActive !== false))
       .sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
       .map((r: any) => ({
         id: r.id, name: r.name, description: r.description ?? null,
@@ -149,7 +164,12 @@ export async function GET(req: Request) {
         ((b.createdAtClientMs ?? 0) - (a.createdAtClientMs ?? 0)),
       );
 
-    return NextResponse.json({ ok: true, linked: true, pointsBalance, pointsReserved, available, rewards, vouchers });
+    return NextResponse.json({
+      ok: true, linked: true, pointsBalance, pointsReserved, available, rewards, vouchers,
+      // False when the list is the global catalogue rather than one branch's,
+      // so the UI can say the rewards shown are not yet claimable here.
+      storeScoped: !!storeId,
+    });
   } catch (e: any) {
     return bad(e?.message || "Failed to load rewards", 500);
   }

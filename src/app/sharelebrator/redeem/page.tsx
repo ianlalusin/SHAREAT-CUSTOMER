@@ -110,6 +110,12 @@ export default function RedeemPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [collectingId, setCollectingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * False when the list is the global catalogue rather than one branch's —
+   * a card opened away from a table. Claiming needs a branch, so say that
+   * rather than letting the member tap into a refusal.
+   */
+  const [storeScoped, setStoreScoped] = useState(true);
 
   const load = useCallback(async () => {
     const user = getAuth().currentUser;
@@ -126,6 +132,7 @@ export default function RedeemPage() {
       setAvailable(json.available ?? Math.max(0, bal - res2));
       setRewards(json.rewards ?? []);
       setVouchers(json.vouchers ?? []);
+      setStoreScoped(json.storeScoped !== false);
       setError(null);
     } catch (e: any) {
       setError(e?.message || "Could not load rewards");
@@ -282,6 +289,12 @@ export default function RedeemPage() {
             {/* Catalog */}
             <div className="space-y-3">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Available rewards</h2>
+              {!storeScoped && (
+                <p className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">
+                  You&apos;re browsing away from a table. Scan in at a branch to claim — each
+                  branch chooses which rewards it offers, so this list may differ there.
+                </p>
+              )}
               {rewards.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-6">No rewards available right now.</p>
               ) : (

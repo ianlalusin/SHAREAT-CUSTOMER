@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
 import { FieldValue } from "firebase-admin/firestore";
+import { isRewardOfferedAtStore } from "@/lib/loyaltyRewardScope";
 
 export const runtime = "nodejs";
 
@@ -54,11 +55,25 @@ export async function POST(req: Request) {
   const phone = await resolvePhone(db, decoded);
   if (!phone) return bad("No loyalty card linked.", 403);
 
+  /**
+   * Which branch is issuing this voucher — from the token, never the body.
+   *
+   * Required: a reward is something a specific branch has agreed to honour, so
+   * "claim it from anywhere" would route straight past the manager's switch in
+   * Collections -> Loyalty. POS's cashier path (writeLoyaltyRedeem) has always
+   * enforced this; the diner's own path did not, which meant a member could
+   * claim a reward their branch had switched off.
+   */
+  const storeId = decoded.customer === true ? String(decoded.storeId || "") : "";
+  if (!storeId) {
+    return bad("Open your card at the restaurant to claim a reward.", 403);
+  }
+
   // Resolve expiry window (store-configurable when in a store session).
   let expiryMin = DEFAULT_EXPIRY_MIN;
-  if (decoded.storeId) {
+  {
     try {
-      const storeSnap = await db.doc(`stores/${decoded.storeId}`).get();
+      const storeSnap = await db.doc(`stores/${storeId}`).get();
       const m = Number(storeSnap.data()?.loyaltyConfig?.redemptionExpiryMinutes);
       if (Number.isFinite(m) && m > 0) expiryMin = m;
     } catch {}
@@ -79,6 +94,12 @@ export async function POST(req: Request) {
       const c = cSnap.data();
       const reward = rewardSnap.data();
       if (reward.isActive === false) throw new Error("Reward is not available");
+      // Re-checked inside the transaction, not just at the list, so a reward
+      // switched off while the member had the page open cannot still be
+      // claimed. Mirrors writeLoyaltyRedeem in POS.
+      if (!isRewardOfferedAtStore(reward, storeId)) {
+        throw new Error("This reward isn't offered at this branch.");
+      }
 
       const pointsCost = Math.floor(Number(reward.pointsCost) || 0);
       const value = Number(reward.value) || 0;
