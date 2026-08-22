@@ -8,20 +8,7 @@ import { Card, CardHeader, CardContent, CardTitle, CardDescription } from "@/com
 import { Lock, Loader2, Star } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getAuth, signInWithCustomToken } from "firebase/auth";
-
-function getOrCreateDeviceId(): string {
-  try {
-    const key = "shareat_device_id";
-    let id = localStorage.getItem(key);
-    if (!id) {
-      id = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      localStorage.setItem(key, id);
-    }
-    return id;
-  } catch {
-    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  }
-}
+import { getOrCreateDeviceId } from "@/lib/device-id";
 
 export default function PinAccessPage() {
   const [pin, setPin] = useState("");

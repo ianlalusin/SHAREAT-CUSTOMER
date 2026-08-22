@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, LogOut, RefreshCw, MessageSquare, Megaphone, Trash2, Eye } from "lucide-react";
+import { Loader2, LogOut, RefreshCw, MessageSquare, Megaphone, Trash2, Eye, Gamepad2 } from "lucide-react";
 
 type PinRow = {
   id: string; // PIN itself (doc id)
@@ -43,6 +43,7 @@ export default function AdminHomePage() {
   const [isCleaningPins, setIsCleaningPins] = useState(false);
   const [deletingPin, setDeletingPin] = useState<string | null>(null);
   const [storeNames, setStoreNames] = useState<Record<string, string>>({});
+  const [gamesPending, setGamesPending] = useState(0);
 
   useEffect(() => {
     const auth = getAuth();
@@ -54,6 +55,15 @@ export default function AdminHomePage() {
         return;
       }
       setIsAuthed(true);
+
+      // Best-effort: the badge is a nudge, not information this page depends
+      // on, so a failure here must not disturb the PIN registry below it.
+      user
+        .getIdToken()
+        .then((t) => fetch("/api/admin/games", { headers: { Authorization: `Bearer ${t}` }, cache: "no-store" }))
+        .then((r) => r.json())
+        .then((j) => setGamesPending(Number(j?.pendingCount || 0)))
+        .catch(() => {});
     });
     return () => unsub();
   }, [router]);
@@ -229,6 +239,21 @@ export default function AdminHomePage() {
         >
           <Eye className="h-5 w-5" />
           Preview
+        </Button>
+
+        <Button
+          onClick={() => router.push("/admin/games")}
+          variant="outline"
+          className="h-16 rounded-2xl font-black text-lg gap-3"
+        >
+          <Gamepad2 className="h-5 w-5" />
+          Games
+          {/* Recipes with a diner's own words in them stay invisible until
+              someone approves them, so the count has to nag from here — a queue
+              nobody opens is a game that looks dead. */}
+          {gamesPending > 0 && (
+            <Badge className="rounded-xl" variant="destructive">{gamesPending}</Badge>
+          )}
         </Button>
       </div>
 

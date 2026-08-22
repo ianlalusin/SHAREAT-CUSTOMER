@@ -6,20 +6,7 @@ import { getAuth, signInWithCustomToken } from "firebase/auth";
 import { Loader2, AlertCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-
-function getOrCreateDeviceId(): string {
-  try {
-    const key = "shareat_device_id";
-    let id = localStorage.getItem(key);
-    if (!id) {
-      id = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      localStorage.setItem(key, id);
-    }
-    return id;
-  } catch {
-    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  }
-}
+import { getOrCreateDeviceId } from "@/lib/device-id";
 
 const ERROR_MESSAGES: Record<string, string> = {
   "Join token expired.": "This QR code has expired. Please ask staff for a new PIN slip.",

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { collection, doc, getDocs, onSnapshot, query, where } from "firebase/firestore";
-import { Loader2, Plus, Bell, Star, Flame } from "lucide-react";
+import { Loader2, Plus, Bell, Star, Flame, Gamepad2 } from "lucide-react";
 
 import { DashboardHeader } from "@/components/dashboard/Header";
 import { Button } from "@/components/ui/button";
@@ -190,6 +190,42 @@ export default function DashboardPage() {
     );
   }, [firestore, session, router]);
 
+  /**
+   * Whether any game is running for this store.
+   *
+   * The shelf is meant to come and go — a game runs for a season and is
+   * switched off — so the tile has to disappear with it. Showing it while
+   * nothing is enabled sends diners to an empty screen, which is worse than
+   * having no tile at all. Server-resolved, because the on/off decision lives
+   * in Firestore and the client has no read access to it.
+   */
+  const [hasGames, setHasGames] = useState(false);
+
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const user = getAuth().currentUser;
+        if (!user) return;
+        const res = await fetch("/api/customer/games", {
+          headers: { Authorization: `Bearer ${await user.getIdToken()}` },
+          cache: "no-store",
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!cancelled && res.ok && json?.ok) setHasGames((json.games || []).length > 0);
+      } catch {
+        // A shelf that fails to load is simply not offered. Never a blocker on
+        // the screen people order food from.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
   // Load active flash ads once on mount. Ads only need to auto-show once per
   // session, so a one-shot read is enough — no need to hold a live listener for
   // the whole meal.
@@ -362,6 +398,24 @@ export default function DashboardPage() {
               Loyalty Card
             </span>
           </button>
+
+          {/*
+            Row 3 spans both columns so the games shelf reads as a different
+            KIND of thing from the four ordering/service actions above it,
+            rather than becoming a fifth equal-weight button competing with
+            "Order Refill" for attention.
+          */}
+          {hasGames && (
+          <button
+            type="button"
+            onClick={() => router.push("/play")}
+            className="col-span-2 h-14 rounded-2xl border-2 border-dashed border-primary/30 bg-white text-primary font-bold text-base flex items-center justify-center gap-2 hover:bg-primary/5 active:scale-[0.98] transition-all"
+            aria-label="Open Fun and Games"
+          >
+            <Gamepad2 className="h-5 w-5" />
+            Fun &amp; Games
+          </button>
+          )}
         </div>
 
         <CustomerCatalog orders={orders} onOrderPlaced={refreshOrders} />
