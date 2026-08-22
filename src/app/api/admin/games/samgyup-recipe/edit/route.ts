@@ -40,7 +40,7 @@ export async function POST(req: Request) {
   });
   if (!parsed.ok) return NextResponse.json({ ok: false, error: parsed.error }, { status: 400 });
 
-  const result = await editRecipe(db, recipeId, parsed.draft, parsed.mode, gate.caller.uid);
+  const result = await editRecipe(db, recipeId, parsed.draft, gate.caller.uid);
   if (!result.ok) {
     return NextResponse.json({ ok: false, error: result.error }, { status: result.status || 500 });
   }

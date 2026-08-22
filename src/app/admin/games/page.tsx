@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
-import { ArrowLeft, Loader2, RefreshCw, Check, X, EyeOff, Star, StarOff, Sprout, Pencil } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, Check, X, Archive, Undo2, Star, StarOff, Sprout, Pencil } from "lucide-react";
 
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,18 @@ type QueueRow = {
 };
 
 const STATUSES = ["pending", "published", "hidden", "rejected"] as const;
+
+/**
+ * "hidden" is the stored status; "Archived" is what it is called on screen.
+ * Archiving and hiding are the same act — off every shelf, kept, reversible —
+ * so this is a label, not a second state to keep in sync.
+ */
+const STATUS_LABEL: Record<(typeof STATUSES)[number], string> = {
+  pending: "Pending",
+  published: "Live",
+  hidden: "Archived",
+  rejected: "Rejected",
+};
 
 export default function AdminGamesPage() {
   const router = useRouter();
@@ -236,8 +248,8 @@ export default function AdminGamesPage() {
             >
               <TabsList className="grid grid-cols-4 rounded-2xl">
                 {STATUSES.map((s) => (
-                  <TabsTrigger key={s} value={s} className="capitalize">
-                    {s}
+                  <TabsTrigger key={s} value={s}>
+                    {STATUS_LABEL[s]}
                   </TabsTrigger>
                 ))}
               </TabsList>
@@ -263,11 +275,9 @@ export default function AdminGamesPage() {
                     </div>
                     <div className="flex shrink-0 gap-1">
                       {r.featured && <Badge className="rounded-xl bg-amber-500">Pick</Badge>}
-                      {r.hasFreeText ? (
-                        <Badge variant="secondary" className="rounded-xl">Own words</Badge>
-                      ) : (
-                        <Badge variant="outline" className="rounded-xl">Menu only</Badge>
-                      )}
+                      <Badge variant="outline" className="rounded-xl">
+                        {r.steps.length} steps
+                      </Badge>
                     </div>
                   </div>
 
@@ -297,13 +307,16 @@ export default function AdminGamesPage() {
                     {r.status !== "published" && (
                       <Button size="sm" className="rounded-xl gap-1" disabled={busyId === r.id}
                         onClick={() => moderate(r.id, "approve")}>
-                        <Check className="h-4 w-4" /> Approve
+                        {r.status === "pending" ? <Check className="h-4 w-4" /> : <Undo2 className="h-4 w-4" />}
+                        {/* An archived or rejected recipe is not being approved
+                            for the first time — it is being put back. */}
+                        {r.status === "pending" ? "Approve" : "Restore"}
                       </Button>
                     )}
                     {r.status === "published" && (
                       <Button size="sm" variant="outline" className="rounded-xl gap-1" disabled={busyId === r.id}
                         onClick={() => moderate(r.id, "hide")}>
-                        <EyeOff className="h-4 w-4" /> Hide
+                        <Archive className="h-4 w-4" /> Archive
                       </Button>
                     )}
                     {r.status === "pending" && (

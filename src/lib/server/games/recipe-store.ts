@@ -5,7 +5,7 @@ import { buildFeed, type RankableRecipe } from "@/lib/games/recipe/feed";
 import { applyVerdict, rankScore } from "@/lib/games/recipe/rank";
 import { effectOfEdit } from "@/lib/games/recipe/edit";
 import { EMPTY_COUNTS, EMPTY_FEED, type RecipeCounts, type RecipeFeed, type RecipeStatus, type RecipeStep, type Verdict } from "@/lib/games/recipe/types";
-import type { RecipeDraft, RecipeMode } from "@/lib/games/recipe/validate";
+import type { RecipeDraft } from "@/lib/games/recipe/validate";
 
 /**
  * Firestore for "Paano ka mag-samgyup".
@@ -186,7 +186,6 @@ export async function publishRecipe(
   db: Firestore,
   args: {
     draft: RecipeDraft;
-    mode: RecipeMode;
     authorKey: string;
     storeId: string;
     storeName: string;
@@ -194,17 +193,18 @@ export async function publishRecipe(
     fallbackDisplayName: string;
   }
 ): Promise<PublishResult> {
-  const { draft, mode, authorKey, storeId, storeName, sessionId, fallbackDisplayName } = args;
+  const { draft, authorKey, storeId, storeName, sessionId, fallbackDisplayName } = args;
 
   const recipeRef = db.collection(RECIPES).doc();
   const authorRef = db.doc(`${AUTHORS}/${authorKey}`);
   const nowMs = Date.now();
 
-  // A Quick recipe carries no diner-authored text at all, so there is nothing
-  // for a reviewer to catch and it goes live immediately. Anything with free
-  // text waits for a human. This is the whole reason the game has a pulse
-  // rather than an empty shelf on day one.
-  const status: RecipeStatus = mode === "quick" ? "published" : "pending";
+  /**
+   * ALWAYS pending. Every recipe is in the author's own words and every one is
+   * reviewed — there is no auto-publish path, so nothing a client sends can
+   * put text on the board without a human seeing it first.
+   */
+  const status: RecipeStatus = "pending";
 
   try {
     await db.runTransaction(async (tx) => {
@@ -230,14 +230,14 @@ export async function publishRecipe(
         authorStoreName: storeName,
         authorSessionId: sessionId,
         steps: draft.steps,
-        hasFreeText: mode === "custom",
+        hasFreeText: true,
         status,
         counts: EMPTY_COUNTS,
         scoreSum: 0,
         rankScore: rankScore(EMPTY_COUNTS, 0),
         featured: false,
         createdAtMs: nowMs,
-        publishedAtMs: status === "published" ? nowMs : 0,
+        publishedAtMs: 0,
         createdAt: FieldValue.serverTimestamp(),
       });
 
@@ -246,19 +246,13 @@ export async function publishRecipe(
         {
           authorKey,
           lastPublishedAtMs: nowMs,
-          pendingRecipeId: status === "pending" ? recipeRef.id : "",
+          pendingRecipeId: recipeRef.id,
         },
         { merge: true }
       );
     });
   } catch (e: any) {
     return { ok: false, error: e?.message || "Could not publish.", status: e?.httpStatus || 500 };
-  }
-
-  // A Quick recipe is live but the cached board predates it. Refresh so the
-  // author sees their own recipe in Fresh the moment they land back on the list.
-  if (status === "published") {
-    await rebuildFeed(db).catch(() => {});
   }
 
   return { ok: true, recipeId: recipeRef.id, status };
@@ -377,7 +371,6 @@ export async function editRecipe(
   db: Firestore,
   recipeId: string,
   draft: RecipeDraft,
-  mode: RecipeMode,
   byUid: string
 ): Promise<EditResult> {
   const ref = db.doc(`${RECIPES}/${recipeId}`);
@@ -397,7 +390,6 @@ export async function editRecipe(
         title: draft.title,
         displayName: draft.displayName || current.displayName,
         steps: draft.steps,
-        hasFreeText: mode === "custom",
         editedByUid: byUid,
         editedAtMs: Date.now(),
       };
@@ -437,6 +429,59 @@ async function deleteAllVotes(db: Firestore, recipeId: string): Promise<void> {
     for (const d of snap.docs) batch.delete(d.ref);
     await batch.commit();
     if (snap.size < 400) return;
+  }
+}
+
+/**
+ * The AUTHOR's own edit, allowed only while their recipe is still waiting for
+ * review.
+ *
+ * Safe precisely because it is limited to `pending`: voting requires a
+ * published recipe, so a pending one has no ratings to protect and there is
+ * nothing to swap out from under anyone. The moment an admin approves it the
+ * author loses the pencil — which is what stops the obvious abuse of building
+ * up ratings and then rewriting the recipe.
+ *
+ * Ownership is resolved from the stored `authorKey`, never from the request.
+ */
+export async function authorEditRecipe(
+  db: Firestore,
+  recipeId: string,
+  authorKey: string,
+  draft: RecipeDraft
+): Promise<{ ok: true } | { ok: false; error: string; status?: number }> {
+  const ref = db.doc(`${RECIPES}/${recipeId}`);
+
+  try {
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw Object.assign(new Error("That recipe is gone."), { httpStatus: 404 });
+
+      const current = toRecipe(snap.id, snap.data() as Record<string, any>);
+      if (current.authorKey !== authorKey) {
+        throw Object.assign(new Error("That is not your recipe."), { httpStatus: 403 });
+      }
+      if (current.status !== "pending") {
+        throw Object.assign(
+          new Error(
+            current.status === "published"
+              ? "This one is already live, so it can no longer be changed."
+              : "This one has been reviewed and can no longer be changed."
+          ),
+          { httpStatus: 409 }
+        );
+      }
+
+      tx.update(ref, {
+        title: draft.title,
+        displayName: draft.displayName || current.displayName,
+        steps: draft.steps,
+        editedAtMs: Date.now(),
+      });
+    });
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || "Could not save your changes.", status: e?.httpStatus || 500 };
   }
 }
 

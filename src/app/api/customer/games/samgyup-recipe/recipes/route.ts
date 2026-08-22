@@ -17,7 +17,6 @@ export async function POST(req: Request) {
   const { player } = gate;
   const result = await publishRecipe(getAdminDb(), {
     draft: parsed.draft,
-    mode: parsed.mode,
     authorKey: player.identityKey,
     storeId: player.storeId,
     storeName: player.storeName,
@@ -31,12 +30,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: result.error }, { status: result.status || 500 });
   }
 
-  return NextResponse.json({
-    ok: true,
-    recipeId: result.recipeId,
-    status: result.status,
-    // The composer tells the author what happened, so it needs to know which
-    // path the recipe took rather than guessing from the mode it submitted.
-    published: result.status === "published",
-  });
+  // Every recipe waits for review, so there is nothing to branch on — the
+  // composer always shows the same "we will check it" message.
+  return NextResponse.json({ ok: true, recipeId: result.recipeId, status: result.status });
 }

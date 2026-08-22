@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { getAuth } from "firebase/auth";
-import { Loader2, Plus, Trash2, Zap, PencilLine } from "lucide-react";
+import { Loader2, Plus, X } from "lucide-react";
 
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useToast } from "@/hooks/use-toast";
@@ -11,330 +11,208 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
 import {
-  QUICK_TITLES, MAX_STEPS, MIN_STEPS, MAX_TITLE_LEN, MAX_DISPLAY_NAME_LEN, MAX_NOTE_LEN,
+  MAX_STEPS, MIN_STEPS, MAX_TITLE_LEN, MAX_DISPLAY_NAME_LEN, MAX_STEP_LEN,
 } from "@/lib/games/recipe/validate";
 
-type CatalogItem = { id: string; name: string };
-type DraftStep = { kind: "catalog" | "free"; itemName: string; catalogItemId?: string; note?: string };
+export type ComposerRecipe = {
+  id: string;
+  title: string;
+  displayName: string;
+  steps: { itemName: string }[];
+};
 
 /**
- * Compose a recipe.
+ * Write a recipe, in your own words.
  *
- * Two modes, and the difference is not cosmetic — it decides whether the recipe
- * goes live now or waits for a human:
+ * The steps are the screen. There is no mode picker and no menu shortcut — the
+ * first two boxes are there the moment it opens, because the fastest way to get
+ * someone writing is to put the cursor where the writing goes.
  *
- *   Quick  — a template title and steps picked from this store's menu. Contains
- *            no text the diner wrote, so there is nothing for a reviewer to
- *            catch and it publishes immediately.
- *   Custom — own title, own name, own notes. Every one of those is text a
- *            stranger will read under the SharEat name, so it waits for review.
+ * The first two steps carry no delete control: two is the minimum, so removing
+ * one is never a legal move and offering the button would only produce a
+ * rejection. Steps three and up can be deleted outright.
  *
- * The mode is a UI affordance only. The server re-derives it from the content
- * (validateRecipeDraft), so a crafted request cannot buy itself the fast path.
+ * Used for both composing and for an author fixing a recipe that is still
+ * waiting for review — same rules, same shape, so the two cannot drift.
  */
 export function RecipeComposer({
   open,
+  editing,
   onClose,
-  onPublished,
+  onSaved,
 }: {
   open: boolean;
+  editing?: ComposerRecipe | null;
   onClose: () => void;
-  onPublished: (published: boolean) => void;
+  onSaved: () => void;
 }) {
   const isMobile = useIsMobile();
   const { toast } = useToast();
 
-  const [mode, setMode] = useState<"quick" | "custom">("quick");
-  const [title, setTitle] = useState<string>(QUICK_TITLES[0]);
+  const [title, setTitle] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [steps, setSteps] = useState<DraftStep[]>([]);
-  const [catalog, setCatalog] = useState<CatalogItem[] | null>(null);
+  const [steps, setSteps] = useState<string[]>(["", ""]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const user = getAuth().currentUser;
-        if (!user) return;
-        const res = await fetch("/api/customer/catalog-items", {
-          headers: { Authorization: `Bearer ${await user.getIdToken()}` },
-          cache: "no-store",
-        });
-        const json = await res.json().catch(() => ({}));
-        if (cancelled || !res.ok || !json?.ok) return;
-
-        // The catalog comes back grouped by category; the composer only needs a
-        // flat pick-list of names.
-        const flat: CatalogItem[] = [];
-        for (const cat of json.categories || []) {
-          for (const item of cat.items || []) {
-            if (item?.id && item?.name) flat.push({ id: String(item.id), name: String(item.name) });
-          }
-        }
-        const seen = new Set<string>();
-        setCatalog(flat.filter((i) => !seen.has(i.id) && seen.add(i.id)));
-      } catch {
-        if (!cancelled) setCatalog([]);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open]);
-
-  const switchMode = (next: "quick" | "custom") => {
-    setMode(next);
-    setError(null);
-    // Leaving Quick keeps the template title as a starting point; entering
-    // Quick must snap back to one, or the recipe silently takes the slow path.
-    if (next === "quick" && !(QUICK_TITLES as readonly string[]).includes(title)) {
-      setTitle(QUICK_TITLES[0]);
+    if (editing) {
+      setTitle(editing.title);
+      setDisplayName(editing.displayName);
+      const existing = editing.steps.map((s) => s.itemName);
+      // Never open below the minimum, even if stored data somehow is.
+      while (existing.length < MIN_STEPS) existing.push("");
+      setSteps(existing);
+    } else {
+      setTitle("");
+      setDisplayName("");
+      setSteps(["", ""]);
     }
-  };
-
-  const addStep = (item?: CatalogItem) => {
-    if (steps.length >= MAX_STEPS) return;
-    setSteps((s) => [
-      ...s,
-      item ? { kind: "catalog", itemName: item.name, catalogItemId: item.id } : { kind: "free", itemName: "" },
-    ]);
-  };
-
-  const canSubmit = steps.length >= MIN_STEPS && steps.every((s) => s.itemName.trim()) && !submitting;
-
-  const willBeReviewed = useMemo(() => {
-    if (mode === "custom") return true;
-    return steps.some((s) => s.kind === "free" || (s.note || "").trim());
-  }, [mode, steps]);
-
-  const reset = () => {
-    setMode("quick");
-    setTitle(QUICK_TITLES[0]);
-    setDisplayName("");
-    setSteps([]);
     setError(null);
-  };
+  }, [open, editing]);
+
+  const filled = steps.filter((s) => s.trim()).length;
+  const canSubmit = !!title.trim() && filled >= MIN_STEPS && !submitting;
+
+  const setStep = (i: number, value: string) =>
+    setSteps((prev) => prev.map((s, j) => (j === i ? value : s)));
 
   const submit = async () => {
     setSubmitting(true);
     setError(null);
     try {
       const user = getAuth().currentUser;
-      if (!user) throw new Error("Join your table to publish.");
+      if (!user) throw new Error("Join your table to share a recipe.");
 
-      const res = await fetch("/api/customer/games/samgyup-recipe/recipes", {
+      const payload = {
+        title,
+        displayName,
+        // Blank boxes are dropped rather than rejected — someone who adds a
+        // step and changes their mind should not have to hunt for the X.
+        steps: steps.map((s) => s.trim()).filter(Boolean).map((itemName) => ({ kind: "free", itemName })),
+      };
+
+      const url = editing
+        ? `/api/customer/games/samgyup-recipe/recipes/${editing.id}/edit`
+        : "/api/customer/games/samgyup-recipe/recipes";
+
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${await user.getIdToken()}` },
-        body: JSON.stringify({ title, displayName: mode === "custom" ? displayName : "", steps }),
+        body: JSON.stringify(payload),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not publish.");
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not save your recipe.");
 
       toast({
-        title: json.published ? "It's live!" : "Sent for review",
-        description: json.published
-          ? "Your recipe is on the board. See if anyone likes it."
-          : "Our team checks recipes with your own words in them — usually within a day.",
+        title: editing ? "Changes saved" : "Recipe sent!",
+        description: editing
+          ? "You can keep editing until our team approves it."
+          : "Our team will review your recipe and share it with other customers soon.",
       });
-      reset();
-      onPublished(!!json.published);
+      onSaved();
     } catch (e: any) {
-      setError(e?.message || "Could not publish.");
+      setError(e?.message || "Could not save your recipe.");
     } finally {
       setSubmitting(false);
     }
   };
 
   const body = (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={() => switchMode("quick")}
-          className={cn(
-            "rounded-2xl border-2 p-3 text-left transition active:scale-[0.98]",
-            mode === "quick" ? "border-primary bg-primary/5" : "border-zinc-200 bg-white"
-          )}
-        >
-          <Zap className="h-4 w-4 text-primary" />
-          <span className="mt-1 block font-bold text-sm">Quick</span>
-          <span className="block text-xs text-muted-foreground">Goes live right away</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => switchMode("custom")}
-          className={cn(
-            "rounded-2xl border-2 p-3 text-left transition active:scale-[0.98]",
-            mode === "custom" ? "border-primary bg-primary/5" : "border-zinc-200 bg-white"
-          )}
-        >
-          <PencilLine className="h-4 w-4 text-primary" />
-          <span className="mt-1 block font-bold text-sm">In my own words</span>
-          <span className="block text-xs text-muted-foreground">Checked by our team first</span>
-        </button>
+    <div className="space-y-4">
+      <div className="space-y-1">
+        <Label htmlFor="recipe-title">Recipe name</Label>
+        <Input
+          id="recipe-title"
+          value={title}
+          maxLength={MAX_TITLE_LEN}
+          placeholder="e.g. Lola's secret wrap"
+          onChange={(e) => setTitle(e.target.value)}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label>Your steps</Label>
+        {steps.map((s, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <span className="h-8 w-8 shrink-0 rounded-full bg-primary/10 text-primary text-sm font-black flex items-center justify-center">
+              {i + 1}
+            </span>
+            <Input
+              value={s}
+              maxLength={MAX_STEP_LEN}
+              placeholder={i === 0 ? "First, what do you do?" : `Then what?`}
+              onChange={(e) => setStep(i, e.target.value)}
+              className="h-12 flex-1"
+            />
+            {/* Steps 1 and 2 are the minimum, so there is nothing to delete. */}
+            {i >= MIN_STEPS ? (
+              <button
+                type="button"
+                aria-label={`Remove step ${i + 1}`}
+                onClick={() => setSteps((prev) => prev.filter((_, j) => j !== i))}
+                className="h-10 w-10 shrink-0 rounded-full flex items-center justify-center text-zinc-500 hover:bg-rose-50 hover:text-rose-600 active:scale-95 transition"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            ) : (
+              <span className="h-10 w-10 shrink-0" aria-hidden />
+            )}
+          </div>
+        ))}
+
+        {steps.length < MAX_STEPS && (
+          // Padded by the same badge and delete-button widths as a step row, so
+          // it lines up with the boxes above it rather than running wider.
+          <div className="flex items-center gap-2">
+            <span className="h-8 w-8 shrink-0" aria-hidden />
+            <button
+              type="button"
+              onClick={() => setSteps((prev) => [...prev, ""])}
+              className="flex-1 h-12 rounded-md bg-red-600 text-white font-bold flex items-center justify-center gap-2 hover:bg-red-700 active:scale-[0.99] transition"
+            >
+              <Plus className="h-5 w-5" />
+              Add step
+            </button>
+            <span className="h-10 w-10 shrink-0" aria-hidden />
+          </div>
+        )}
       </div>
 
       <div className="space-y-1">
-        <Label>Recipe name</Label>
-        {mode === "quick" ? (
-          <div className="flex flex-wrap gap-2">
-            {QUICK_TITLES.map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setTitle(t)}
-                className={cn(
-                  "rounded-full border px-3 py-1.5 text-sm transition active:scale-95",
-                  title === t ? "border-primary bg-primary text-white" : "border-zinc-200 bg-white"
-                )}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-        ) : (
-          <Input
-            value={title}
-            maxLength={MAX_TITLE_LEN}
-            placeholder="e.g. Lola's secret wrap"
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        )}
-      </div>
-
-      {mode === "custom" && (
-        <div className="space-y-1">
-          <Label>Show my name as</Label>
-          <Input
-            value={displayName}
-            maxLength={MAX_DISPLAY_NAME_LEN}
-            placeholder="e.g. Ana"
-            onChange={(e) => setDisplayName(e.target.value)}
-          />
-          {/*
-            The session's booking name belongs to the whole table, not to this
-            diner, so it is never published. If they leave this blank the recipe
-            is credited to "Guest • <store>".
-          */}
-          <p className="text-xs text-muted-foreground">
-            Everyone who sees your recipe sees this. Leave it blank to stay a guest.
-          </p>
-        </div>
-      )}
-
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label>Steps ({steps.length}/{MAX_STEPS})</Label>
-          {steps.length > 0 && (
-            <button type="button" className="text-xs text-muted-foreground underline" onClick={() => setSteps([])}>
-              Clear
-            </button>
-          )}
-        </div>
-
-        {steps.length === 0 && (
-          <p className="text-sm text-muted-foreground">Add at least {MIN_STEPS} steps to publish.</p>
-        )}
-
-        <ol className="space-y-2">
-          {steps.map((s, i) => (
-            <li key={i} className="rounded-2xl border bg-white p-3">
-              <div className="flex items-center gap-2">
-                <span className="h-6 w-6 shrink-0 rounded-full bg-primary/10 text-primary text-xs font-black flex items-center justify-center">
-                  {i + 1}
-                </span>
-                {s.kind === "free" ? (
-                  <Input
-                    value={s.itemName}
-                    maxLength={40}
-                    placeholder="Do what?"
-                    onChange={(e) =>
-                      setSteps((prev) => prev.map((p, j) => (j === i ? { ...p, itemName: e.target.value } : p)))
-                    }
-                  />
-                ) : (
-                  <span className="flex-1 font-bold text-sm">{s.itemName}</span>
-                )}
-                <button
-                  type="button"
-                  aria-label={`Remove step ${i + 1}`}
-                  onClick={() => setSteps((prev) => prev.filter((_, j) => j !== i))}
-                  className="h-8 w-8 shrink-0 rounded-full flex items-center justify-center text-zinc-400 hover:bg-zinc-100"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-
-              {mode === "custom" && (
-                <Input
-                  className="mt-2"
-                  value={s.note || ""}
-                  maxLength={MAX_NOTE_LEN}
-                  placeholder="Add a tip (optional)"
-                  onChange={(e) =>
-                    setSteps((prev) => prev.map((p, j) => (j === i ? { ...p, note: e.target.value } : p)))
-                  }
-                />
-              )}
-            </li>
-          ))}
-        </ol>
-
-        {steps.length < MAX_STEPS && (
-          <div className="space-y-2">
-            {catalog === null ? (
-              <div className="py-3 flex justify-center">
-                <Loader2 className="h-5 w-5 animate-spin text-primary" />
-              </div>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {catalog.slice(0, 24).map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => addStep(item)}
-                    className="rounded-full border bg-white px-3 py-1.5 text-sm hover:border-primary active:scale-95 transition"
-                  >
-                    + {item.name}
-                  </button>
-                ))}
-              </div>
-            )}
-            {mode === "custom" && (
-              <Button variant="outline" className="w-full rounded-2xl" onClick={() => addStep()}>
-                <Plus className="mr-2 h-4 w-4" />
-                Write my own step
-              </Button>
-            )}
-          </div>
-        )}
+        <Label htmlFor="recipe-name">Show my name as</Label>
+        <Input
+          id="recipe-name"
+          value={displayName}
+          maxLength={MAX_DISPLAY_NAME_LEN}
+          placeholder="e.g. Ana"
+          onChange={(e) => setDisplayName(e.target.value)}
+        />
+        <p className="text-xs text-muted-foreground">
+          Everyone who sees your recipe sees this. Leave it blank to stay a guest.
+        </p>
       </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      <div className="space-y-2">
-        <Button className="w-full h-12 rounded-2xl font-bold" disabled={!canSubmit} onClick={submit}>
-          {submitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
-          {willBeReviewed ? "Send for review" : "Publish now"}
+      <div className="flex gap-2 pt-1">
+        <Button variant="outline" className="flex-1 h-12 rounded-2xl" onClick={onClose} disabled={submitting}>
+          Cancel
         </Button>
-        <p className="text-center text-xs text-muted-foreground">
-          {willBeReviewed
-            ? "Recipes in your own words are checked by our team first."
-            : "Built from the menu, so it goes live right away."}
-        </p>
+        <Button className="flex-1 h-12 rounded-2xl font-bold" disabled={!canSubmit} onClick={submit}>
+          {submitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
+          {editing ? "Save changes" : "Submit"}
+        </Button>
       </div>
     </div>
   );
 
-  const heading = "Share your samgyup";
-  const sub = "A few steps. Others will try it and rate it.";
+  const heading = editing ? "Edit your recipe" : "Share your samgyup";
+  const sub = editing
+    ? "You can keep changing this until our team approves it."
+    : "Write your steps. Others will try it and rate it.";
 
   if (isMobile) {
     return (

@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  validateRecipeDraft, hasFreeText, QUICK_TITLES,
-  MAX_STEPS, MAX_TITLE_LEN, MAX_NOTE_LEN,
+  validateRecipeDraft, MAX_STEPS, MAX_TITLE_LEN, MAX_STEP_LEN,
 } from "@/lib/games/recipe/validate";
 import { findBlockedWords, hasBlockedWords } from "@/lib/games/recipe/text-guard";
 
@@ -10,7 +9,7 @@ const catalogStep = (itemName: string, catalogItemId = "cat_1") => ({
 });
 
 const quickDraft = (over: Record<string, unknown> = {}) => ({
-  title: QUICK_TITLES[0],
+  title: "My Wrap",
   displayName: "",
   steps: [catalogStep("Pork Belly"), catalogStep("Lettuce", "cat_2")],
   ...over,
@@ -34,8 +33,8 @@ describe("validateRecipeDraft — shape", () => {
     expect(validateRecipeDraft(quickDraft({ title: "x".repeat(MAX_TITLE_LEN + 1) })).ok).toBe(false);
     expect(validateRecipeDraft(quickDraft({ displayName: "x".repeat(21) })).ok).toBe(false);
 
-    const longNote = [{ kind: "free", itemName: "Pork", note: "x".repeat(MAX_NOTE_LEN + 1) }, catalogStep("Rice")];
-    expect(validateRecipeDraft(quickDraft({ steps: longNote })).ok).toBe(false);
+    const longStep = ["x".repeat(MAX_STEP_LEN + 1), "ok"];
+    expect(validateRecipeDraft(quickDraft({ steps: longStep })).ok).toBe(false);
   });
 
   it("rejects a step with nothing in it", () => {
@@ -48,38 +47,40 @@ describe("validateRecipeDraft — shape", () => {
   });
 });
 
-describe("validateRecipeDraft — review path", () => {
-  it("classifies a catalog-only recipe with a template title as quick", () => {
-    const r = validateRecipeDraft(quickDraft());
-    expect(r.ok && r.mode).toBe("quick");
-  });
-
-  it.each([
-    ["a custom title", { title: "My Own Title" }],
-    ["a custom display name", { displayName: "Ana" }],
-    ["a free step", { steps: [{ kind: "free", itemName: "Anything" }, catalogStep("Rice")] }],
-    ["a step note", { steps: [{ ...catalogStep("Pork"), note: "dip twice" }, catalogStep("Rice")] }],
-    ["a step verb", { steps: [{ ...catalogStep("Pork"), verb: "grill" }, catalogStep("Rice")] }],
-  ])("sends a recipe with %s to human review", (_label, over) => {
-    const r = validateRecipeDraft(quickDraft(over));
-    expect(r.ok && r.mode).toBe("custom");
-  });
-
+describe("validateRecipeDraft — step shapes", () => {
   /**
-   * A "catalog" step with no id is not verifiable against any menu — it is just
-   * text. It must not buy a free pass into the auto-publish path.
+   * The composer sends plain strings; the admin editor and the house recipes
+   * send objects. Both have to land as the same stored shape.
    */
+  it("accepts a bare string as a step", () => {
+    const r = validateRecipeDraft({ title: "T", displayName: "", steps: ["Grill the pork", "Wrap it"] });
+    expect(r.ok).toBe(true);
+    expect(r.ok && r.draft.steps[0]).toEqual({ kind: "free", itemName: "Grill the pork" });
+  });
+
+  it("keeps a step with a real catalog id as a catalog step", () => {
+    const r = validateRecipeDraft(quickDraft());
+    expect(r.ok && r.draft.steps[0].kind).toBe("catalog");
+  });
+
+  /** Without an id there is nothing to verify against a menu — it is just text. */
   it("treats a catalog step with no id as free text", () => {
     const r = validateRecipeDraft(quickDraft({
       steps: [{ kind: "catalog", itemName: "Totally Real Menu Item" }, catalogStep("Rice")],
     }));
-    expect(r.ok && r.mode).toBe("custom");
     expect(r.ok && r.draft.steps[0].kind).toBe("free");
   });
 
-  it("agrees with hasFreeText on the same draft", () => {
-    const r = validateRecipeDraft(quickDraft());
-    expect(r.ok && hasFreeText(r.draft)).toBe(false);
+  it("gives a free-text step room to be an actual instruction", () => {
+    const sentence = "Wrap the pork belly in lettuce with garlic and a little ssamjang";
+    expect(sentence.length).toBeGreaterThan(40);
+    const r = validateRecipeDraft({ title: "T", displayName: "", steps: [sentence, "Eat it"] });
+    expect(r.ok).toBe(true);
+  });
+
+  it("still caps a runaway step", () => {
+    const r = validateRecipeDraft({ title: "T", displayName: "", steps: ["x".repeat(MAX_STEP_LEN + 1), "y"] });
+    expect(r.ok).toBe(false);
   });
 });
 

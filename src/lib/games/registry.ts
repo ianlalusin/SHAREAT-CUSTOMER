@@ -13,14 +13,23 @@ import { Flame } from "lucide-react";
  * A game listed here is NOT live until its config doc exists and says so. There
  * is no "default on".
  */
+export type GameAccent = "flame" | "berry" | "ocean";
+
 export type GameDefinition = {
   /** Stable. Doubles as the `miniGames/{id}` key — never rename a shipped id. */
   id: string;
   title: string;
   tagline: string;
   icon: LucideIcon;
-  /** Tailwind classes for the tile's accent. */
-  accent: string;
+  /**
+   * Semantic accent key, NOT Tailwind classes.
+   *
+   * Tailwind only scans src/pages, src/components and src/app — a class written
+   * here is never generated, so the tile rendered with a transparent badge and
+   * a white-on-white icon. Presentation lives in GameTile, where Tailwind can
+   * see it.
+   */
+  accent: GameAccent;
   href: string;
   /**
    * Whether PLAYING needs an active table session. Browsing never does — the
@@ -36,7 +45,7 @@ export const GAMES: GameDefinition[] = [
     title: "Paano Ka Mag-Samgyup?",
     tagline: "Share your way of eating samgyup. Let others try it and rate it.",
     icon: Flame,
-    accent: "from-orange-500 to-red-600",
+    accent: "flame",
     href: "/play/samgyup-recipe",
     requiresSession: true,
   },

@@ -29,6 +29,10 @@ export async function GET(req: Request) {
       return {
         id: d.id,
         title: String(x.title || ""),
+        displayName: String(x.displayName || ""),
+        // The author can edit a pending recipe, so the composer needs the
+        // actual steps back, not just how many there are.
+        steps: Array.isArray(x.steps) ? x.steps : [],
         status: String(x.status || "pending"),
         counts: x.counts || { yuck: 0, good: 0, yummy: 0, total: 0 },
         stepCount: Array.isArray(x.steps) ? x.steps.length : 0,

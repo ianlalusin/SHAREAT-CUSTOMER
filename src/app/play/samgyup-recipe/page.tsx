@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
-import { Loader2, Plus, Trophy, Sparkles, Star, ScrollText } from "lucide-react";
+import { Loader2, Plus, Trophy, Sparkles, Star, ScrollText, Pencil } from "lucide-react";
 
 import { PlayHeader } from "@/components/games/PlayHeader";
 import { RecipeCardTile } from "@/components/games/recipe/RecipeCardTile";
 import { RecipeSheet } from "@/components/games/recipe/RecipeSheet";
-import { RecipeComposer } from "@/components/games/recipe/RecipeComposer";
+import { RecipeComposer, type ComposerRecipe } from "@/components/games/recipe/RecipeComposer";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +16,8 @@ import { EMPTY_FEED, type RecipeFeed } from "@/lib/games/recipe/types";
 type MyRecipe = {
   id: string;
   title: string;
+  displayName: string;
+  steps: { itemName: string }[];
   status: string;
   counts: { yummy: number; good: number; yuck: number; total: number };
   stepCount: number;
@@ -35,6 +37,7 @@ export default function SamgyupRecipePage() {
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
+  const [editing, setEditing] = useState<ComposerRecipe | null>(null);
 
   const load = useCallback(async () => {
     const headers: Record<string, string> = {};
@@ -148,9 +151,28 @@ export default function SamgyupRecipePage() {
                         {r.stepCount} steps · 🤤 {r.counts.yummy} 🙂 {r.counts.good} 🤢 {r.counts.yuck}
                       </p>
                       {r.status === "pending" && (
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          Our team checks recipes with your own words in them — usually within a day.
-                        </p>
+                        <>
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            Our team will review it and share it with other customers soon. You can
+                            keep changing it until then.
+                          </p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-2 rounded-xl gap-1"
+                            onClick={() =>
+                              setEditing({
+                                id: r.id,
+                                title: r.title,
+                                displayName: r.displayName,
+                                steps: r.steps,
+                              })
+                            }
+                          >
+                            <Pencil className="h-4 w-4" />
+                            Edit
+                          </Button>
+                        </>
                       )}
                     </div>
                   );
@@ -177,10 +199,15 @@ export default function SamgyupRecipePage() {
 
       <RecipeSheet recipeId={openId} onClose={() => setOpenId(null)} onVoted={refresh} />
       <RecipeComposer
-        open={composing}
-        onClose={() => setComposing(false)}
-        onPublished={() => {
+        open={composing || !!editing}
+        editing={editing}
+        onClose={() => {
           setComposing(false);
+          setEditing(null);
+        }}
+        onSaved={() => {
+          setComposing(false);
+          setEditing(null);
           refresh();
         }}
       />

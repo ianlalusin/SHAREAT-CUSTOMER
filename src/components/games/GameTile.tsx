@@ -20,6 +20,17 @@ export type GameTileData = {
   iconName: string;
 };
 
+/**
+ * Accent key -> classes. Written out in full so Tailwind can see them: it does
+ * not scan src/lib, so building this string from the registry silently produced
+ * no CSS at all.
+ */
+const ACCENTS: Record<string, string> = {
+  flame: "bg-gradient-to-br from-orange-500 to-red-600",
+  berry: "bg-gradient-to-br from-fuchsia-500 to-purple-600",
+  ocean: "bg-gradient-to-br from-sky-500 to-blue-600",
+};
+
 export function GameTile({ game }: { game: GameTileData }) {
   const router = useRouter();
   const Icon = ICONS[game.iconName] ?? Gamepad2;
@@ -30,7 +41,11 @@ export function GameTile({ game }: { game: GameTileData }) {
       onClick={() => router.push(game.href)}
       className="w-full text-left rounded-2xl border bg-white p-4 shadow-sm hover:shadow-md active:scale-[0.99] transition flex items-center gap-4"
     >
-      <span className={`h-12 w-12 shrink-0 rounded-2xl bg-gradient-to-br ${game.accent} flex items-center justify-center`}>
+      <span
+        className={`h-12 w-12 shrink-0 rounded-2xl flex items-center justify-center ${
+          ACCENTS[game.accent] ?? ACCENTS.flame
+        }`}
+      >
         <Icon className="h-6 w-6 text-white" strokeWidth={2.5} />
       </span>
       <span className="min-w-0 flex-1">
