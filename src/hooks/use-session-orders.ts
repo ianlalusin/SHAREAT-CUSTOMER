@@ -11,33 +11,10 @@ import { getAuth } from "firebase/auth";
  * needs it to show progress, and fetching it twice would let the two disagree.
  */
 
-export type SessionOrder = {
-  id: string;
-  itemId: string;
-  itemName: string;
-  qty: number;
-  qtyServed: number;
-  status: "preparing" | "partially_served" | "served" | "cancelled";
-  type: string;
-  createdAtMs: number;
-  note: string | null;
-  detail: string | null;
-  orderedBySlot: number | null;
-  orderedByMe: boolean;
-  lineTotal: number | null;
-  /** True once `lineTotal` is on the bill rather than an expectation. */
-  billed: boolean;
-};
+export type { SessionOrder, RunningBill } from "@/lib/session-orders";
+export { IN_FLIGHT, inFlightQty, hasPendingFirstServing } from "@/lib/session-orders";
 
-/** The line subtotal on the tab so far — see lib/catalog/running-bill.ts. */
-export type RunningBill = {
-  runningTotal: number;
-  lineCount: number;
-  hasBillAdjustments: boolean;
-};
-
-/** Still on its way from the kitchen — the states worth warning a diner about. */
-export const IN_FLIGHT: ReadonlySet<string> = new Set(["preparing", "partially_served"]);
+import type { SessionOrder, RunningBill } from "@/lib/session-orders";
 
 export function useSessionOrders(enabled: boolean) {
   const [orders, setOrders] = useState<SessionOrder[]>([]);
@@ -77,12 +54,4 @@ export function useSessionOrders(enabled: boolean) {
   }, [enabled, refresh]);
 
   return { orders, bill, isLoading, error, refresh };
-}
-
-/** Quantity of `itemId` the table has in flight right now. */
-export function inFlightQty(orders: SessionOrder[], itemId: string): number {
-  if (!itemId) return 0;
-  return orders
-    .filter((o) => o.itemId === itemId && IN_FLIGHT.has(o.status))
-    .reduce((sum, o) => sum + Math.max(0, o.qty - o.qtyServed), 0);
 }

@@ -12,9 +12,10 @@ import { CustomerRefillModal, type RefillCooldowns } from "@/components/customer
 import { AddGrillerModal } from "@/components/customer/AddGrillerModal";
 import { CustomerCatalog } from "@/components/customer/CustomerCatalog";
 import { SessionOrdersPanel } from "@/components/customer/SessionOrdersPanel";
-import { useSessionOrders } from "@/hooks/use-session-orders";
+import { hasPendingFirstServing, useSessionOrders } from "@/hooks/use-session-orders";
 import { useToast } from "@/hooks/use-toast";
 
+import { CenterAlert } from "@/components/customer/CenterAlert";
 import { CustomerFeedbackModal } from "@/components/customer/CustomerFeedbackModal";
 import { SharelebratorCardView } from "@/components/customer/SharelebratorCardView";
 import { FlashAdOverlay, type FlashAdItem } from "@/components/customer/FlashAdOverlay";
@@ -57,6 +58,7 @@ export default function DashboardPage() {
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [isRefillOpen, setIsRefillOpen] = useState(false);
+  const [showFirstServingNotice, setShowFirstServingNotice] = useState(false);
   const [refillCooldowns, setRefillCooldowns] = useState<RefillCooldowns | null>(null);
   const [isAddGrillerOpen, setIsAddGrillerOpen] = useState(false);
   const [assistanceBusy, setAssistanceBusy] = useState(false);
@@ -78,6 +80,9 @@ export default function DashboardPage() {
     error: ordersError,
     refresh: refreshOrders,
   } = useSessionOrders(!!session);
+
+  /** The cashier's opening order has not reached the table yet. */
+  const firstServingPending = useMemo(() => hasPendingFirstServing(orders), [orders]);
   const [isCardOpen, setIsCardOpen] = useState(false);
 
   // Link state (for mini card + conditional rendering)
@@ -299,7 +304,20 @@ export default function DashboardPage() {
           {/* Row 1 */}
           <Button
             className="h-14 rounded-2xl text-base font-bold shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all"
-            onClick={() => setIsRefillOpen(true)}
+            onClick={() => {
+              // Ordering seconds before the first plate lands buries the kitchen
+              // and confuses the table about what is still coming. Say so rather
+              // than opening a modal whose refills all look available.
+              if (firstServingPending) {
+                setShowFirstServingNotice(true);
+                // `orders` polls on a 20s timer, so it can be that stale. Pull
+                // fresh state now, and a second tap gets through the moment the
+                // kitchen has actually served.
+                void refreshOrders();
+                return;
+              }
+              setIsRefillOpen(true);
+            }}
           >
             <Plus className="mr-2 h-5 w-5" />
             Order Refill
@@ -378,6 +396,13 @@ export default function DashboardPage() {
           </Button>
         </>
       )}
+
+      <CenterAlert
+        open={showFirstServingNotice}
+        onClose={() => setShowFirstServingNotice(false)}
+        title="Your first serving is on its way"
+        message="The kitchen is still preparing your order. You can order refills once it arrives at your table."
+      />
 
       <CustomerRefillModal
         open={isRefillOpen}
