@@ -46,6 +46,10 @@ export async function POST(req: Request) {
   const storeId = String(decoded.storeId || "");
   const sessionId = String(decoded.sessionId || "");
   if (!storeId || !sessionId) return bad("Session claims missing storeId/sessionId.", 403);
+  // Which phone at the table linked the card. The link itself is on the shared
+  // session doc, so without this there is no way to tell the cardholder apart
+  // from the strangers sitting with them — and /me handed everyone the card.
+  const participantId = String((decoded as any).participantId || "");
 
   let body: Body;
   try {
@@ -202,6 +206,7 @@ export async function POST(req: Request) {
   const linkData = {
     linkedCustomerPhone: phone,
     linkedCustomerName: customerName,
+    linkedByParticipantId: participantId || null,
   };
 
   const batch = db.batch();

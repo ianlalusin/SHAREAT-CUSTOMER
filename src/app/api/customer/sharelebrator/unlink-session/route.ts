@@ -38,6 +38,7 @@ export async function POST(req: Request) {
 
   const clear = {
     linkedCustomerPhone: null,
+    linkedByParticipantId: null,
     linkedCustomerName: null,
   };
 

@@ -37,6 +37,32 @@ export async function GET(req: Request) {
     phone = sessionData?.linkedCustomerPhone ?? null;
     locked = !!sessionData?.linkedCustomerLockedAt;
     if (!phone) return NextResponse.json({ ok: true, linked: false });
+
+    /**
+     * The link lives on the SESSION doc, which everyone at the table shares.
+     * Reading it as "this caller's card" handed every other diner the
+     * cardholder's name, phone, birthday, address, email and last 20 points
+     * entries. Only the phone that linked it gets the card back.
+     *
+     * A link written before `linkedByParticipantId` existed has no owner
+     * recorded, and an unknown owner is not this caller: the cardholder sees
+     * the notice too until they re-link, which is the safe way round. Sessions
+     * last one meal, so that self-heals within hours.
+     */
+    const linkedBy = String(sessionData?.linkedByParticipantId || "");
+    const participantId = String((decoded as any).participantId || "");
+    if (!linkedBy || !participantId || linkedBy !== participantId) {
+      return NextResponse.json({
+        ok: true,
+        linked: false,
+        // Nothing but the display name already stored on the session — enough
+        // to say who to ask, and no more.
+        sessionLink: {
+          byOther: true,
+          name: String(sessionData?.linkedCustomerName || "another diner"),
+        },
+      });
+    }
   } else if (decoded.loyaltyCustomer === true) {
     phone = String(decoded.phone || "");
     if (!phone) return bad("Loyalty token missing phone claim.", 403);

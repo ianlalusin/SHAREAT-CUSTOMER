@@ -12,9 +12,15 @@ interface Props {
   sessionId: string;
   /** Called after a successful login/signup link so the parent can refresh. */
   onLinked?: (name: string) => void;
+  /**
+   * The cardholder's name when the session already belongs to another diner.
+   * Only changes the copy: promising points this session cannot give would be
+   * a lie, since linking will be refused while their card holds the seat.
+   */
+  takenBy?: string | null;
 }
 
-export function SharelebratorLinkCard({ storeId: _storeId, sessionId: _sessionId, onLinked }: Props) {
+export function SharelebratorLinkCard({ storeId: _storeId, sessionId: _sessionId, onLinked, takenBy }: Props) {
   const [loginOpen, setLoginOpen] = useState(false);
   const [signupOpen, setSignupOpen] = useState(false);
 
@@ -30,7 +36,9 @@ export function SharelebratorLinkCard({ storeId: _storeId, sessionId: _sessionId
         <CardContent>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Link this session to your Sharelebrator card to earn points.
+              {takenBy
+                ? "Open your own card to check your points. This meal will keep earning for the card already linked."
+                : "Link this session to your Sharelebrator card to earn points."}
             </p>
             <div className="grid grid-cols-2 gap-2">
               <Button variant="outline" size="sm" onClick={() => setLoginOpen(true)}>
