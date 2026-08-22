@@ -121,6 +121,26 @@ export async function rebuildFeed(db: Firestore): Promise<RecipeFeed> {
 }
 
 /**
+ * In-flight rebuild, shared across concurrent callers.
+ *
+ * Without this, the moment the cache expires every request that arrives before
+ * the first rebuild finishes starts its OWN full scan of `gameRecipes` — a
+ * stampede, and a costly one because the board is chain-wide, so it is every
+ * diner at every branch rather than one store's traffic. `maxInstances: 1`
+ * makes a process-local latch sufficient: there is one process to coordinate.
+ */
+let inFlightRebuild: Promise<RecipeFeed> | null = null;
+
+function rebuildOnce(db: Firestore): Promise<RecipeFeed> {
+  if (!inFlightRebuild) {
+    inFlightRebuild = rebuildFeed(db).finally(() => {
+      inFlightRebuild = null;
+    });
+  }
+  return inFlightRebuild;
+}
+
+/**
  * The diner-facing read: one document, self-healing on a TTL.
  *
  * Modelled on `getRefillOptionsMenu` in lib/server/refill-options-cache.ts —
@@ -134,7 +154,7 @@ export async function getFeed(db: Firestore): Promise<RecipeFeed> {
   const updatedAtMs = Number(cache?.updatedAtMs || 0);
 
   if (!cache || Date.now() - updatedAtMs > FEED_CACHE_TTL_MS) {
-    return rebuildFeed(db);
+    return rebuildOnce(db);
   }
 
   return {
