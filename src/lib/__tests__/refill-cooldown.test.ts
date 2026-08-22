@@ -7,6 +7,7 @@ import {
   blockedRefills,
   toNextAllowedMap,
   formatCountdown,
+  mergeCooldownStamps,
 } from "../refill-cooldown";
 
 const T0 = 1_700_000_000_000;
@@ -148,5 +149,73 @@ describe("blockedRefillsDetailed", () => {
     // The cap is the ceiling on the whole rule; a cooldown longer than it would
     // make the safety valve meaningless.
     expect(REFILL_COOLDOWN_MS).toBeLessThan(OUTSTANDING_BLOCK_MAX_MS);
+  });
+});
+
+describe("mergeCooldownStamps", () => {
+  it("keeps the later of the two stamps for each refill", () => {
+    // The whole point: a serve that lands after the order was sent must push
+    // the clock forward, never pull it back.
+    const merged = mergeCooldownStamps({ pork: T0 }, { pork: T0 + 5_000 });
+    expect(merged.pork).toBe(T0 + 5_000);
+  });
+
+  it("never moves a stamp backwards", () => {
+    const merged = mergeCooldownStamps({ pork: T0 + 5_000 }, { pork: T0 });
+    expect(merged.pork).toBe(T0 + 5_000);
+  });
+
+  it("carries through refills present in only one side", () => {
+    const merged = mergeCooldownStamps({ pork: T0 }, { beef: T0 + 1_000 });
+    expect(merged).toEqual({ pork: T0, beef: T0 + 1_000 });
+  });
+
+  it("survives null, undefined and garbage values", () => {
+    expect(mergeCooldownStamps(null, undefined)).toEqual({});
+    expect(mergeCooldownStamps({ pork: T0 }, null)).toEqual({ pork: T0 });
+    expect(mergeCooldownStamps({ pork: NaN as unknown as number }, { pork: T0 })).toEqual({ pork: T0 });
+    expect(mergeCooldownStamps({ pork: T0 }, { pork: 0 })).toEqual({ pork: T0 });
+  });
+
+  it("does not mutate either input", () => {
+    const a = { pork: T0 };
+    const b = { pork: T0 + 5_000 };
+    mergeCooldownStamps(a, b);
+    expect(a).toEqual({ pork: T0 });
+    expect(b).toEqual({ pork: T0 + 5_000 });
+  });
+});
+
+describe("the minute runs from the serve, not from the order", () => {
+  // The bug this fixes: order at T0, kitchen serves at T0+3min. The order-anchored
+  // minute lapsed two minutes before the food arrived, so the refill was
+  // re-orderable the instant it landed on the table.
+  const SERVED_AT = T0 + 3 * 60_000;
+
+  it("blocks for a full minute after the food arrives", () => {
+    const merged = mergeCooldownStamps({ pork: T0 }, { pork: SERVED_AT });
+    const state = cooldownFor(merged, "pork", SERVED_AT + 1);
+    expect(state.allowed).toBe(false);
+    expect(state.nextAllowedAtMs).toBe(SERVED_AT + REFILL_COOLDOWN_MS);
+  });
+
+  it("releases one minute after the serve", () => {
+    const merged = mergeCooldownStamps({ pork: T0 }, { pork: SERVED_AT });
+    expect(cooldownFor(merged, "pork", SERVED_AT + REFILL_COOLDOWN_MS - 1).allowed).toBe(false);
+    expect(cooldownFor(merged, "pork", SERVED_AT + REFILL_COOLDOWN_MS).allowed).toBe(true);
+  });
+
+  it("shows the diner a countdown for it", () => {
+    const merged = mergeCooldownStamps({ pork: T0 }, { pork: SERVED_AT });
+    expect(toNextAllowedMap(merged, SERVED_AT + 1_000)).toEqual({
+      pork: SERVED_AT + REFILL_COOLDOWN_MS,
+    });
+  });
+
+  it("leaves a never-served refill on its order-anchored clock", () => {
+    // Nothing arrived, so there is no serve to anchor to: the 10-minute
+    // outstanding cap stays the only thing that releases it.
+    const merged = mergeCooldownStamps({ pork: T0 }, {});
+    expect(cooldownFor(merged, "pork", T0 + REFILL_COOLDOWN_MS).allowed).toBe(true);
   });
 });

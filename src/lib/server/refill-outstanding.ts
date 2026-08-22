@@ -1,12 +1,14 @@
 import type { Firestore } from "firebase-admin/firestore";
-import { OUTSTANDING_BLOCK_MAX_MS } from "../refill-cooldown";
+import { OUTSTANDING_BLOCK_MAX_MS, type CooldownMap } from "../refill-cooldown";
 
 /**
- * Which refill types this phone still has sitting in the kitchen.
+ * What this phone's kitchen tickets say about each refill: which are still
+ * sitting with the kitchen, and when the last one actually reached the table.
  *
  * A refill is blocked while the guest's own last ticket for it has not been
  * served or cancelled — the real constraint the old ten-minute timer was only
- * approximating.
+ * approximating — and then for a minute after it arrives. Both facts come off
+ * the same scan, so the serve stamps cost no extra reads.
  *
  * Per PARTICIPANT, not per table: four guests sharing a table each get their
  * own clock, which is the rule the refill flow has always followed.
@@ -78,15 +80,60 @@ export function ticketBlocks(
   return nowMs - createdAtMs < OUTSTANDING_BLOCK_MAX_MS;
 }
 
-export async function outstandingRefillIds(
+/**
+ * When this ticket reached the guest, or 0 if it never did.
+ *
+ * `servedAtClientMs` is POS's own stamp and is written on both serve paths —
+ * whole-ticket and partial. A cancel writes `cancelledAtClientMs` instead, so a
+ * cancelled order correctly starts no cooldown: nothing arrived to wait after.
+ *
+ * Deliberately NOT subject to OUTSTANDING_BLOCK_MAX_MS. That valve exists to
+ * release a ticket the kitchen never closed; a serve that really happened is a
+ * fact, and the minute after it runs however long the kitchen took to get there.
+ */
+export function ticketServedAtMs(ticket: Record<string, any>, participantId: string): number {
+  if (String(ticket?.type || "") !== "refill") return 0;
+  if (String(ticket?.createdByParticipantId || "") !== participantId) return 0;
+
+  const servedAtMs = Number(ticket?.servedAtClientMs ?? 0);
+  return Number.isFinite(servedAtMs) && servedAtMs > 0 ? servedAtMs : 0;
+}
+
+/** refillId -> the most recent serve, across every ticket that covered it. */
+export function servedStampsFrom(
+  tickets: ReadonlyArray<Record<string, any>>,
+  participantId: string
+): CooldownMap {
+  const out: CooldownMap = {};
+
+  for (const ticket of tickets) {
+    const servedAtMs = ticketServedAtMs(ticket, participantId);
+    if (!servedAtMs) continue;
+    for (const id of refillIdsOnTicket(ticket)) {
+      if (servedAtMs > (out[id] ?? 0)) out[id] = servedAtMs;
+    }
+  }
+
+  return out;
+}
+
+export type RefillTicketState = {
+  /** Still with the kitchen. No known arrival time, so never show a timer. */
+  outstanding: Set<string>;
+  /** refillId -> when it last reached the table. Feeds the serve-anchored minute. */
+  servedAt: CooldownMap;
+};
+
+/** One scan, both answers. */
+export async function refillTicketState(
   db: Firestore,
   storeId: string,
   sessionId: string,
   participantId: string,
   nowMs: number = Date.now()
-): Promise<Set<string>> {
-  const out = new Set<string>();
-  if (!storeId || !sessionId || !participantId) return out;
+): Promise<RefillTicketState> {
+  const outstanding = new Set<string>();
+  if (!storeId || !sessionId || !participantId) return { outstanding, servedAt: {} };
 
   const snap = await db
     .collection(`stores/${storeId}/sessions/${sessionId}/kitchentickets`)
@@ -94,11 +141,12 @@ export async function outstandingRefillIds(
     .limit(MAX_TICKETS_SCANNED)
     .get();
 
-  for (const doc of snap.docs) {
-    const ticket = doc.data() as Record<string, any>;
+  const tickets = snap.docs.map((doc) => doc.data() as Record<string, any>);
+
+  for (const ticket of tickets) {
     if (!ticketBlocks(ticket, participantId, nowMs)) continue;
-    for (const id of refillIdsOnTicket(ticket)) out.add(id);
+    for (const id of refillIdsOnTicket(ticket)) outstanding.add(id);
   }
 
-  return out;
+  return { outstanding, servedAt: servedStampsFrom(tickets, participantId) };
 }

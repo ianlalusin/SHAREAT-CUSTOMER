@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { validateActiveParticipant } from "@/lib/server/customer-participants";
 import { getRefillOptionsMenu } from "@/lib/server/refill-options-cache";
-import { REFILL_COOLDOWN_MS, toNextAllowedMap } from "@/lib/refill-cooldown";
-import { outstandingRefillIds } from "@/lib/server/refill-outstanding";
+import { REFILL_COOLDOWN_MS, mergeCooldownStamps, toNextAllowedMap } from "@/lib/refill-cooldown";
+import { refillTicketState } from "@/lib/server/refill-outstanding";
 
 export const runtime = "nodejs";
 
@@ -56,6 +56,10 @@ export async function GET(req: Request) {
       if (pkgSnap.exists) currentPackage = pkgSnap.data();
     }
 
+    // One ticket scan answers both halves of the block: what is still with the
+    // kitchen, and when each refill last reached the table.
+    const { outstanding, servedAt } = await refillTicketState(db, storeId, sessionId, participantId);
+
     return NextResponse.json({
       ok: true,
       session: { storeId, sessionId, packageOfferingId, initialFlavorIds },
@@ -69,9 +73,14 @@ export async function GET(req: Request) {
         // Refills whose ticket is still with the kitchen. Distinct from a
         // countdown: there is no known arrival time, so the UI must not show a
         // timer for these.
-        awaitingRefillIds: [...(await outstandingRefillIds(db, storeId, sessionId, participantId))],
+        awaitingRefillIds: [...outstanding],
         cooldownMs: REFILL_COOLDOWN_MS,
-        nextAllowedAt: toNextAllowedMap(participantInfo.refillCooldowns, Date.now()),
+        // Merged, so a refill that just arrived shows its minute counting down
+        // from the serve instead of reading as available the moment it lands.
+        nextAllowedAt: toNextAllowedMap(
+          mergeCooldownStamps(participantInfo.refillCooldowns, servedAt),
+          Date.now()
+        ),
       },
     });
   } catch (e: any) {

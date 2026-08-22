@@ -3,7 +3,8 @@
  *
  * A refill type is blocked for a guest while EITHER holds:
  *
- *   1. their last order of it was under REFILL_COOLDOWN_MS ago, or
+ *   1. under REFILL_COOLDOWN_MS has passed since the LATER of their order and
+ *      the kitchen serving it, or
  *   2. their last ticket for it is still in the kitchen — not yet served or
  *      cancelled.
  *
@@ -14,6 +15,13 @@
  * Rule (2) is what the old 10-minute timer was really approximating. Gating on
  * whether the food actually arrived measures the thing itself, so the timer
  * only has to stop a double-tap now — hence one minute.
+ *
+ * That minute anchors on the SERVE. Anchored on the order it bought nothing:
+ * a kitchen taking three minutes had already burned it two minutes before the
+ * food reached the table, so rule (2) lifting left no gap at all and the diner
+ * could re-order the instant their plate landed. The serve stamp arrives via
+ * mergeCooldownStamps(); a refill that never arrived has none, and stays on its
+ * order-anchored clock under the OUTSTANDING_BLOCK_MAX_MS valve.
  *
  * Kept free of firebase-admin so both the API routes and the client bundle can
  * import it and agree on the arithmetic. The Firestore side lives in
@@ -57,6 +65,28 @@ export type CooldownState = {
 function lastOrderAt(map: CooldownMap | null | undefined, refillId: string): number {
   const raw = Number(map?.[refillId]);
   return Number.isFinite(raw) && raw > 0 ? raw : 0;
+}
+
+/**
+ * Fold serve stamps into order stamps, keeping whichever is later per refill.
+ *
+ * Only ever moves a clock forward, so no combination of inputs can shorten a
+ * block below what the order stamp alone would have given.
+ */
+export function mergeCooldownStamps(
+  a: CooldownMap | null | undefined,
+  b: CooldownMap | null | undefined
+): CooldownMap {
+  const out: CooldownMap = {};
+
+  for (const source of [a, b]) {
+    for (const refillId of Object.keys(source || {})) {
+      const stamp = lastOrderAt(source, refillId);
+      if (stamp > (out[refillId] ?? 0)) out[refillId] = stamp;
+    }
+  }
+
+  return out;
 }
 
 /** Cooldown state for one refill type. An absent/garbage stamp means "never ordered". */

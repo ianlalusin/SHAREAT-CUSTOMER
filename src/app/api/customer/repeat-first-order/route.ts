@@ -9,7 +9,7 @@ import {
 } from "@/lib/server/refill-cooldown";
 import { REFILL_COOLDOWN_MS } from "@/lib/refill-cooldown";
 import { getRefillOptionsMenu } from "@/lib/server/refill-options-cache";
-import { outstandingRefillIds } from "@/lib/server/refill-outstanding";
+import { refillTicketState } from "@/lib/server/refill-outstanding";
 
 export const runtime = "nodejs";
 
@@ -100,7 +100,7 @@ export async function POST(req: Request) {
     // ungated would be an open bypass.
     const refillLabel = String(firstRefill.refillName || firstRefill.name || "This refill");
 
-    const outstanding = await outstandingRefillIds(db, storeId, sessionId, participantId);
+    const { outstanding, servedAt } = await refillTicketState(db, storeId, sessionId, participantId);
     if (outstanding.has(firstRefillId)) {
       return NextResponse.json(
         {
@@ -121,6 +121,8 @@ export async function POST(req: Request) {
         participantId,
         refillIds: [firstRefillId],
         labels: { [firstRefillId]: refillLabel },
+        // The minute runs from the serve, same as /submit-refill.
+        servedAt,
       });
     } catch (e: any) {
       if (e?.httpStatus === 429) {

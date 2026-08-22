@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { refillIdsOnTicket, ticketBlocks } from "@/lib/server/refill-outstanding";
+import {
+  refillIdsOnTicket,
+  servedStampsFrom,
+  ticketBlocks,
+  ticketServedAtMs,
+} from "@/lib/server/refill-outstanding";
 import { OUTSTANDING_BLOCK_MAX_MS } from "@/lib/refill-cooldown";
 
 const T0 = 1_700_000_000_000;
@@ -83,5 +88,74 @@ describe("ticketBlocks", () => {
     expect(ticketBlocks(ticket({ createdAtClientMs: 0 }), ME, T0)).toBe(false);
     expect(ticketBlocks(ticket({ createdAtClientMs: undefined }), ME, T0)).toBe(false);
     expect(ticketBlocks(ticket({ createdAtClientMs: "junk" }), ME, T0)).toBe(false);
+  });
+});
+
+describe("ticketServedAtMs", () => {
+  it("reports when this guest's refill actually reached the table", () => {
+    const t = ticket({ status: "served", servedAtClientMs: T0 + 90_000 });
+    expect(ticketServedAtMs(t, ME)).toBe(T0 + 90_000);
+  });
+
+  it("counts a partial serve — some of it did arrive", () => {
+    const t = ticket({ status: "partially_served", servedAtClientMs: T0 + 30_000 });
+    expect(ticketServedAtMs(t, ME)).toBe(T0 + 30_000);
+  });
+
+  it("gives a cancelled ticket no serve stamp — nothing arrived", () => {
+    // POS writes cancelledAtClientMs on this path, never servedAtClientMs, so a
+    // cancel must not start the diner's minute.
+    const t = ticket({ status: "cancelled", cancelledAtClientMs: T0 + 20_000 });
+    expect(ticketServedAtMs(t, ME)).toBe(0);
+  });
+
+  it("is per phone and refills only, like the block itself", () => {
+    const served = { status: "served", servedAtClientMs: T0 + 10_000 };
+    expect(ticketServedAtMs(ticket({ ...served, createdByParticipantId: "other" }), ME)).toBe(0);
+    expect(ticketServedAtMs(ticket({ ...served, type: "addon" }), ME)).toBe(0);
+  });
+
+  it("ignores a missing or garbage stamp", () => {
+    expect(ticketServedAtMs(ticket({ status: "served" }), ME)).toBe(0);
+    expect(ticketServedAtMs(ticket({ status: "served", servedAtClientMs: "junk" }), ME)).toBe(0);
+    expect(ticketServedAtMs(ticket({ status: "served", servedAtClientMs: 0 }), ME)).toBe(0);
+  });
+
+  it("is not capped by the 10-minute valve", () => {
+    // That cap releases a ticket the kitchen never closed. A serve that really
+    // happened is a fact, and the minute after it runs regardless of how long
+    // the kitchen took to get there.
+    const late = T0 + OUTSTANDING_BLOCK_MAX_MS + 60_000;
+    expect(ticketServedAtMs(ticket({ status: "served", servedAtClientMs: late }), ME)).toBe(late);
+  });
+});
+
+describe("servedStampsFrom", () => {
+  it("stamps every refill the ticket covered, bundles included", () => {
+    const bundle = ticket({
+      itemId: "OTHER_REFILLS",
+      refillIds: ["rice", "kimchi"],
+      status: "served",
+      servedAtClientMs: T0 + 45_000,
+    });
+    expect(servedStampsFrom([bundle], ME)).toEqual({
+      OTHER_REFILLS: T0 + 45_000,
+      rice: T0 + 45_000,
+      kimchi: T0 + 45_000,
+    });
+  });
+
+  it("keeps the most recent serve when a refill was ordered twice", () => {
+    const first = ticket({ status: "served", servedAtClientMs: T0 + 10_000 });
+    const second = ticket({ status: "served", servedAtClientMs: T0 + 90_000 });
+    expect(servedStampsFrom([first, second], ME)).toEqual({ pork: T0 + 90_000 });
+    // Order of the scan must not matter.
+    expect(servedStampsFrom([second, first], ME)).toEqual({ pork: T0 + 90_000 });
+  });
+
+  it("skips tickets that never arrived", () => {
+    const open = ticket({ status: "preparing" });
+    const cancelled = ticket({ itemId: "beef", status: "cancelled" });
+    expect(servedStampsFrom([open, cancelled], ME)).toEqual({});
   });
 });

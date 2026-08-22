@@ -3,6 +3,7 @@ import {
   REFILL_COOLDOWN_MS,
   blockedRefills,
   formatCountdown,
+  mergeCooldownStamps,
   type CooldownMap,
 } from "../refill-cooldown";
 
@@ -11,7 +12,9 @@ import {
  *
  * State lives in a `refillCooldowns` map on the participant doc — the same doc
  * validateActiveParticipant() already reads — so per-meat timers cost no extra
- * reads or writes over a single global timer would have.
+ * reads or writes over a single global timer would have. Serve stamps are not
+ * stored: they are read off the kitchen tickets by refillTicketState() and
+ * passed in, so there is nothing to keep in sync when a ticket changes hands.
  */
 
 export type ClaimedCooldowns = {
@@ -69,10 +72,16 @@ export async function claimRefillCooldowns(
     refillIds: string[];
     /** refillId -> display name, used only for the error message. */
     labels?: Record<string, string>;
+    /**
+     * refillId -> when the kitchen last served it, from refillTicketState().
+     * The minute anchors on the later of this and the guest's own last order,
+     * so the wait starts when the food lands rather than when it was asked for.
+     */
+    servedAt?: CooldownMap;
     cooldownMs?: number;
   }
 ): Promise<ClaimedCooldowns> {
-  const { storeId, sessionId, participantId, labels = {} } = opts;
+  const { storeId, sessionId, participantId, labels = {}, servedAt } = opts;
   const cooldownMs = opts.cooldownMs ?? REFILL_COOLDOWN_MS;
 
   const refillIds = Array.from(new Set(opts.refillIds.filter(Boolean)));
@@ -91,7 +100,14 @@ export async function claimRefillCooldowns(
     const current = readCooldownMap(snap.data());
     const nowMs = Date.now();
 
-    const blocked: BlockedRefill[] = blockedRefills(current, refillIds, nowMs, cooldownMs).map(
+    // Checked against the merged clock, but only the order stamps are written
+    // below: serve stamps live on the tickets and are re-derived each time.
+    // Doing the check in here rather than at the call site keeps the
+    // transaction the single authority, so two taps racing a just-served
+    // refill cannot both slip through.
+    const effective = mergeCooldownStamps(current, servedAt);
+
+    const blocked: BlockedRefill[] = blockedRefills(effective, refillIds, nowMs, cooldownMs).map(
       (b) => ({
         refillId: b.refillId,
         refillName: labels[b.refillId] || b.refillId,

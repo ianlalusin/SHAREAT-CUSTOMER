@@ -7,10 +7,16 @@ import {
   releaseRefillCooldowns,
   type ClaimedCooldowns,
 } from "@/lib/server/refill-cooldown";
-import { REFILL_COOLDOWN_MS, blockedRefillsDetailed, toNextAllowedMap, type CooldownMap } from "@/lib/refill-cooldown";
+import {
+  REFILL_COOLDOWN_MS,
+  blockedRefillsDetailed,
+  mergeCooldownStamps,
+  toNextAllowedMap,
+  type CooldownMap,
+} from "@/lib/refill-cooldown";
 import { getRefillOptionsMenu } from "@/lib/server/refill-options-cache";
 import { writeKitchenTicket } from "@/lib/server/kitchen-ticket-write";
-import { outstandingRefillIds } from "@/lib/server/refill-outstanding";
+import { refillTicketState } from "@/lib/server/refill-outstanding";
 
 export const runtime = "nodejs";
 
@@ -140,7 +146,7 @@ export async function POST(req: Request) {
     // half an order already with the kitchen. The claim below stays the race
     // guard for double taps.
     const requestedIds = normalized.flatMap((n) => n.cooldownIds);
-    const outstanding = await outstandingRefillIds(db, storeId, sessionId, participantId);
+    const { outstanding, servedAt } = await refillTicketState(db, storeId, sessionId, participantId);
     const stillCooking = blockedRefillsDetailed(
       participantInfo.refillCooldowns,
       outstanding,
@@ -173,6 +179,9 @@ export async function POST(req: Request) {
         participantId,
         refillIds: requestedIds,
         labels,
+        // The minute runs from the serve, so a refill the kitchen handed over
+        // seconds ago is still blocked even though its order stamp is stale.
+        servedAt,
       });
     } catch (e: any) {
       if (e?.httpStatus === 429) {
@@ -237,7 +246,10 @@ export async function POST(req: Request) {
       throw e;
     }
 
-    const updatedCooldowns: CooldownMap = { ...participantInfo.refillCooldowns };
+    const updatedCooldowns: CooldownMap = mergeCooldownStamps(
+      participantInfo.refillCooldowns,
+      servedAt
+    );
     for (const id of claimed.refillIds) updatedCooldowns[id] = claimed.claimedAtMs;
 
     return NextResponse.json({
