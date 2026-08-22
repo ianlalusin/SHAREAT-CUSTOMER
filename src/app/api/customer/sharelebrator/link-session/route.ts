@@ -4,6 +4,7 @@ import { normalizePhone } from "@/lib/phone";
 import bcrypt from "bcryptjs";
 import { FieldValue } from "firebase-admin/firestore";
 import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
+import { loadLoyaltyCard } from "@/lib/server/loyalty-card";
 
 export const runtime = "nodejs";
 
@@ -11,13 +12,23 @@ function bad(msg: string, status = 400, code?: string) {
   return NextResponse.json({ ok: false, error: msg, ...(code ? { code } : {}) }, { status });
 }
 
-type LoginBody = {
+/**
+ * Set false to authenticate WITHOUT claiming the session.
+ *
+ * A table holds one card, so a diner sitting with someone who already linked
+ * theirs could otherwise never reach their own points at all. Same credential
+ * checks, same audit logs, no write to the session — they get their card back
+ * read-only.
+ */
+type NoLink = { linkToSession?: boolean };
+
+type LoginBody = NoLink & {
   mode: "login";
   phone: string;
   password: string;
 };
 
-type SignupBody = {
+type SignupBody = NoLink & {
   mode: "signup";
   phone: string;
   password: string;
@@ -70,10 +81,14 @@ export async function POST(req: Request) {
   // First-come lock: if this session is already linked to a different phone,
   // reject early. The existing linker must unlink before a different card can
   // claim this session. Re-linking with the same phone is idempotent-OK.
+  const linkToSession = body.linkToSession !== false;
+
   const activeRefPreCheck = db.doc(`stores/${storeId}/activeSessions/${sessionId}`);
-  const preCheckSnap = await activeRefPreCheck.get();
-  if (preCheckSnap.exists) {
-    const preData = preCheckSnap.data() as any;
+  // Skipped entirely when not claiming the table — one less read, and there is
+  // no first-come rule to apply.
+  const preCheckSnap = linkToSession ? await activeRefPreCheck.get() : null;
+  if (linkToSession && preCheckSnap?.exists) {
+    const preData = preCheckSnap!.data() as any;
     if (preData.linkedCustomerLockedAt) {
       return bad("This session has already been paid; link is locked.", 409);
     }
@@ -189,6 +204,14 @@ export async function POST(req: Request) {
     customerName = name;
   } else {
     return bad("Unknown mode.");
+  }
+
+  // Authenticated, but not claiming the table: hand back the card and write
+  // nothing to the session.
+  if (!linkToSession) {
+    const card = await loadLoyaltyCard(db, phone);
+    if (!card) return bad("Account not found.", 404);
+    return NextResponse.json({ ok: true, phone, name: customerName, linked: false, card });
   }
 
   // Write link to session — reject if already locked

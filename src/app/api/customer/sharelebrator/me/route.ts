@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import { loadLoyaltyCard } from "@/lib/server/loyalty-card";
 
 export const runtime = "nodejs";
 
@@ -70,51 +71,8 @@ export async function GET(req: Request) {
     return bad("Unauthorized token type.", 403);
   }
 
-  const customerSnap = await db.doc(`customers/${phone}`).get();
-  if (!customerSnap.exists) return NextResponse.json({ ok: true, linked: false });
+  const card = await loadLoyaltyCard(db, phone);
+  if (!card) return NextResponse.json({ ok: true, linked: false });
 
-  const c = customerSnap.data() as any;
-  const pointsBalance = Number(c.pointsBalance ?? 0);
-  const pointsReserved = Number(c.pointsReserved ?? 0);
-
-  const ledgerSnap = await db
-    .collection(`customers/${phone}/pointsLedger`)
-    .orderBy("createdAt", "desc")
-    .limit(20)
-    .get();
-
-  const ledger = ledgerSnap.docs.map((d) => {
-    const data = d.data();
-    const ts = data.createdAt?.toMillis ? data.createdAt.toMillis() : null;
-    return {
-      id: d.id,
-      type: data.type,
-      points: data.points,
-      amount: data.amount,
-      storeId: data.storeId,
-      sessionId: data.sessionId,
-      createdAtMs: ts,
-      recipientName: data.recipientName ?? null,
-      recipientPhone: data.recipientPhone ?? null,
-      senderName: data.senderName ?? null,
-      senderPhone: data.senderPhone ?? null,
-    };
-  });
-
-  return NextResponse.json({
-    ok: true,
-    linked: true,
-    locked,
-    customer: {
-      phone: c.phone,
-      name: c.name,
-      bday: c.bday,
-      address: c.address ?? "",
-      email: c.email ?? null,
-      pointsBalance,
-      pointsReserved,
-      available: Math.max(0, pointsBalance - pointsReserved),
-    },
-    ledger,
-  });
+  return NextResponse.json({ ok: true, linked: true, locked, ...card });
 }

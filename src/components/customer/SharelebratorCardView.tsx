@@ -61,6 +61,14 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
   const [unlinking, setUnlinking] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
+  /**
+   * Their OWN card, opened while the table belongs to someone else's.
+   *
+   * Read-only on purpose: it is not this session's card, so nothing that acts
+   * on the session — unlinking, transferring, editing the profile — belongs on
+   * it. It shows a balance, and that is the whole point of allowing it.
+   */
+  const [readOnlyCard, setReadOnlyCard] = useState<{ customer: any; ledger: any[] } | null>(null);
   const prevLinkRef = useRef<string | null>(null);
 
   const fetchMe = useCallback(async () => {
@@ -131,6 +139,51 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
 
   if (!data?.linked) {
     const takenBy = data?.sessionLink?.byOther ? data.sessionLink.name : null;
+
+    if (readOnlyCard) {
+      return (
+        <div className="max-w-md mx-auto mt-4 space-y-3 pb-4">
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+            <p className="text-sm font-bold text-zinc-900">Your card — view only</p>
+            <p className="mt-1 text-sm text-zinc-600">
+              {takenBy
+                ? `This meal is earning points for ${takenBy}'s card, so nothing here will change tonight.`
+                : "This session isn't linked to your card, so nothing here will change tonight."}
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-3"
+              onClick={() => setReadOnlyCard(null)}
+            >
+              Back
+            </Button>
+          </div>
+
+          <Card className="border-2">
+            <CardContent className="p-6 space-y-3">
+              <div>
+                <p className="text-[10px] uppercase text-muted-foreground tracking-wider">
+                  Cardholder
+                </p>
+                <p className="text-2xl font-black leading-tight">{readOnlyCard.customer.name}</p>
+                <p className="text-sm font-mono text-muted-foreground mt-1">
+                  {readOnlyCard.customer.phone}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase text-muted-foreground tracking-wider">
+                  Points available
+                </p>
+                <p className="text-3xl font-black">
+                  {Number(readOnlyCard.customer.available ?? 0).toLocaleString()}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      );
+    }
     return (
       <div className="max-w-md mx-auto mt-4 space-y-3">
         {takenBy ? (
@@ -152,6 +205,7 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
 
         <SharelebratorLinkCard
           takenBy={takenBy}
+          onCard={(card) => setReadOnlyCard(card)}
           storeId={storeId}
           sessionId={sessionId}
           onLinked={() => {

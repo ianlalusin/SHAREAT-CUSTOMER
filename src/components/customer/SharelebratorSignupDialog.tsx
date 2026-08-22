@@ -12,9 +12,13 @@ interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onLinked: (name: string) => void;
+  /** False when another diner's card already holds this session. */
+  linkToSession?: boolean;
+  /** The new (empty) card, returned only in no-link mode. */
+  onCard?: (card: any) => void;
 }
 
-export function SharelebratorSignupDialog({ open, onOpenChange, onLinked }: Props) {
+export function SharelebratorSignupDialog({ open, onOpenChange, onLinked, linkToSession = true, onCard }: Props) {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -38,6 +42,7 @@ export function SharelebratorSignupDialog({ open, onOpenChange, onLinked }: Prop
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({
           mode: "signup",
+          linkToSession,
           phone,
           password,
           name,
@@ -48,7 +53,8 @@ export function SharelebratorSignupDialog({ open, onOpenChange, onLinked }: Prop
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Failed to create account.");
-      onLinked(json.name);
+      if (linkToSession) onLinked(json.name);
+      else onCard?.(json.card);
       onOpenChange(false);
     } catch (err: any) {
       setError(err.message || "Something went wrong.");

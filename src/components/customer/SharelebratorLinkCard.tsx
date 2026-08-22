@@ -18,9 +18,11 @@ interface Props {
    * a lie, since linking will be refused while their card holds the seat.
    */
   takenBy?: string | null;
+  /** Their own card, when they signed in without claiming the session. */
+  onCard?: (card: any) => void;
 }
 
-export function SharelebratorLinkCard({ storeId: _storeId, sessionId: _sessionId, onLinked, takenBy }: Props) {
+export function SharelebratorLinkCard({ storeId: _storeId, sessionId: _sessionId, onLinked, takenBy, onCard }: Props) {
   const [loginOpen, setLoginOpen] = useState(false);
   const [signupOpen, setSignupOpen] = useState(false);
 
@@ -42,7 +44,7 @@ export function SharelebratorLinkCard({ storeId: _storeId, sessionId: _sessionId
             </p>
             <div className="grid grid-cols-2 gap-2">
               <Button variant="outline" size="sm" onClick={() => setLoginOpen(true)}>
-                I have a card
+                {takenBy ? "View my card" : "I have a card"}
               </Button>
               <Button size="sm" onClick={() => setSignupOpen(true)}>
                 Create a card
@@ -52,8 +54,20 @@ export function SharelebratorLinkCard({ storeId: _storeId, sessionId: _sessionId
         </CardContent>
       </Card>
 
-      <SharelebratorLoginDialog open={loginOpen} onOpenChange={setLoginOpen} onLinked={(name) => onLinked?.(name)} />
-      <SharelebratorSignupDialog open={signupOpen} onOpenChange={setSignupOpen} onLinked={(name) => onLinked?.(name)} />
+      <SharelebratorLoginDialog
+        open={loginOpen}
+        onOpenChange={setLoginOpen}
+        onLinked={(name) => onLinked?.(name)}
+        linkToSession={!takenBy}
+        onCard={onCard}
+      />
+      <SharelebratorSignupDialog
+        open={signupOpen}
+        onOpenChange={setSignupOpen}
+        onLinked={(name) => onLinked?.(name)}
+        linkToSession={!takenBy}
+        onCard={onCard}
+      />
     </>
   );
 }

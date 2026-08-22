@@ -12,9 +12,16 @@ interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onLinked: (name: string) => void;
+  /**
+   * False when the table already belongs to another diner's card: sign in to
+   * READ your own, without claiming a session you cannot have.
+   */
+  linkToSession?: boolean;
+  /** The card itself, returned only in no-link mode. */
+  onCard?: (card: any) => void;
 }
 
-export function SharelebratorLoginDialog({ open, onOpenChange, onLinked }: Props) {
+export function SharelebratorLoginDialog({ open, onOpenChange, onLinked, linkToSession = true, onCard }: Props) {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -35,14 +42,15 @@ export function SharelebratorLoginDialog({ open, onOpenChange, onLinked }: Props
       const res = await fetch("/api/customer/sharelebrator/link-session", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ mode: "login", phone, password }),
+        body: JSON.stringify({ mode: "login", phone, password, linkToSession }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) {
         if (json.code === "bad_password") setCanAskManager(true);
         throw new Error(json.error || "Failed to link.");
       }
-      onLinked(json.name);
+      if (linkToSession) onLinked(json.name);
+      else onCard?.(json.card);
       onOpenChange(false);
       setPhone("");
       setPassword("");
