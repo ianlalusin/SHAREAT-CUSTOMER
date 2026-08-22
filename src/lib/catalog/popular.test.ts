@@ -1,58 +1,86 @@
 import { describe, it, expect } from "vitest";
-import { projectCatalog } from "./project";
+import { markPopular, topPopularIds, POPULAR_LIMIT } from "./popular";
+import type { CatalogCategory } from "./types";
 
-const cache = (items: any[]) => ({
-  categories: [{ name: "Sides", items }],
-});
+const cats = (items: any[]): CatalogCategory[] => [{ name: "Sides", items }];
 
-const item = (over: Record<string, any> = {}) => ({
+const item = (over: Record<string, any> = {}): any => ({
   productId: "p1",
+  inventoryId: "inv_kimbap",
   name: "Kimbap",
   displayName: "Kimbap",
+  subCategory: "Sides",
+  imageUrl: null,
   kind: "single",
   price: 120,
   orderable: true,
   ...over,
 });
 
-describe("popular survives the catalog projection", () => {
-  it("carries the flag through", () => {
-    // The projection is a whitelist. A field POS publishes but that is not
-    // copied never reaches the menu, so the Popular chip would never appear
-    // and the feature would ship doing nothing.
-    const [cat] = projectCatalog(cache([item({ popular: true })]));
-    expect(cat.items[0].popular).toBe(true);
+describe("topPopularIds", () => {
+  it("orders by count, highest first", () => {
+    expect(topPopularIds({ a: 3, b: 9, c: 5 })).toEqual(["b", "c", "a"]);
   });
 
-  it("omits it rather than publishing false", () => {
-    const [cat] = projectCatalog(cache([item()]));
-    expect(cat.items[0].popular).toBeUndefined();
+  it("drops never-ordered and refunded-to-nothing items", () => {
+    expect(topPopularIds({ a: 0, b: -2, c: 1 })).toEqual(["c"]);
   });
 
-  it("ignores a non-true value", () => {
-    for (const v of ["true", 1, {}, null]) {
-      const [cat] = projectCatalog(cache([item({ popular: v })]));
-      expect(cat.items[0].popular).toBeUndefined();
-    }
+  it("breaks ties by id so the group does not reshuffle", () => {
+    expect(topPopularIds({ z: 2, a: 2 })).toEqual(["a", "z"]);
   });
 
-  it("carries it on a variant family too", () => {
-    const [cat] = projectCatalog(
-      cache([
-        item({
-          kind: "group",
-          popular: true,
-          variants: [{ productId: "v1", displayName: "Pork", price: 120, orderable: true }],
-        }),
-      ])
+  it("caps at the display limit and survives junk", () => {
+    const many = Object.fromEntries(
+      Array.from({ length: 30 }, (_, i) => [`i${String(i).padStart(2, "0")}`, 30 - i])
     );
-    expect(cat.items[0].popular).toBe(true);
+    expect(topPopularIds(many).length).toBe(POPULAR_LIMIT);
+    expect(topPopularIds(null)).toEqual([]);
+    expect(topPopularIds({ a: "junk" })).toEqual([]);
+  });
+});
+
+describe("markPopular", () => {
+  it("flags an item whose inventory id sold well", () => {
+    const [c] = markPopular(cats([item()]), ["inv_kimbap"]);
+    expect(c.items[0].popular).toBe(true);
   });
 
-  it("leaves a snapshot written before the flag existed untouched", () => {
-    // Every store is in this state until its catalog is next republished.
-    const [cat] = projectCatalog(cache([item()]));
-    expect(cat.items[0].popular).toBeUndefined();
-    expect(cat.items[0].displayName).toBe("Kimbap");
+  it("leaves everything else alone", () => {
+    const [c] = markPopular(cats([item()]), ["inv_other"]);
+    expect(c.items[0].popular).toBeUndefined();
+  });
+
+  it("matches on the INVENTORY id, never the productId", () => {
+    // The tally keys on POS bill lines, which use the inventory doc id. Joining
+    // on productId would silently match nothing.
+    const [c] = markPopular(cats([item()]), ["p1"]);
+    expect(c.items[0].popular).toBeUndefined();
+  });
+
+  it("flags a family when any variant sells", () => {
+    // An unli set whose Pork tier is the best seller is popular, even though
+    // the family root carries no inventory row of its own.
+    const family = item({
+      inventoryId: null,
+      kind: "group",
+      variants: [
+        { productId: "v1", inventoryId: "inv_pork", displayName: "Pork", price: 1, orderable: true },
+        { productId: "v2", inventoryId: "inv_beef", displayName: "Beef", price: 1, orderable: true },
+      ],
+    });
+    const [c] = markPopular(cats([family]), ["inv_pork"]);
+    expect(c.items[0].popular).toBe(true);
+  });
+
+  it("does not mutate the input", () => {
+    const input = cats([item()]);
+    markPopular(input, ["inv_kimbap"]);
+    expect(input[0].items[0].popular).toBeUndefined();
+  });
+
+  it("is a no-op when nothing has sold yet", () => {
+    const input = cats([item()]);
+    expect(markPopular(input, [])).toBe(input);
   });
 });

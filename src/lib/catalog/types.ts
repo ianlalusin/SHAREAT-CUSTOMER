@@ -28,6 +28,8 @@ export type CatalogOptionGroup = {
 
 export type CatalogVariant = {
   productId: string;
+  /** This store's inventory doc id — what POS bill lines and the sold counts key on. */
+  inventoryId?: string | null;
   variantLabel: string;
   displayName: string;
   price: number;
@@ -46,6 +48,8 @@ export type CatalogVariant = {
 
 export type CatalogEntry = {
   productId: string;
+  /** This store's inventory doc id — what POS bill lines and the sold counts key on. */
+  inventoryId?: string | null;
   name: string;
   displayName: string;
   description?: string;
@@ -57,9 +61,12 @@ export type CatalogEntry = {
   price: number;
   orderable: boolean;
   /**
-   * Listed under "Popular" as well as its own category. Set per branch in POS
-   * (inventory.isPopular) and omitted entirely when false, so a catalogCache
-   * written before this existed simply has no popular items.
+   * Among the store's most-ordered items, so it is listed under "Popular" as
+   * well as its own category.
+   *
+   * NOT published on the menu cache — it is resolved per request from the
+   * running sold-item tally, because the cache is rebuilt only on menu edits
+   * and popularity changes with every receipt.
    */
   popular?: boolean;
   variants?: CatalogVariant[];

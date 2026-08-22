@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { projectCatalog } from "@/lib/catalog/project";
+import { markPopular, topPopularIds } from "@/lib/catalog/popular";
 
 export const runtime = "nodejs";
 
@@ -40,13 +41,25 @@ export async function GET(req: Request) {
     // one Firestore read per dashboard load regardless of inventory size. Price
     // changes require a cache rebuild, which already fires on every manager
     // inventory edit (POS: lib/customer-catalog/auto-publish.ts).
-    const cacheSnap = await db.doc(`stores/${storeId}/catalogCache/main`).get();
+    // The running sold-item tally rides alongside the menu cache, and is read
+    // per request rather than baked into it: the cache is rebuilt only when
+    // someone edits the menu, so a popularity figure folded in there would
+    // freeze at whenever that last happened.
+    const [cacheSnap, popularSnap] = await Promise.all([
+      db.doc(`stores/${storeId}/catalogCache/main`).get(),
+      db.doc(`stores/${storeId}/catalogCache/popularItems`).get(),
+    ]);
     if (!cacheSnap.exists) return bad("Catalog cache not found for store.", 404);
 
     // `projectCatalog` whitelists every field on the way out — the snapshot
     // also carries internal kitchen routing that the browser must not receive.
     const cache = cacheSnap.data() as any;
-    const categories = projectCatalog(cache);
+    // Marked after projection, so the whitelist still governs what a browser
+    // receives. A store with no sales yet simply gets no Popular group.
+    const categories = markPopular(
+      projectCatalog(cache),
+      topPopularIds((popularSnap.data() as any)?.counts)
+    );
     // The store-level self-ordering switch. The client needs BOTH this and an
     // item's own `orderable` before it offers an Add button.
     const orderingEnabled = cache?.orderingEnabled === true;

@@ -61,6 +61,7 @@ function variant(raw: any): CatalogVariant {
     price: num(raw?.price),
     imageUrl: raw?.imageUrl ?? null,
     orderable: raw?.orderable === true,
+    inventoryId: raw?.inventoryId ?? null,
   };
   if (raw?.description) v.description = String(raw.description);
   const groups = optionGroups(raw?.optionGroups);
@@ -97,10 +98,11 @@ function entry(raw: any, categoryName: string): CatalogEntry {
     kind,
     price: num(raw?.price),
     orderable: raw?.orderable === true,
+    // The join key for the sold-item tally that drives Popular. This projection
+    // is a whitelist, so a field POS publishes but that is not copied here
+    // never reaches the menu at all.
+    inventoryId: raw?.inventoryId ?? null,
   };
-  // This projection is a whitelist: a field POS publishes but that is not
-  // copied here never reaches the menu at all.
-  if (raw?.popular === true) e.popular = true;
   if (raw?.description) e.description = String(raw.description);
 
   if (kind === "group") {
