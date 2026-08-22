@@ -9,6 +9,7 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } f
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useToast } from "@/hooks/use-toast";
 import { getAuth } from "firebase/auth";
 import { cn } from "@/lib/utils";
 import { inFlightQty, type SessionOrder } from "@/hooks/use-session-orders";
@@ -75,11 +76,12 @@ export function CustomerCatalog({ overrideCategories, orders = [], onOrderPlaced
   const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>(ALL);
 
+  const { toast } = useToast();
+
   const [cart, setCart] = useState<CartLine[]>([]);
   const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [sentMessage, setSentMessage] = useState<string | null>(null);
 
   const canOrder = !isPreview && orderingEnabled;
 
@@ -164,7 +166,6 @@ export function CustomerCatalog({ overrideCategories, orders = [], onOrderPlaced
       return [...prev, { ...line, key }];
     });
     setActiveEntry(null);
-    setSentMessage(null);
   }, []);
 
   const cartTotal = cart.reduce((sum, l) => sum + l.unitPrice * l.qty, 0);
@@ -200,14 +201,20 @@ export function CustomerCatalog({ overrideCategories, orders = [], onOrderPlaced
 
       setCart([]);
       setIsReviewOpen(false);
-      setSentMessage("Sent to the kitchen. You'll be charged when it's served.");
+      // A toast, not a banner: this confirms one action and should get out of
+      // the way. Pinned under the Menu header it sat there through the rest of
+      // the meal, reading as a standing notice about the menu itself.
+      toast({
+        title: "Sent to the kitchen",
+        description: "You'll be charged when it's served.",
+      });
       onOrderPlaced?.();
     } catch (e: any) {
       setSendError(e?.message || "Could not send your order.");
     } finally {
       setIsSending(false);
     }
-  }, [cart, isSending, onOrderPlaced]);
+  }, [cart, isSending, onOrderPlaced, toast]);
 
   return (
     <section className="mt-8">
@@ -217,12 +224,6 @@ export function CustomerCatalog({ overrideCategories, orders = [], onOrderPlaced
           {canOrder ? "Tap an item to order" : "Tap an item for details"}
         </p>
       </div>
-
-      {sentMessage ? (
-        <div className="mb-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900">
-          {sentMessage}
-        </div>
-      ) : null}
 
       {!isLoading && !error && categoryNames.length > 1 ? (
         <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
