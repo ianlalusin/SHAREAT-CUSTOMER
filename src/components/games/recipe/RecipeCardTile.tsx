@@ -3,6 +3,7 @@
 import { Star } from "lucide-react";
 import type { RecipeCard } from "@/lib/games/recipe/types";
 import { MIN_VOTES_TO_RANK } from "@/lib/games/recipe/rank";
+import { attributionFor } from "@/lib/games/recipe/attribution";
 
 /**
  * One recipe in a list.
@@ -23,6 +24,7 @@ export function RecipeCardTile({
 }) {
   const { counts } = recipe;
   const needsVotes = counts.total < MIN_VOTES_TO_RANK;
+  const by = attributionFor(recipe.displayName, recipe.storeName);
 
   return (
     <button
@@ -43,8 +45,11 @@ export function RecipeCardTile({
             )}
             <h3 className="font-black leading-tight truncate">{recipe.title}</h3>
           </div>
+          {/* The author is the credit line, so it gets the brand colour and a
+              line of its own rather than being buried in grey metadata. */}
+          <p className="text-sm font-bold text-primary truncate">by: {by.name}</p>
           <p className="text-xs text-muted-foreground truncate">
-            {recipe.displayName} · {recipe.storeName} · {recipe.stepCount} steps
+            {by.store ? `${by.store} · ` : ""}{recipe.stepCount} steps
           </p>
 
           <div className="mt-2 flex items-center gap-3 text-xs">

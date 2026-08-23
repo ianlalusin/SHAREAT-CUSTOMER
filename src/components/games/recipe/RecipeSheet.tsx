@@ -10,6 +10,7 @@ import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } f
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { VerdictButtons } from "./VerdictButtons";
 import type { RecipeStep, Verdict } from "@/lib/games/recipe/types";
+import { attributionFor } from "@/lib/games/recipe/attribution";
 
 type Detail = {
   id: string;
@@ -143,7 +144,8 @@ export function RecipeSheet({
   );
 
   const title = detail?.title || "Recipe";
-  const subtitle = detail ? `by ${detail.displayName} · ${detail.storeName}` : " ";
+  const by = detail ? attributionFor(detail.displayName, detail.storeName) : null;
+  const subtitle = by ? `by: ${by.name}${by.store ? ` · ${by.store}` : ""}` : " ";
   const open = !!recipeId;
 
   if (isMobile) {

@@ -85,10 +85,7 @@ const SEEDS: Seed[] = [
   },
 ];
 
-export async function seedHouseRecipes(
-  db: Firestore,
-  storeName = "SharEat Kitchen"
-): Promise<{ seeded: number }> {
+export async function seedHouseRecipes(db: Firestore): Promise<{ seeded: number }> {
   const nowMs = Date.now();
   const batch = db.batch();
 
@@ -100,7 +97,9 @@ export async function seedHouseRecipes(
         displayName: "SharEat Kitchen",
         authorKey: HOUSE_KEY,
         authorStoreId: "",
-        authorStoreName: storeName,
+        // A house recipe belongs to no branch. Stamping the author's name here
+        // too made every card read "SharEat Kitchen &middot; SharEat Kitchen".
+        authorStoreName: "",
         // No session, so the "someone at your table made this" guard never
         // fires on a house recipe — every diner can rate them.
         authorSessionId: "",
