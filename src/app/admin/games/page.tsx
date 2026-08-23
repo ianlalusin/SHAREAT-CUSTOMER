@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
-import { ArrowLeft, Loader2, RefreshCw, Check, X, Archive, Undo2, Star, StarOff, Sprout, Pencil } from "lucide-react";
+import { ArrowLeft, Loader2, RefreshCw, Check, X, Archive, Undo2, Star, StarOff, Pencil } from "lucide-react";
 
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -54,7 +54,6 @@ export default function AdminGamesPage() {
   const [queue, setQueue] = useState<QueueRow[] | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rebuilding, setRebuilding] = useState(false);
-  const [seeding, setSeeding] = useState(false);
   const [editing, setEditing] = useState<EditableRecipe | null>(null);
 
   const authed = useCallback(async () => {
@@ -138,31 +137,6 @@ export default function AdminGamesPage() {
     }
   };
 
-  /**
-   * House recipes give the board something to show on day one. A feed that
-   * opens empty gets no ratings, so it never fills up.
-   */
-  const seed = async (remove: boolean) => {
-    setSeeding(true);
-    try {
-      const res = await fetch("/api/admin/games/samgyup-recipe/seed", {
-        method: "POST",
-        headers: await authed(),
-        body: JSON.stringify({ remove }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not update house recipes.");
-      await loadQueue(status);
-      toast({
-        title: remove ? `Removed ${json.removed}` : `Added ${json.seeded} house recipes`,
-      });
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Couldn't update", description: e?.message });
-    } finally {
-      setSeeding(false);
-    }
-  };
-
   const rebuild = async () => {
     setRebuilding(true);
     try {
@@ -191,16 +165,10 @@ export default function AdminGamesPage() {
             <ArrowLeft className="h-4 w-4" />
             Back
           </Button>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => seed(false)} disabled={seeding} className="gap-2 rounded-2xl">
-              {seeding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sprout className="h-4 w-4" />}
-              House recipes
-            </Button>
-            <Button variant="outline" onClick={rebuild} disabled={rebuilding} className="gap-2 rounded-2xl">
-              {rebuilding ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              Rebuild board
-            </Button>
-          </div>
+          <Button variant="outline" onClick={rebuild} disabled={rebuilding} className="gap-2 rounded-2xl">
+            {rebuilding ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Rebuild board
+          </Button>
         </div>
 
         <Card className="rounded-[2rem] border-none shadow-xl bg-white">
