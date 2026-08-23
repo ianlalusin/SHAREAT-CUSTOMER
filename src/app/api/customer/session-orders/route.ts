@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { validateActiveParticipant } from "@/lib/server/customer-participants";
 import { computeRunningBill } from "@/lib/catalog/running-bill";
+import { customerStatus, orderedQtyFor, servedQtyFor, type RawKitchenTicket } from "@/lib/session-orders";
 
 /**
  * Everything this TABLE has ordered — not just this phone.
@@ -33,15 +34,6 @@ function bad(msg: string, status = 400) {
 
 /** Enough to cover a long dinner without unbounded reads. */
 const MAX_ORDERS = 60;
-
-/** The lifecycle a diner is shown, collapsed from POS's ticket statuses. */
-function customerStatus(raw: string, qtyServed: number, qtyCancelled: number): string {
-  const s = String(raw || "").toLowerCase();
-  if (s === "cancelled") return "cancelled";
-  if (s === "served") return qtyServed > 0 ? "served" : "cancelled";
-  if (s === "partially_served") return "partially_served";
-  return "preparing";
-}
 
 export async function GET(req: Request) {
   try {
@@ -91,9 +83,9 @@ export async function GET(req: Request) {
       .filter((d) => String((d.data() as any)?.type || "") !== "refill")
       .map((d) => {
       const t = d.data() as any;
-      const qtyOrdered = Number(t.qtyOrdered ?? t.qty ?? 0) || 0;
-      const qtyServed = Number(t.qtyServed ?? 0) || 0;
-      const qtyCancelled = Number(t.qtyCancelled ?? 0) || 0;
+      const status = customerStatus(t as RawKitchenTicket);
+      const qtyOrdered = orderedQtyFor(t as RawKitchenTicket);
+      const qtyServed = servedQtyFor(t as RawKitchenTicket);
       const unitPrice = Number(t?.pendingBillLine?.unitPrice ?? 0) || 0;
       const modifiersTotal = Number(t?.pendingBillLine?.modifiersTotal ?? 0) || 0;
 
@@ -104,7 +96,7 @@ export async function GET(req: Request) {
         itemName: String(t.itemName || ""),
         qty: qtyOrdered,
         qtyServed,
-        status: customerStatus(t.status, qtyServed, qtyCancelled),
+        status,
         type: String(t.type || "addon"),
         createdAtMs: Number(t.createdAtClientMs ?? 0) || 0,
         note: t.notes ? String(t.notes) : null,
@@ -128,8 +120,15 @@ export async function GET(req: Request) {
         lineTotal: unitPrice > 0
           ? (unitPrice + modifiersTotal) * (qtyServed > 0 ? qtyServed : qtyOrdered)
           : null,
-        /** True once the amount above is on the bill rather than an expectation. */
-        billed: qtyServed > 0,
+        /**
+         * True once the amount above is on the bill rather than an expectation.
+         *
+         * A ticket POS marked served IS billed — that is when POS creates or
+         * increments the line (see `customer-order-billing.ts`). Keying this
+         * off `qtyServed` alone left an already-charged line captioned
+         * "when served" whenever POS served it without counting.
+         */
+        billed: status === "served" || qtyServed > 0,
       };
     });
 
