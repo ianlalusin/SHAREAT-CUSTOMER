@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getAuth } from "firebase/auth";
-import { Loader2, Plus, Bell, Star, Flame, Eye } from "lucide-react";
+import { Loader2, Plus, Bell, Star, Flame, Eye, Gamepad2 } from "lucide-react";
 
 import { DashboardHeader } from "@/components/dashboard/Header";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,13 @@ export function PreviewDashboard({ storeId, storeName }: Props) {
   const [categories, setCategories] = useState<CatalogCategory[]>([]);
   const [isLoadingItems, setIsLoadingItems] = useState(true);
   const [itemsError, setItemsError] = useState<string | null>(null);
+  /**
+   * Mirrors `hasGames` on the real dashboard: the shelf comes and goes with the
+   * season, so the tile only exists when this store actually has a game running.
+   * Scoped via /api/admin/preview-games rather than /api/customer/games, which
+   * would return the unscoped "live somewhere" shelf for a staff caller.
+   */
+  const [hasGames, setHasGames] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -63,6 +70,26 @@ export function PreviewDashboard({ storeId, storeName }: Props) {
       }
     }
     load();
+    return () => { cancelled = true; };
+  }, [storeId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const user = getAuth().currentUser;
+        if (!user) return;
+        const res = await fetch(`/api/admin/preview-games?storeId=${encodeURIComponent(storeId)}`, {
+          headers: { Authorization: `Bearer ${await user.getIdToken()}` },
+          cache: "no-store",
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!cancelled && res.ok && json?.ok) setHasGames((json.games || []).length > 0);
+      } catch {
+        // Same stance as the real dashboard: a shelf that fails to load is
+        // simply not offered, never an error on the screen being previewed.
+      }
+    })();
     return () => { cancelled = true; };
   }, [storeId]);
 
@@ -124,6 +151,23 @@ export function PreviewDashboard({ storeId, storeName }: Props) {
               Loyalty Card
             </span>
           </button>
+
+          {/*
+            Row 3, spanning both columns — matches the real dashboard, where the
+            games shelf is deliberately a different KIND of thing from the four
+            ordering/service actions rather than a fifth equal-weight button.
+          */}
+          {hasGames && (
+            <button
+              type="button"
+              onClick={() => notifyPreview("Fun & Games")}
+              className="col-span-2 h-14 rounded-2xl border-2 border-dashed border-primary/30 bg-white text-primary font-bold text-base flex items-center justify-center gap-2 hover:bg-primary/5 active:scale-[0.98] transition-all"
+              aria-label="Open Fun and Games"
+            >
+              <Gamepad2 className="h-5 w-5" />
+              Fun &amp; Games
+            </button>
+          )}
         </div>
 
         {isLoadingItems ? (
