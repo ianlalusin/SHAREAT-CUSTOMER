@@ -94,7 +94,7 @@ export async function seedHouseRecipes(db: Firestore): Promise<{ seeded: number 
       db.doc(`gameRecipes/${SEED_PREFIX}${s.slug}`),
       {
         title: s.title,
-        displayName: "SharEat Kitchen",
+        displayName: "SharEat",
         authorKey: HOUSE_KEY,
         authorStoreId: "",
         // A house recipe belongs to no branch. Stamping the author's name here

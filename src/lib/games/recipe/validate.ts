@@ -17,8 +17,8 @@ import type { RecipeStep } from "./types";
  */
 export const MAX_STEPS = 8;
 export const MIN_STEPS = 2;
-export const MAX_TITLE_LEN = 40;
-export const MAX_DISPLAY_NAME_LEN = 20;
+export const MAX_TITLE_LEN = 30;
+export const MAX_DISPLAY_NAME_LEN = 10;
 export const MAX_STEP_LEN = 120;
 export const MAX_NOTE_LEN = 60;
 
@@ -42,7 +42,7 @@ export function validateRecipeDraft(input: {
 
   if (!title) return { ok: false, error: "Give your recipe a name." };
   if (title.length > MAX_TITLE_LEN) {
-    return { ok: false, error: `Keep the name under ${MAX_TITLE_LEN} characters.` };
+    return { ok: false, error: `Keep the recipe name under ${MAX_TITLE_LEN} characters.` };
   }
   if (displayName.length > MAX_DISPLAY_NAME_LEN) {
     return { ok: false, error: `Keep your name under ${MAX_DISPLAY_NAME_LEN} characters.` };

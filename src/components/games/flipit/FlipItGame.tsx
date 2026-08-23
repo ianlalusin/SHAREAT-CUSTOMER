@@ -8,6 +8,7 @@ import {
   PERFECT_LO, PERFECT_HI, STRIP_COUNT, type Doneness, type FlipResult,
 } from "@/lib/games/flipit/rules";
 import { PorkStrip, STRIP_LAYOUT } from "./PorkStrip";
+import { recordPlay } from "@/lib/games/recordPlay";
 
 /** The background is 2400x1792; the overlay uses the same pixel space. */
 const SCENE_W = 2400;
@@ -75,6 +76,10 @@ export function FlipItGame() {
 
     const index = pickRawStrip(states);
     if (index < 0) return;
+
+    // A play is a ROUND, not a press — counting every press would make a
+    // five-press game look five times more popular than a one-press one.
+    if (scores.length === 0) recordPlay("flipit");
 
     running.current = false;
     setBusy(true);

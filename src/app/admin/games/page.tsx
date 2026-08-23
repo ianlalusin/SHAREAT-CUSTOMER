@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { RecipeStep } from "@/lib/games/recipe/types";
 import { RecipeEditDialog, type EditableRecipe } from "@/components/games/recipe/RecipeEditDialog";
+import { GamePlayStats } from "@/components/games/admin/GamePlayStats";
 
 type GameRow = { id: string; title: string; tagline: string; configured: boolean; isActive: boolean };
 type QueueRow = {
@@ -227,6 +228,8 @@ export default function AdminGamesPage() {
             )}
           </CardContent>
         </Card>
+
+        <GamePlayStats />
 
         <Card className="rounded-[2rem] border-none shadow-xl bg-white">
           <CardHeader className="space-y-3">

@@ -213,11 +213,11 @@ export default function AdminHomePage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <Button
           onClick={() => router.push("/admin/feedback")}
           variant="outline"
-          className="h-16 rounded-2xl font-black text-lg gap-3"
+          className="h-24 flex-col gap-1.5 rounded-2xl text-sm font-black sm:h-20 sm:flex-row sm:gap-3 sm:text-base"
         >
           <MessageSquare className="h-5 w-5" />
           Feedbacks
@@ -226,7 +226,7 @@ export default function AdminHomePage() {
         <Button
           onClick={() => router.push("/admin/flash-ads")}
           variant="outline"
-          className="h-16 rounded-2xl font-black text-lg gap-3"
+          className="h-24 flex-col gap-1.5 rounded-2xl text-sm font-black sm:h-20 sm:flex-row sm:gap-3 sm:text-base"
         >
           <Megaphone className="h-5 w-5" />
           Flash Ads
@@ -235,7 +235,7 @@ export default function AdminHomePage() {
         <Button
           onClick={() => router.push("/admin/preview")}
           variant="outline"
-          className="h-16 rounded-2xl font-black text-lg gap-3"
+          className="h-24 flex-col gap-1.5 rounded-2xl text-sm font-black sm:h-20 sm:flex-row sm:gap-3 sm:text-base"
         >
           <Eye className="h-5 w-5" />
           Preview
@@ -244,7 +244,7 @@ export default function AdminHomePage() {
         <Button
           onClick={() => router.push("/admin/games")}
           variant="outline"
-          className="h-16 rounded-2xl font-black text-lg gap-3"
+          className="h-24 flex-col gap-1.5 rounded-2xl text-sm font-black sm:h-20 sm:flex-row sm:gap-3 sm:text-base"
         >
           <Gamepad2 className="h-5 w-5" />
           Games

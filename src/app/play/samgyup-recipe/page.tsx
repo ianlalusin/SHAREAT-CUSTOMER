@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EMPTY_FEED, type RecipeFeed } from "@/lib/games/recipe/types";
+import { recordPlay } from "@/lib/games/recordPlay";
 
 type MyRecipe = {
   id: string;
@@ -66,6 +67,11 @@ export default function SamgyupRecipePage() {
     });
     return () => unsub();
   }, [load]);
+
+  // This game has no round to complete, so opening the board is the play.
+  useEffect(() => {
+    recordPlay("samgyup-recipe");
+  }, []);
 
   const refresh = () => {
     load().catch(() => {});

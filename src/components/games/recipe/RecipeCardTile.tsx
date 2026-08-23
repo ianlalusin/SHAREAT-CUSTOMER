@@ -3,7 +3,7 @@
 import { Star } from "lucide-react";
 import type { RecipeCard } from "@/lib/games/recipe/types";
 import { MIN_VOTES_TO_RANK } from "@/lib/games/recipe/rank";
-import { attributionFor } from "@/lib/games/recipe/attribution";
+import { attributionFor, clampText, TITLE_DISPLAY_MAX } from "@/lib/games/recipe/attribution";
 
 /**
  * One recipe in a list.
@@ -39,16 +39,19 @@ export function RecipeCardTile({
           </span>
         )}
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-start gap-1.5">
             {recipe.featured && (
-              <Star className="h-4 w-4 shrink-0 text-amber-500" fill="currentColor" aria-label="Featured" />
+              <Star className="h-4 w-4 mt-0.5 shrink-0 text-amber-500" fill="currentColor" aria-label="Featured" />
             )}
-            <h3 className="font-black leading-tight truncate">{recipe.title}</h3>
+            {/* Title and credit are ONE heading. "by: Name" is nowrap so it can
+                never be split from the name across a line break — it moves to
+                the next line whole or not at all. */}
+            <h3 className="font-black leading-tight">
+              {clampText(recipe.title, TITLE_DISPLAY_MAX)}{" "}
+              <span className="whitespace-nowrap text-primary">by: {by.name}</span>
+            </h3>
           </div>
-          {/* The author is the credit line, so it gets the brand colour and a
-              line of its own rather than being buried in grey metadata. */}
-          <p className="text-sm font-bold text-primary truncate">by: {by.name}</p>
-          <p className="text-xs text-muted-foreground truncate">
+          <p className="mt-0.5 text-xs text-muted-foreground truncate">
             {by.store ? `${by.store} · ` : ""}{recipe.stepCount} steps
           </p>
 
