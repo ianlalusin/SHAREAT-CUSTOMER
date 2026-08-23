@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   FIRST_SERVING_BLOCK_MAX_MS,
+  customerStatus,
   hasPendingFirstServing,
   inFlightQty,
+  orderedQtyFor,
+  servedQtyFor,
   type SessionOrder,
 } from "@/lib/session-orders";
 
@@ -98,5 +101,74 @@ describe("inFlightQty", () => {
   it("is zero for an unknown or empty sku", () => {
     expect(inFlightQty([order()], "nope")).toBe(0);
     expect(inFlightQty([order()], "")).toBe(0);
+  });
+});
+
+describe("customerStatus — POS's status is the truth", () => {
+  it("shows Served for a ticket POS served but never counted", () => {
+    // The package ticket startSession writes: qty only, no qty* bookkeeping.
+    expect(customerStatus({ status: "served", qty: 1 })).toBe("served");
+  });
+
+  it("shows Served for a ticket carrying an explicit qtyServed: 0", () => {
+    // What a pre-2026-08-21 KDS bundle and both payment sweeps leave behind.
+    expect(customerStatus({ status: "served", qtyOrdered: 1, qtyServed: 0 })).toBe("served");
+  });
+
+  it("shows Cancelled only when POS says cancelled", () => {
+    expect(customerStatus({ status: "cancelled", qtyOrdered: 1, qtyServed: 0 })).toBe("cancelled");
+  });
+
+  it("passes through the partial state", () => {
+    expect(customerStatus({ status: "partially_served", qtyOrdered: 3, qtyServed: 1 })).toBe("partially_served");
+  });
+
+  it("treats anything else — including POS's `ready` — as still preparing", () => {
+    expect(customerStatus({ status: "preparing" })).toBe("preparing");
+    expect(customerStatus({ status: "ready" })).toBe("preparing");
+    expect(customerStatus({})).toBe("preparing");
+  });
+
+  it("is case-insensitive, because the value crosses an app boundary", () => {
+    expect(customerStatus({ status: "SERVED", qty: 1 })).toBe("served");
+  });
+});
+
+describe("orderedQtyFor", () => {
+  it("prefers qtyOrdered", () => {
+    expect(orderedQtyFor({ qtyOrdered: 3, qty: 1 })).toBe(3);
+  });
+
+  it("falls back to qty for the package ticket, which has no qtyOrdered", () => {
+    expect(orderedQtyFor({ qty: 1 })).toBe(1);
+  });
+
+  it("is 0 when neither is usable", () => {
+    expect(orderedQtyFor({})).toBe(0);
+    expect(orderedQtyFor({ qty: "junk" })).toBe(0);
+  });
+});
+
+describe("servedQtyFor", () => {
+  it("uses the recorded quantity when POS wrote one", () => {
+    expect(servedQtyFor({ status: "partially_served", qtyOrdered: 3, qtyServed: 1 })).toBe(1);
+  });
+
+  it("infers the whole ticket when POS served it without counting", () => {
+    expect(servedQtyFor({ status: "served", qty: 1 })).toBe(1);
+    expect(servedQtyFor({ status: "served", qtyOrdered: 2, qtyServed: 0 })).toBe(2);
+  });
+
+  it("subtracts what was cancelled before the rest was served", () => {
+    expect(servedQtyFor({ status: "served", qtyOrdered: 3, qtyCancelled: 1 })).toBe(2);
+  });
+
+  it("never infers a quantity for a ticket that was not served", () => {
+    expect(servedQtyFor({ status: "preparing", qtyOrdered: 2 })).toBe(0);
+    expect(servedQtyFor({ status: "cancelled", qtyOrdered: 2 })).toBe(0);
+  });
+
+  it("never goes negative", () => {
+    expect(servedQtyFor({ status: "served", qtyOrdered: 1, qtyCancelled: 5 })).toBe(0);
   });
 });

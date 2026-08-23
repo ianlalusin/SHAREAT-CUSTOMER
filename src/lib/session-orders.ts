@@ -83,3 +83,68 @@ export function hasPendingFirstServing(
     return nowMs - createdAtMs < FIRST_SERVING_BLOCK_MAX_MS;
   });
 }
+
+/**
+ * A kitchen ticket as it arrives from Firestore.
+ *
+ * Deliberately `unknown` on every field: POS writes these documents from a
+ * separately-deployed app, and several of them are optional in practice — the
+ * package ticket `startSession` writes carries `qty` and nothing else.
+ */
+export type RawKitchenTicket = {
+  status?: unknown;
+  qty?: unknown;
+  qtyOrdered?: unknown;
+  qtyServed?: unknown;
+  qtyCancelled?: unknown;
+};
+
+function num(v: unknown): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** What the diner ordered. `qtyOrdered` where POS wrote it, `qty` otherwise. */
+export function orderedQtyFor(t: RawKitchenTicket): number {
+  return Math.max(0, num(t.qtyOrdered ?? t.qty));
+}
+
+/**
+ * The lifecycle a diner is shown, collapsed from POS's ticket statuses.
+ *
+ * POS's `status` is the ONLY thing consulted, and that is the whole point of
+ * this function. It used to re-label a `served` ticket as cancelled whenever
+ * `qtyServed` was not positive — but `qtyServed` is bookkeeping, not an
+ * outcome, and several POS writers legitimately never set it: the package
+ * ticket is created without it, both payment sweeps close tickets without it,
+ * and any KDS client older than 2026-08-21 served without it. The result was
+ * telling a diner their food had been cancelled while they were eating it.
+ *
+ * A cancelled ticket has its own status. POS never leaves a fully-cancelled
+ * ticket in `served`: `handleCancelRemaining` sets `served` only when some
+ * quantity actually went out, and `cancelled` otherwise.
+ */
+export function customerStatus(t: RawKitchenTicket): SessionOrder["status"] {
+  const s = String(t.status ?? "").toLowerCase();
+  if (s === "cancelled") return "cancelled";
+  if (s === "partially_served") return "partially_served";
+  if (s === "served") return "served";
+  // Covers "preparing", POS's "ready", and anything a future POS adds: an
+  // unrecognised state is still in the kitchen, never a cancellation.
+  return "preparing";
+}
+
+/**
+ * How much of the ticket actually reached the table.
+ *
+ * Trust `qtyServed` when POS recorded one. When POS says the ticket is served
+ * but never counted it, the whole un-cancelled quantity went out — that is
+ * what "served" means on a whole-ticket serve. Any other status infers
+ * nothing.
+ */
+export function servedQtyFor(t: RawKitchenTicket): number {
+  const recorded = Math.max(0, num(t.qtyServed));
+  if (recorded > 0) return recorded;
+  if (customerStatus(t) !== "served") return 0;
+  return Math.max(0, orderedQtyFor(t) - Math.max(0, num(t.qtyCancelled)));
+}
