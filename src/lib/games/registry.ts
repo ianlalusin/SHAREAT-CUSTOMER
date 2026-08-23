@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Flame } from "lucide-react";
+import { Flame, Utensils } from "lucide-react";
 
 /**
  * The mini-games shelf.
@@ -13,7 +13,7 @@ import { Flame } from "lucide-react";
  * A game listed here is NOT live until its config doc exists and says so. There
  * is no "default on".
  */
-export type GameAccent = "flame" | "berry" | "ocean";
+export type GameAccent = "flame" | "berry" | "ocean" | "ember";
 
 export type GameDefinition = {
   /** Stable. Doubles as the `miniGames/{id}` key — never rename a shipped id. */
@@ -48,6 +48,16 @@ export const GAMES: GameDefinition[] = [
     accent: "flame",
     href: "/play/samgyup-recipe",
     requiresSession: true,
+  },
+  {
+    id: "flipit",
+    title: "Flip It",
+    tagline: "Grill five strips. Press when the heat hits green.",
+    icon: Utensils,
+    accent: "ember",
+    href: "/play/flipit",
+    // Nothing is written and nothing is published, so this one plays anywhere.
+    requiresSession: false,
   },
 ];
 
