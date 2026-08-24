@@ -33,21 +33,35 @@ const NEAR_MISS = 18;
 const FALLOFF = 1.8;
 
 /**
+ * The range a single press can possibly score.
+ *
+ * The leaderboard validates a submitted round against these: a client reports
+ * its own scores, so the only cheap, meaningful guard is that every number is
+ * one this game could actually have produced. Dead centre is 100, so the best
+ * a fabricated round can claim is a tie with an honest grill master.
+ */
+export const MIN_FLIP_SCORE = 11;
+export const MAX_FLIP_SCORE = 100;
+
+/**
  * Judge one press.
  *
  * The band is deliberately generous. A diner plays this once, standing, while
  * waiting for food — a window they miss four times out of five is not a game
  * they play twice.
  */
+/** In the band, nothing scores below this — the band IS the reward. */
+const PERFECT_FLOOR = 92;
+
 export function judgeFlip(position: number): FlipResult {
   const pos = clamp(position, 0, 100);
   const off = Math.abs(pos - PERFECT_MID);
-  const score = Math.max(11, Math.round(100 - off * FALLOFF));
+  const score = Math.max(MIN_FLIP_SCORE, Math.round(MAX_FLIP_SCORE - off * FALLOFF));
 
   if (pos >= PERFECT_LO && pos <= PERFECT_HI) {
     return {
       doneness: "perfect",
-      score: Math.max(92, score),
+      score: Math.max(PERFECT_FLOOR, score),
       verdict: "AWESOME!",
       flavour: "Delicious samgyupsal",
     };
@@ -70,7 +84,7 @@ export type RoundVerdict = { verdict: string; flavour: string; doneness: Donenes
 
 /** The closing line for a finished round of five. */
 export function judgeRound(average: number): RoundVerdict {
-  if (average >= 90) return { verdict: "GRILL MASTER", flavour: "Five for five. Sila na.", doneness: "perfect" };
+  if (average >= 90) return { verdict: "GRILL MASTER", flavour: "Five for five. Ikaw na.", doneness: "perfect" };
   if (average >= 70) return { verdict: "SOLID GRILLING", flavour: "You can be trusted with the tongs.", doneness: "good" };
   if (average >= 45) return { verdict: "NEEDS PRACTICE", flavour: "Watch the green band, not the meat.", doneness: "under" };
   return { verdict: "LET SOMEONE ELSE COOK", flavour: "The kitchen is worried.", doneness: "burnt" };

@@ -8,7 +8,10 @@ import {
   PERFECT_LO, PERFECT_HI, STRIP_COUNT, type Doneness, type FlipResult,
 } from "@/lib/games/flipit/rules";
 import { PorkStrip, STRIP_LAYOUT } from "./PorkStrip";
-import { recordPlay } from "@/lib/games/recordPlay";
+import { ScorePrompt, LeaderboardSheet } from "./Leaderboard";
+import type { Leaderboard } from "@/lib/games/flipit/leaderboard";
+import { Trophy } from "lucide-react";
+import { markView, resetSignals, signalUse } from "@/lib/games/trackGame";
 
 /** The background is 2400x1792; the overlay uses the same pixel space. */
 const SCENE_W = 2400;
@@ -31,6 +34,12 @@ export function FlipItGame() {
   const [finished, setFinished] = useState<{ verdict: string; flavour: string; avg: number } | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // The board, and the copy of it handed back by a successful post so the
+  // sheet opens on the numbers that were just written rather than re-fetching.
+  const [boardOpen, setBoardOpen] = useState(false);
+  const [postedBoard, setPostedBoard] = useState<Leaderboard | null>(null);
+  const [postedName, setPostedName] = useState<string | undefined>(undefined);
+
   // Deterministic on first render, randomised once mounted. Seeding this with
   // startingNeedle() put Math.random() in a state initializer, so the server
   // and the client disagreed about where the needle was and React warned about
@@ -42,13 +51,33 @@ export function FlipItGame() {
   const raf = useRef<number | null>(null);
   const posRef = useRef(needle);
   const tossId = useRef(0);
+  const timers = useRef<number[]>([]);
+
+  /** Every timeout this game starts, so none of them outlives the screen.
+   *  Walking away mid-flip used to leave three of them running, setting state
+   *  on a component that no longer exists. */
+  const later = useCallback((fn: () => void, ms: number) => {
+    timers.current.push(window.setTimeout(fn, ms));
+  }, []);
 
   // Keep a ref alongside the state: the click handler needs the needle's
-  // position at the exact moment of the press, and state is a frame behind.
-  posRef.current = needle;
+  // position at the moment of the press, and state is a frame behind. Written
+  // in an effect rather than during render, so it holds exactly the position
+  // the player was looking at when they pressed.
+  useEffect(() => {
+    posRef.current = needle;
+  }, [needle]);
 
   useEffect(() => {
     setNeedle(startingNeedle());
+    // A VIEW is opening the game. A USE is finishing a round of five, which
+    // the shared tracker closes once five flips have been signalled.
+    markView("flipit");
+    resetSignals("flipit");
+    return () => {
+      timers.current.forEach((t) => window.clearTimeout(t));
+      timers.current = [];
+    };
   }, []);
 
   useEffect(() => {
@@ -68,6 +97,9 @@ export function FlipItGame() {
     setFinished(null);
     setNeedle(startingNeedle());
     running.current = true;
+    // A fresh round counts from zero, or an abandoned one would leave the
+    // tracker part-way and close the next round early.
+    resetSignals("flipit");
   }, []);
 
   const onFlip = useCallback(() => {
@@ -77,9 +109,9 @@ export function FlipItGame() {
     const index = pickRawStrip(states);
     if (index < 0) return;
 
-    // A play is a ROUND, not a press — counting every press would make a
-    // five-press game look five times more popular than a one-press one.
-    if (scores.length === 0) recordPlay("flipit");
+    // One raw signal per press. Five of them are one use — the threshold lives
+    // in the registry, not here, so every game is counted by the same rule.
+    signalUse("flipit");
 
     running.current = false;
     setBusy(true);
@@ -88,11 +120,11 @@ export function FlipItGame() {
     setFlipping(index);
 
     // swap the colour while the strip is edge-on, so it reads as turning over
-    window.setTimeout(() => {
+    later(() => {
       setStates((prev) => prev.map((s, i) => (i === index ? result.doneness : s)));
     }, 250);
 
-    window.setTimeout(() => {
+    later(() => {
       setFlipping(null);
       const nextScores = [...scores, result.score];
       setScores(nextScores);
@@ -104,13 +136,13 @@ export function FlipItGame() {
       } else {
         const id = ++tossId.current;
         setTosses((t) => [...t, { id, score: result.score, doneness: result.doneness }]);
-        window.setTimeout(() => setTosses((t) => t.filter((x) => x.id !== id)), 1800);
+        later(() => setTosses((t) => t.filter((x) => x.id !== id)), 1800);
         setNeedle(startingNeedle());
         running.current = true;
       }
       setBusy(false);
     }, 640);
-  }, [busy, finished, states, scores, reset]);
+  }, [busy, finished, states, scores, reset, later]);
 
   const label = finished ? "PLAY AGAIN" : "FLIP!";
   const done = scores.length;
@@ -244,6 +276,51 @@ export function FlipItGame() {
       >
         {label}
       </button>
+
+      {/* Asked only once the round is over, and skippable in one tap: the score
+          is already on screen, so this is a bonus and not a toll gate. */}
+      {finished && (
+        <ScorePrompt
+          scores={scores}
+          onPosted={(board, placed) => {
+            setPostedBoard(board);
+            if (placed) {
+              setPostedName(lastNameUsed());
+              setBoardOpen(true);
+            }
+          }}
+        />
+      )}
+
+      <button
+        type="button"
+        onClick={() => {
+          // Drop the copy handed back by the last post so the sheet fetches:
+          // other people have been grilling since.
+          setPostedBoard(null);
+          setBoardOpen(true);
+        }}
+        className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-2xl border py-3 text-sm font-bold text-muted-foreground transition active:scale-[0.99]"
+      >
+        <Trophy className="h-4 w-4" />
+        Leaderboard
+      </button>
+
+      <LeaderboardSheet
+        open={boardOpen}
+        onClose={() => setBoardOpen(false)}
+        board={postedBoard}
+        highlightName={postedName}
+      />
     </div>
   );
+}
+
+/** What they signed the last post with, for highlighting their own row. */
+function lastNameUsed(): string | undefined {
+  try {
+    return localStorage.getItem("shareat_flipit_name") || undefined;
+  } catch {
+    return undefined;
+  }
 }

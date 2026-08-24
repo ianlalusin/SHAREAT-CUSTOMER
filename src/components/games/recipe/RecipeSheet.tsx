@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { VerdictButtons } from "./VerdictButtons";
-import type { RecipeStep, Verdict } from "@/lib/games/recipe/types";
+import type { RecipeCounts, RecipeStep, Verdict } from "@/lib/games/recipe/types";
 import { attributionFor } from "@/lib/games/recipe/attribution";
 
 type Detail = {
@@ -35,7 +35,11 @@ export function RecipeSheet({
 }: {
   recipeId: string | null;
   onClose: () => void;
-  onVoted: () => void;
+  /** Hands the fresh tallies back so the LIST can be patched. The board behind
+   *  this sheet is a 90s cache that a vote deliberately never rebuilds, so
+   *  without these numbers the card the diner returns to still shows the count
+   *  from before they tapped. */
+  onVoted: (recipeId: string, counts: RecipeCounts) => void;
 }) {
   const isMobile = useIsMobile();
   const { toast } = useToast();
@@ -100,7 +104,7 @@ export function RecipeSheet({
       setCanVote(false);
       setReason("voted");
       toast({ title: "Thanks!", description: "Your rating is in." });
-      onVoted();
+      onVoted(recipeId!, json.counts as RecipeCounts);
     } catch (e: any) {
       toast({ variant: "destructive", title: "Couldn't rate that", description: e?.message ?? "Please try again." });
     }
@@ -133,10 +137,19 @@ export function RecipeSheet({
         ))}
       </ol>
 
-      <div className="flex items-center justify-center gap-4 text-sm">
-        <span>🤤 {detail.counts.yummy}</span>
-        <span>🙂 {detail.counts.good}</span>
-        <span>🤢 {detail.counts.yuck}</span>
+      <div className="text-center">
+        <div className="flex items-center justify-center gap-4 text-sm">
+          <span>🤤 {detail.counts.yummy}</span>
+          <span>🙂 {detail.counts.good}</span>
+          <span>🤢 {detail.counts.yuck}</span>
+        </div>
+        {/* The tallies alone never say how many people that is, so a recipe
+            with one Yummy and one with forty read the same at a glance. */}
+        <p className="mt-1 text-xs text-muted-foreground">
+          {detail.counts.total === 0
+            ? "No ratings yet"
+            : `${detail.counts.total} ${detail.counts.total === 1 ? "rating" : "ratings"}`}
+        </p>
       </div>
 
       <VerdictButtons canVote={canVote} reason={reason} onVote={submitVote} />

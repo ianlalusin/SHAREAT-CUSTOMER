@@ -521,9 +521,12 @@ export async function moderateRecipe(
           // its original date so it does not jump back to the top of Fresh.
           patch.publishedAtMs = current.publishedAtMs || Date.now();
           break;
+        // Reject and Archive are ONE state, not two. A rejected recipe and a
+        // recipe pulled after going live are both "not on the shelves, kept on
+        // file", and two buckets meant nobody ever looked in the second one.
+        // The distinction that matters is WHY, and that survives in
+        // `moderation.action`.
         case "reject":
-          patch.status = "rejected";
-          break;
         case "hide":
           patch.status = "hidden";
           break;

@@ -30,18 +30,20 @@ type QueueRow = {
   createdAtMs: number;
 };
 
-const STATUSES = ["pending", "published", "hidden", "rejected"] as const;
-
 /**
- * "hidden" is the stored status; "Archived" is what it is called on screen.
- * Archiving and hiding are the same act — off every shelf, kept, reversible —
- * so this is a label, not a second state to keep in sync.
+ * Three shelves, not four.
+ *
+ * "archived" is a VIEW, not a stored status: rejecting at review and pulling a
+ * live recipe are the same act — off every shelf, kept on file, reversible —
+ * and giving them separate tabs meant nobody ever opened the second one. The
+ * route reads both `hidden` and the legacy `rejected` behind this one label.
  */
+const STATUSES = ["pending", "published", "archived"] as const;
+
 const STATUS_LABEL: Record<(typeof STATUSES)[number], string> = {
   pending: "Pending",
   published: "Live",
-  hidden: "Archived",
-  rejected: "Rejected",
+  archived: "Archived",
 };
 
 export default function AdminGamesPage() {
@@ -217,7 +219,7 @@ export default function AdminGamesPage() {
                 );
               }}
             >
-              <TabsList className="grid grid-cols-4 rounded-2xl">
+              <TabsList className="grid grid-cols-3 rounded-2xl">
                 {STATUSES.map((s) => (
                   <TabsTrigger key={s} value={s}>
                     {STATUS_LABEL[s]}

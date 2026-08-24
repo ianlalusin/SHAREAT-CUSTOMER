@@ -14,7 +14,9 @@ export async function readGameConfigs(db: Firestore): Promise<Record<string, Gam
   return out;
 }
 
-export type ListedGame = Omit<GameDefinition, "icon"> & { iconName: string; sortOrder: number };
+/** The shelf payload. `metrics` stays server-side: a diner has no use for it,
+ *  and it is the admin chart that needs the definitions. */
+export type ListedGame = Omit<GameDefinition, "icon" | "metrics"> & { iconName: string; sortOrder: number };
 
 /**
  * The games a caller may see.

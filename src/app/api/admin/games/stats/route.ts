@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requireStaff } from "@/lib/server/games/admin-auth";
 import { readStats } from "@/lib/server/games/stats-store";
-import { totalsByGame, grandTotal, peakDay, MAX_STATS_DAYS } from "@/lib/games/stats";
+import { totalsByGame, grandTotal, peakDay, totalLegacyPlays, MAX_STATS_DAYS } from "@/lib/games/stats";
 import { GAMES } from "@/lib/games/registry";
 
 export const runtime = "nodejs";
@@ -22,11 +22,14 @@ export async function GET(req: Request) {
   return NextResponse.json({
     ok: true,
     days,
-    games: GAMES.map((g) => ({ id: g.id, title: g.title })),
+    // The definitions ride along with the numbers: two games on one axis mean
+    // nothing unless the screen can say what each one counted.
+    games: GAMES.map((g) => ({ id: g.id, title: g.title, metrics: g.metrics })),
     series,
     totals: totalsByGame(series, gameIds),
     grandTotal: grandTotal(series),
-    peak: peakDay(series),
+    peak: { view: peakDay(series, "view"), use: peakDay(series, "use") },
+    legacyPlays: totalLegacyPlays(series),
     byStore,
   });
 }

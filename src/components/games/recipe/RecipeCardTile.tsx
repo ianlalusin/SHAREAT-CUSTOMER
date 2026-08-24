@@ -55,10 +55,17 @@ export function RecipeCardTile({
             {by.store ? `${by.store} · ` : ""}{recipe.stepCount} steps
           </p>
 
-          <div className="mt-2 flex items-center gap-3 text-xs">
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
             <span title="Yummy">🤤 {counts.yummy}</span>
             <span title="Good">🙂 {counts.good}</span>
             <span title="Yuck">🤢 {counts.yuck}</span>
+            {/* How many PEOPLE, not just how the votes split. Without it a
+                recipe with one Yummy and one with forty read the same. */}
+            {counts.total > 0 && (
+              <span className="text-muted-foreground">
+                {counts.total} {counts.total === 1 ? "rating" : "ratings"}
+              </span>
+            )}
             {needsVotes && (
               <span className="text-muted-foreground">
                 {counts.total === 0 ? "Be the first to try it" : `${MIN_VOTES_TO_RANK - counts.total} more to rank`}

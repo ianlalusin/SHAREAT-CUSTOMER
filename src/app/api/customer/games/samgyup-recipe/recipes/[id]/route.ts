@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { resolveGameCaller } from "@/lib/server/games/auth";
+import { loadAndValidateSessionAccess } from "@/lib/server/customer-session-access";
 import { getRecipe, hasVoted } from "@/lib/server/games/recipe-store";
 
 export const runtime = "nodejs";
@@ -15,17 +16,35 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   }
 
   const caller = await resolveGameCaller(req);
-  const isPlayer = caller.tier === "player";
+
+  /**
+   * A token outlives the meal.
+   *
+   * Judging by the token's claims alone offered the verdict buttons to a diner
+   * whose table session had since closed: they tapped "I tried this", picked a
+   * verdict, and got "Customer access expired" back from the vote route, which
+   * does revalidate. The rating gate exists so a Yummy means somebody was
+   * actually eating here, so this answer has to come from the same check the
+   * vote makes — one session read, and only when a token was sent at all.
+   */
+  let player = caller.tier === "player" ? caller : null;
+  if (player) {
+    try {
+      await loadAndValidateSessionAccess(db, player.storeId, player.sessionId);
+    } catch {
+      player = null;
+    }
+  }
 
   // Why the verdict buttons are unavailable, resolved server-side so the UI
   // never has to guess — and so a disabled button can say something true.
   let alreadyVoted = false;
   let isOwn = false;
   let sameTable = false;
-  if (isPlayer) {
-    isOwn = recipe.authorKey === caller.identityKey;
-    sameTable = !!recipe.authorSessionId && recipe.authorSessionId === caller.sessionId;
-    alreadyVoted = isOwn ? false : await hasVoted(db, id, caller.identityKey);
+  if (player) {
+    isOwn = recipe.authorKey === player.identityKey;
+    sameTable = !!recipe.authorSessionId && recipe.authorSessionId === player.sessionId;
+    alreadyVoted = isOwn ? false : await hasVoted(db, id, player.identityKey);
   }
 
   return NextResponse.json({
@@ -41,7 +60,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       featured: recipe.featured,
       publishedAtMs: recipe.publishedAtMs,
     },
-    canVote: isPlayer && !isOwn && !sameTable && !alreadyVoted,
-    reason: !isPlayer ? "no_session" : isOwn ? "own" : sameTable ? "same_table" : alreadyVoted ? "voted" : null,
+    canVote: !!player && !isOwn && !sameTable && !alreadyVoted,
+    reason: !player ? "no_session" : isOwn ? "own" : sameTable ? "same_table" : alreadyVoted ? "voted" : null,
   });
 }

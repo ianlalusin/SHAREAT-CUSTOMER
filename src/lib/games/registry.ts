@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import { Flame, Utensils } from "lucide-react";
+import type { GameMetricDefinitions } from "@/lib/games/metrics";
 
 /**
  * The mini-games shelf.
@@ -37,6 +38,15 @@ export type GameDefinition = {
    * having content worth coming back to.
    */
   requiresSession: boolean;
+  /**
+   * What a view and a use MEAN for this game.
+   *
+   * Kept here so adding a game stays "a folder plus one entry", and so the
+   * admin chart can print the definition beside the number — two games on one
+   * axis are meaningless if nobody wrote down what each one counted.
+   * The shared tracker enforces the threshold; the game only emits signals.
+   */
+  metrics: GameMetricDefinitions;
 };
 
 export const GAMES: GameDefinition[] = [
@@ -48,6 +58,12 @@ export const GAMES: GameDefinition[] = [
     accent: "flame",
     href: "/play/samgyup-recipe",
     requiresSession: true,
+    metrics: {
+      view: { label: "Opened a recipe" },
+      // Rating IS the use — there is no round to finish, and a diner who reads
+      // a recipe without judging it has not used the game, only looked at it.
+      use: { label: "Rated a recipe", signal: "rating", threshold: 1 },
+    },
   },
   {
     id: "flipit",
@@ -58,9 +74,20 @@ export const GAMES: GameDefinition[] = [
     href: "/play/flipit",
     // Nothing is written and nothing is published, so this one plays anywhere.
     requiresSession: false,
+    metrics: {
+      view: { label: "Opened the game" },
+      // A finished ROUND, not a press. Counting presses would make a five-press
+      // game look five times more popular than a one-press one.
+      use: { label: "Finished a round", signal: "flip", threshold: 5 },
+    },
   },
 ];
 
 export function getGame(id: string): GameDefinition | null {
   return GAMES.find((g) => g.id === id) ?? null;
+}
+
+/** A game's metric definitions, or null when the id is not registered. */
+export function getGameMetrics(id: string): GameMetricDefinitions | null {
+  return getGame(id)?.metrics ?? null;
 }
