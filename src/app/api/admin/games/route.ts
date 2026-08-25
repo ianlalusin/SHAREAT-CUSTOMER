@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
-import { requireStaff } from "@/lib/server/games/admin-auth";
+import { requireRole, requireAdmin, hasStoreAccess, MANAGER_ROLES } from "@/lib/server/admin/access";
 import { readGameConfigs } from "@/lib/server/games/config";
 import { GAMES } from "@/lib/games/registry";
 import { countPending } from "@/lib/server/games/recipe-store";
@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 
 /** Every registered game with its live config — including the ones switched off. */
 export async function GET(req: Request) {
-  const gate = await requireStaff(req);
+  const gate = await requireRole(req, MANAGER_ROLES);
   if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
 
   const db = getAdminDb();
@@ -29,9 +29,17 @@ export async function GET(req: Request) {
   return NextResponse.json({ ok: true, games, pendingCount: await countPending(db) });
 }
 
-/** Flip a game on or off, chain-wide. */
+/**
+ * Flip a game on or off, CHAIN-WIDE.
+ *
+ * Admin-only, and that is the whole point: this writes `isActive` on the single
+ * shared `miniGames/{gameId}` document, so one branch acting on it takes the
+ * game away from every other branch. A manager who wants it off at their own
+ * store uses PUT /api/manager/games, which can only touch `disabledStoreIds`
+ * for the store they are assigned to.
+ */
 export async function PUT(req: Request) {
-  const gate = await requireStaff(req);
+  const gate = await requireAdmin(req);
   if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
 
   const body = await req.json().catch(() => ({}));

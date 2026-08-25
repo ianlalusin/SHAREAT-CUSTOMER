@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
-import { requireStaff, canModerateStore } from "@/lib/server/games/admin-auth";
+import { requireRole, hasStoreAccess, MANAGER_ROLES } from "@/lib/server/admin/access";
 import { getRecipe, editRecipe } from "@/lib/server/games/recipe-store";
 import { validateRecipeDraft } from "@/lib/games/recipe/validate";
 
@@ -15,7 +15,7 @@ export const runtime = "nodejs";
  * whoever wrote it.
  */
 export async function POST(req: Request) {
-  const gate = await requireStaff(req);
+  const gate = await requireRole(req, MANAGER_ROLES);
   if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
 
   const body = await req.json().catch(() => ({}));
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
   if (!recipe) return NextResponse.json({ ok: false, error: "Recipe not found." }, { status: 404 });
 
   // Scope resolved from the RECIPE, never the body — same as moderation.
-  if (!canModerateStore(gate.caller, recipe.authorStoreId)) {
+  if (!hasStoreAccess(gate.caller, recipe.authorStoreId)) {
     return NextResponse.json({ ok: false, error: "Not allowed for this store." }, { status: 403 });
   }
 

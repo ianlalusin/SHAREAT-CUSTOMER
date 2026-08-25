@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
-import { requireStaff, canModerateStore } from "@/lib/server/games/admin-auth";
+import { requireRole, hasStoreAccess, MANAGER_ROLES } from "@/lib/server/admin/access";
 import { getRecipe, moderateRecipe, type ModerationAction } from "@/lib/server/games/recipe-store";
 
 export const runtime = "nodejs";
@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 const ACTIONS: ModerationAction[] = ["approve", "reject", "hide", "feature", "unfeature"];
 
 export async function POST(req: Request) {
-  const gate = await requireStaff(req);
+  const gate = await requireRole(req, MANAGER_ROLES);
   if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
 
   const body = await req.json().catch(() => ({}));
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
 
   // Resolved from the RECIPE, never the request body — otherwise a manager at
   // one branch could moderate another branch's content by passing its id.
-  if (!canModerateStore(gate.caller, recipe.authorStoreId)) {
+  if (!hasStoreAccess(gate.caller, recipe.authorStoreId)) {
     return NextResponse.json({ ok: false, error: "Not allowed for this store." }, { status: 403 });
   }
 

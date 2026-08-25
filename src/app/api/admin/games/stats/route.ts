@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
-import { requireStaff } from "@/lib/server/games/admin-auth";
+import { requireRole, visibleStoreIds, MANAGER_ROLES } from "@/lib/server/admin/access";
 import { readStats } from "@/lib/server/games/stats-store";
 import { totalsByGame, grandTotal, peakDay, totalLegacyPlays, MAX_STATS_DAYS } from "@/lib/games/stats";
 import { GAMES } from "@/lib/games/registry";
@@ -8,7 +8,7 @@ import { GAMES } from "@/lib/games/registry";
 export const runtime = "nodejs";
 
 export async function GET(req: Request) {
-  const gate = await requireStaff(req);
+  const gate = await requireRole(req, MANAGER_ROLES);
   if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
 
   const url = new URL(req.url);
@@ -18,6 +18,14 @@ export async function GET(req: Request) {
   // the window actually contains plus everything currently registered.
   const gameIds = GAMES.map((g) => g.id);
   const { series, byStore } = await readStats(getAdminDb(), days, gameIds);
+
+  // The day documents are chain-wide, so `byStore` arrives holding every branch.
+  // A manager may only see their own: the totals and the chart stay chain-level
+  // (they are one shared board), but the per-branch breakdown is narrowed.
+  const allowed = new Set(visibleStoreIds(gate.caller, Object.keys(byStore)));
+  const scopedByStore = Object.fromEntries(
+    Object.entries(byStore).filter(([storeId]) => allowed.has(storeId))
+  );
 
   return NextResponse.json({
     ok: true,
@@ -30,6 +38,6 @@ export async function GET(req: Request) {
     grandTotal: grandTotal(series),
     peak: { view: peakDay(series, "view"), use: peakDay(series, "use") },
     legacyPlays: totalLegacyPlays(series),
-    byStore,
+    byStore: scopedByStore,
   });
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import { getAdminDb } from "@/lib/firebase/admin";
+import { requireStoreAccess, MANAGER_ROLES } from "@/lib/server/admin/access";
 import { projectCatalog } from "@/lib/catalog/project";
 
 export const runtime = "nodejs";
@@ -17,33 +18,14 @@ function bad(msg: string, status = 400) {
  */
 export async function GET(req: Request) {
   try {
-    const authz = req.headers.get("authorization") || "";
-    const m = authz.match(/^Bearer\s+(.+)$/i);
-    if (!m) return bad("Missing Authorization Bearer token.", 401);
-
-    const idToken = m[1];
-    const adminAuth = getAdminAuth();
-    const decoded = await adminAuth.verifyIdToken(idToken);
-
-    if ((decoded as any).customer === true) return bad("Not allowed.", 403);
-
-    const db = getAdminDb();
-    const uid = decoded.uid;
-    const staffSnap = await db.doc(`staff/${uid}`).get();
-    const staff = staffSnap.exists ? (staffSnap.data() as any) : null;
-
-    const isPlatformAdmin = decoded.platformAdmin === true;
-    const isActiveStaff = staff && staff.status === "active";
-    if (!isPlatformAdmin && !isActiveStaff) return bad("Not allowed.", 403);
-
     const { searchParams } = new URL(req.url);
     const storeId = String(searchParams.get("storeId") || "");
     if (!storeId) return bad("storeId required.", 400);
 
-    const assigned: string[] = Array.isArray(staff?.assignedStoreIds)
-      ? staff.assignedStoreIds.map((x: any) => String(x)).filter(Boolean)
-      : [];
-    if (!isPlatformAdmin && !assigned.includes(storeId)) return bad("No access to this store.", 403);
+    const gate = await requireStoreAccess(req, MANAGER_ROLES, storeId);
+    if (!gate.ok) return bad(gate.error, gate.status);
+
+    const db = getAdminDb();
 
     const cacheSnap = await db.doc(`stores/${storeId}/catalogCache/main`).get();
     // An unconfigured store previews as an empty menu rather than an error —

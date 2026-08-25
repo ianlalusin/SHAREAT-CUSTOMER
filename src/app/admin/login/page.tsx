@@ -14,6 +14,24 @@ import {
   signInWithPopup,
 } from "firebase/auth";
 
+/**
+ * Where a staff member lands after signing in.
+ *
+ * Signing in used to send everyone to /admin regardless of who they were. Ask
+ * the server which tree is theirs: a platform admin gets /admin, everyone else
+ * their branch tools. A Firebase account that is not staff at all is told so
+ * here rather than being bounced around by the layout gate.
+ */
+async function landingFor(user: { getIdToken: () => Promise<string> }): Promise<string | null> {
+  const res = await fetch("/api/admin/my-stores", {
+    headers: { Authorization: `Bearer ${await user.getIdToken()}` },
+    cache: "no-store",
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json?.ok) return null;
+  return json.isPlatformAdmin === true ? "/admin" : "/manager";
+}
+
 export default function AdminLoginPage() {
   const router = useRouter();
   const { toast } = useToast();
@@ -27,8 +45,10 @@ export default function AdminLoginPage() {
     setIsBusy(true);
     try {
       const auth = getAuth();
-      await signInWithEmailAndPassword(auth, email.trim(), password);
-      router.replace("/admin");
+      const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const to = await landingFor(cred.user);
+      if (!to) throw new Error("This account is not set up as staff.");
+      router.replace(to);
     } catch (err: any) {
       toast({
         variant: "destructive",
@@ -45,8 +65,10 @@ export default function AdminLoginPage() {
     try {
       const auth = getAuth();
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-      router.replace("/admin");
+      const cred = await signInWithPopup(auth, provider);
+      const to = await landingFor(cred.user);
+      if (!to) throw new Error("This account is not set up as staff.");
+      router.replace(to);
     } catch (err: any) {
       toast({
         variant: "destructive",
@@ -65,7 +87,7 @@ export default function AdminLoginPage() {
           <div className="mx-auto bg-primary/10 text-primary p-3 rounded-2xl w-fit">
             <Shield className="h-7 w-7" />
           </div>
-          <CardTitle className="text-2xl font-black">Admin Login</CardTitle>
+          <CardTitle className="text-2xl font-black">Staff Login</CardTitle>
           <CardDescription>Sign in with your staff account.</CardDescription>
         </CardHeader>
 

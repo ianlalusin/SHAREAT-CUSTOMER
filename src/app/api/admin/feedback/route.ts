@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import { getAdminDb } from "@/lib/firebase/admin";
+import { requireStoreAccess, MANAGER_ROLES } from "@/lib/server/admin/access";
 
 export const runtime = "nodejs";
 
@@ -19,43 +20,18 @@ type Row = {
 
 export async function GET(req: Request) {
   try {
-    const authz = req.headers.get("authorization") || "";
-    const m = authz.match(/^Bearer\s+(.+)$/i);
-    if (!m) return bad("Missing Authorization Bearer token.", 401);
-
-    const idToken = m[1];
-    const adminAuth = getAdminAuth();
-    const decoded = await adminAuth.verifyIdToken(idToken);
-
-    // Disallow customer tokens
-    if ((decoded as any).customer === true) return bad("Not allowed.", 403);
-
-    const db = getAdminDb();
-
-    // Basic staff check (active staff or platform admin) — same as /api/admin/my-stores
-    const uid = decoded.uid;
-    const staffSnap = await db.doc(`staff/${uid}`).get();
-    const staff = staffSnap.exists ? (staffSnap.data() as any) : null;
-
-    const isPlatformAdmin = decoded.platformAdmin === true;
-    const isActiveStaff = staff && staff.status === "active";
-    if (!isPlatformAdmin && !isActiveStaff) return bad("Not allowed.", 403);
-
     const url = new URL(req.url);
     const storeId = String(url.searchParams.get("storeId") || "");
     const rating = String(url.searchParams.get("rating") || "all");
     const limit = Math.min(Math.max(Number(url.searchParams.get("limit") || 300), 1), 2000);
 
-    if (!storeId) return bad("Missing storeId.", 400);
+    // The membership check used to be skipped entirely when the caller had no
+    // assignments, which let an unassigned staffer read ANY branch by passing
+    // its id. The shared gate carries no such exemption.
+    const gate = await requireStoreAccess(req, MANAGER_ROLES, storeId);
+    if (!gate.ok) return bad(gate.error, gate.status);
 
-    // Staff must be assigned to the store unless platform admin
-    const assigned: string[] = Array.isArray(staff?.assignedStoreIds)
-      ? staff.assignedStoreIds.map((x: any) => String(x)).filter(Boolean)
-      : [];
-
-    if (!isPlatformAdmin && assigned.length > 0 && !assigned.includes(storeId)) {
-      return bad("Not allowed for this store.", 403);
-    }
+    const db = getAdminDb();
 
     const rows: Row[] = [];
 

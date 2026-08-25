@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import { getAdminDb } from "@/lib/firebase/admin";
+import { resolveStaff } from "@/lib/server/admin/access";
 
 export const runtime = "nodejs";
 
@@ -9,36 +10,16 @@ function bad(msg: string, status = 400) {
 
 export async function GET(req: Request) {
   try {
-    const authz = req.headers.get("authorization") || "";
-    const m = authz.match(/^Bearer\s+(.+)$/i);
-    if (!m) return bad("Missing Authorization Bearer token.", 401);
-
-    const idToken = m[1];
-    const adminAuth = getAdminAuth();
-    const decoded = await adminAuth.verifyIdToken(idToken);
-
-    // Disallow customer tokens
-    if ((decoded as any).customer === true) return bad("Not allowed.", 403);
+    const gate = await resolveStaff(req);
+    if (!gate.ok) return bad(gate.error, gate.status);
 
     const db = getAdminDb();
 
-    // Basic staff check (active staff or platform admin)
-    const uid = decoded.uid;
-    const staffSnap = await db.doc(`staff/${uid}`).get();
-    const staff = staffSnap.exists ? (staffSnap.data() as any) : null;
-
-    const isPlatformAdmin = decoded.platformAdmin === true;
-    const isActiveStaff = staff && staff.status === "active";
-    if (!isPlatformAdmin && !isActiveStaff) return bad("Not allowed.", 403);
-
-    // Load assignedStoreIds from staff/{uid} (matches firestore.rules)
-    const assigned: string[] = Array.isArray(staff?.assignedStoreIds)
-      ? staff.assignedStoreIds.map((x: any) => String(x)).filter(Boolean)
-      : [];
-
-    // Platform admins can optionally see all stores if assignedStoreIds is empty
-    let storeIds = assigned;
-    if (isPlatformAdmin && storeIds.length === 0) {
+    // The one place a caller learns which branches belong to them. Every scoped
+    // route re-checks the storeId it is handed, so this list feeds the picker
+    // and is never itself the gate.
+    let storeIds = gate.caller.assignedStoreIds;
+    if (gate.caller.isPlatformAdmin && storeIds.length === 0) {
       // best-effort: list first 200 stores
       const allSnap = await db.collection("stores").limit(200).get();
       storeIds = allSnap.docs.map((d) => d.id);
@@ -59,7 +40,15 @@ export async function GET(req: Request) {
 
     results.sort((a, b) => (a.name || a.storeId).localeCompare(b.name || b.storeId));
 
-    return NextResponse.json({ ok: true, stores: results });
+    // Also the caller-context endpoint: the shell needs to know WHO is asking to
+    // decide which tree to show them, and doing it here saves a second round
+    // trip on every admin page load. Authorization still happens per route.
+    return NextResponse.json({
+      ok: true,
+      stores: results,
+      role: gate.caller.role,
+      isPlatformAdmin: gate.caller.isPlatformAdmin,
+    });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
   }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
-import { requireStaff, canModerateStore } from "@/lib/server/games/admin-auth";
+import { requireRole, hasStoreAccess, MANAGER_ROLES } from "@/lib/server/admin/access";
 import { listByStatus } from "@/lib/server/games/recipe-store";
 import type { RecipeStatus } from "@/lib/games/recipe/types";
 
@@ -22,7 +22,7 @@ const VIEWS: Record<string, RecipeStatus[]> = {
 };
 
 export async function GET(req: Request) {
-  const gate = await requireStaff(req);
+  const gate = await requireRole(req, MANAGER_ROLES);
   if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
 
   const url = new URL(req.url);
@@ -40,7 +40,7 @@ export async function GET(req: Request) {
   // would still be index-free, but the queue is small and filtering here keeps
   // the query shape identical for every caller.
   const recipes = all
-    .filter((r) => canModerateStore(gate.caller, r.authorStoreId))
+    .filter((r) => hasStoreAccess(gate.caller, r.authorStoreId))
     .sort((a, b) => b.createdAtMs - a.createdAtMs)
     .map((r) => ({
       id: r.id,

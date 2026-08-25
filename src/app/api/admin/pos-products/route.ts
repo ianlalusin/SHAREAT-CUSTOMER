@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import { getAdminDb } from "@/lib/firebase/admin";
+import { requireAdmin } from "@/lib/server/admin/access";
 
 export const runtime = "nodejs";
 
@@ -11,21 +12,12 @@ function bad(msg: string, status = 400) {
 
 export async function GET(req: Request) {
   try {
-    const authz = req.headers.get("authorization") || "";
-    const m = authz.match(/^Bearer\s+(.+)$/i);
-    if (!m) return bad("Missing Authorization Bearer token.", 401);
-
-    const decoded = await getAdminAuth().verifyIdToken(m[1]);
-    if ((decoded as any).customer === true) return bad("Not allowed.", 403);
+    // The whole chain catalog, with no store dimension to scope it by, so it is
+    // admin-only rather than open to every active staff member.
+    const gate = await requireAdmin(req);
+    if (!gate.ok) return bad(gate.error, gate.status);
 
     const db = getAdminDb();
-
-    const uid = decoded.uid;
-    const staffSnap = await db.doc(`staff/${uid}`).get();
-    const staff = staffSnap.exists ? (staffSnap.data() as any) : null;
-    const isPlatformAdmin = (decoded as any).platformAdmin === true;
-    const isActiveStaff = staff && staff.status === "active";
-    if (!isPlatformAdmin && !isActiveStaff) return bad("Not allowed.", 403);
 
     const url = new URL(req.url);
     const qRaw = String(url.searchParams.get("q") || "").trim().toLowerCase();
