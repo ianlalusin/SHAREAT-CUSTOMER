@@ -3,6 +3,10 @@ import { Inter, Baloo_Thambi_2 } from 'next/font/google';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 import { FirebaseClientProvider } from '@/firebase/client-provider';
+import { ChristmasHeaderDecor } from '@/components/christmas/ChristmasHeaderDecor';
+import { SnowDrift } from '@/components/christmas/SnowDrift';
+import { ChristmasMusic } from '@/components/christmas/ChristmasMusic';
+import { ChristmasFooterCountdown } from '@/components/christmas/ChristmasFooterCountdown';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -46,7 +50,11 @@ export default function RootLayout({
       <body className="font-body antialiased bg-zinc-50">
         <FirebaseClientProvider>
           <div className="main-content">
+            <ChristmasHeaderDecor />
+            <SnowDrift />
+            <ChristmasMusic />
             {children}
+            <ChristmasFooterCountdown />
             <Toaster />
           </div>
         </FirebaseClientProvider>

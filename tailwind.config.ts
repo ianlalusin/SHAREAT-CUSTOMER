@@ -42,6 +42,15 @@ export default {
           DEFAULT: 'hsl(var(--accent))',
           foreground: 'hsl(var(--accent-foreground))',
         },
+        pine: {
+          DEFAULT: 'hsl(var(--pine))',
+          foreground: 'hsl(var(--pine-foreground))',
+          deep: 'hsl(var(--pine-deep))',
+        },
+        gold: {
+          deep: 'hsl(var(--gold-deep))',
+          light: 'hsl(var(--gold-light))',
+        },
         destructive: {
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))',

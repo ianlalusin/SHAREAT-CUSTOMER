@@ -24,6 +24,13 @@
     --input: 0 0% 90%;
     --ring: 0 100% 44%;
     --radius: 1rem;
+
+    /* Sharelebration Christmas theme */
+    --pine: 154 60% 23%;
+    --pine-foreground: 0 0% 100%;
+    --pine-deep: 154 64% 15%;
+    --gold-deep: 38 76% 45%;
+    --gold-light: 45 100% 65%;
   }
 }
 
@@ -53,4 +60,23 @@
 
 .animate-spin-slow {
   animation: spin 3s linear infinite;
+}
+
+/* Sharelebration Christmas theme */
+@keyframes christmas-twinkle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .35; }
+}
+
+@keyframes christmas-snow-fall {
+  0% { transform: translateY(-8%) translateX(0); opacity: 0; }
+  10% { opacity: .8; }
+  100% { transform: translateY(110vh) translateX(14px); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .christmas-twinkle,
+  .christmas-snow-drop {
+    animation: none !important;
+  }
 }

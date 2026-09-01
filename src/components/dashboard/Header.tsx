@@ -3,6 +3,7 @@
 import { Badge } from "@/components/ui/badge";
 import { LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { PineSprigCorner } from "@/components/christmas/PineSprigCorner";
 
 interface HeaderProps {
   customerName: string;
@@ -38,6 +39,7 @@ export function DashboardHeader({ customerName, tableDisplayName, packageName, o
   return (
     <header className="bg-primary text-white sticky top-0 z-50 shadow-lg">
       <div className="container max-w-7xl mx-auto px-4 sm:px-8 py-4 relative">
+        <PineSprigCorner className="pointer-events-none absolute left-2 top-1 opacity-90 sm:left-4" />
         <button
           onClick={handleLogout}
           className="absolute right-4 sm:right-8 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/10 hover:bg-white/15 active:scale-95 transition border border-white/10"
