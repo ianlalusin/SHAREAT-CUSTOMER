@@ -5,7 +5,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { FirebaseClientProvider } from '@/firebase/client-provider';
 import { ChristmasHeaderDecor } from '@/components/christmas/ChristmasHeaderDecor';
 import { SnowDrift } from '@/components/christmas/SnowDrift';
-import { ChristmasMusic } from '@/components/christmas/ChristmasMusic';
+import { SantaSleigh } from '@/components/christmas/SantaSleigh';
+import { ChristmasMusicProvider } from '@/components/christmas/ChristmasMusicProvider';
 import { ChristmasFooterCountdown } from '@/components/christmas/ChristmasFooterCountdown';
 
 const inter = Inter({
@@ -49,14 +50,16 @@ export default function RootLayout({
     <html lang="en" className={`${inter.variable} ${balooThambi.variable}`} suppressHydrationWarning>
       <body className="font-body antialiased bg-zinc-50">
         <FirebaseClientProvider>
-          <div className="main-content">
-            <ChristmasHeaderDecor />
-            <SnowDrift />
-            <ChristmasMusic />
-            {children}
-            <ChristmasFooterCountdown />
-            <Toaster />
-          </div>
+          <ChristmasMusicProvider>
+            <div className="main-content">
+              <ChristmasHeaderDecor />
+              <SnowDrift />
+              <SantaSleigh />
+              {children}
+              <ChristmasFooterCountdown />
+              <Toaster />
+            </div>
+          </ChristmasMusicProvider>
         </FirebaseClientProvider>
       </body>
     </html>

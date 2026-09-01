@@ -3,6 +3,7 @@
 import { CheckCircle2, ChefHat, Loader2, ReceiptText, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RunningBill, SessionOrder } from "@/hooks/use-session-orders";
+import { CardCornerDecor } from "@/components/christmas/CardCornerDecor";
 
 /**
  * What this TABLE has ordered, on every phone at it, plus the running bill.
@@ -127,8 +128,12 @@ export function SessionOrdersPanel({
             const who = whoOrdered(order);
             const served = servedNote(order);
             return (
-              <li key={order.id} className="flex items-start gap-3 rounded-2xl border bg-white p-3 shadow-sm">
-                <div className="min-w-0 flex-1">
+              <li key={order.id} className="relative overflow-hidden flex items-start gap-3 rounded-2xl border bg-white p-3 shadow-sm">
+                <CardCornerDecor
+                  seed={order.itemName + order.id}
+                  className="pointer-events-none absolute -right-2 -bottom-2 h-11 w-11 opacity-30"
+                />
+                <div className="relative min-w-0 flex-1">
                   <div className="flex items-baseline gap-2">
                     <span className="text-sm font-bold">{order.qty}×</span>
                     <span className="text-sm font-semibold leading-tight">{order.itemName}</span>

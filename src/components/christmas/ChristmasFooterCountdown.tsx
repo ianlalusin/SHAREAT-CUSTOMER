@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { getChristmasCountdown, isCustomerFacingRoute, type ChristmasCountdown } from "@/lib/christmas-countdown";
+import { useChristmasMusic } from "./ChristmasMusicProvider";
 
 function pad(n: number) {
   return String(n).padStart(2, "0");
@@ -32,6 +33,7 @@ function OrnamentBadge({ value, label, from, to }: { value: string; label: strin
  */
 export function ChristmasFooterCountdown() {
   const pathname = usePathname();
+  const music = useChristmasMusic();
   const [cd, setCd] = useState<ChristmasCountdown | null>(null);
 
   useEffect(() => {
@@ -44,10 +46,21 @@ export function ChristmasFooterCountdown() {
 
   return (
     <div
-      className="mt-6 bg-gradient-to-b from-pine-deep to-pine px-4 py-6 text-center"
+      className="relative mt-6 bg-gradient-to-b from-pine-deep to-pine px-4 py-6 text-center"
       role="region"
       aria-label="Countdown to Christmas Sharelebration"
     >
+      {music ? (
+        <button
+          type="button"
+          onClick={music.toggle}
+          aria-pressed={!music.muted}
+          aria-label={music.muted ? "Play Christmas music" : "Mute Christmas music"}
+          className="christmas-pulse absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white active:scale-95 transition"
+        >
+          <span className="text-base" aria-hidden="true">{music.muted ? "🔇" : "🔈"}</span>
+        </button>
+      ) : null}
       <div className="font-bold text-white">🎄 Countdown to Christmas Sharelebration</div>
       <div className="mb-4 mt-0.5 text-xs text-white/70" aria-live="polite">
         {cd.isPast ? "Maligayang Pasko! 🎉" : `${cd.days} days until Noche Buena`}

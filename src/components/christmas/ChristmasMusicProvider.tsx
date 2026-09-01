@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { isCustomerFacingRoute } from "@/lib/christmas-countdown";
 
@@ -17,13 +17,21 @@ function pickTrack(): string {
   return choice;
 }
 
+const ChristmasMusicContext = createContext<{ muted: boolean; toggle: () => void } | null>(null);
+
+/** Read from wherever the mute toggle is rendered (the footer countdown). */
+export function useChristmasMusic() {
+  return useContext(ChristmasMusicContext);
+}
+
 /**
- * Site-wide ambient Christmas music. Browsers block autoplay-with-sound, so
- * the track loads muted/paused; the toggle is the only way sound starts.
- * One of the two royalty-free tracks is picked at random per browser
+ * Owns the site-wide ambient Christmas `<audio>` element and mute state.
+ * Browsers block autoplay-with-sound, so the track loads muted/paused; the
+ * toggle (rendered inside ChristmasFooterCountdown) is the only way sound
+ * starts. One of the two royalty-free tracks is picked at random per browser
  * session (sessionStorage), not swapped between page navigations.
  */
-export function ChristmasMusic() {
+export function ChristmasMusicProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [muted, setMuted] = useState(true);
@@ -55,26 +63,20 @@ export function ChristmasMusic() {
     audio.pause();
   }, [muted, track]);
 
-  if (!isCustomerFacingRoute(pathname ?? "/") || !track) return null;
+  const toggle = useCallback(() => {
+    setMuted((prev) => {
+      const next = !prev;
+      window.localStorage.setItem(MUTE_KEY, String(next));
+      return next;
+    });
+  }, []);
 
-  const toggle = () => {
-    const next = !muted;
-    setMuted(next);
-    window.localStorage.setItem(MUTE_KEY, String(next));
-  };
+  const active = isCustomerFacingRoute(pathname ?? "/");
 
   return (
-    <>
-      <audio ref={audioRef} src={track} loop preload="none" />
-      <button
-        type="button"
-        onClick={toggle}
-        aria-label={muted ? "Play Christmas music" : "Mute Christmas music"}
-        aria-pressed={!muted}
-        className="fixed left-3 top-3 z-50 flex h-11 w-11 items-center justify-center rounded-full border border-black/10 bg-white shadow-lg active:scale-95 transition"
-      >
-        <span className="text-lg" aria-hidden="true">{muted ? "🔇" : "🔈"}</span>
-      </button>
-    </>
+    <ChristmasMusicContext.Provider value={{ muted, toggle }}>
+      {active && track ? <audio ref={audioRef} src={track} loop preload="none" /> : null}
+      {children}
+    </ChristmasMusicContext.Provider>
   );
 }

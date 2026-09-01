@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { inFlightQty, type SessionOrder } from "@/hooks/use-session-orders";
 import { optionGroupsFor } from "@/lib/catalog/project";
 import type { CatalogCategory, CatalogEntry, CatalogOptionGroup, CatalogVariant } from "@/lib/catalog/types";
+import { CardCornerDecor } from "@/components/christmas/CardCornerDecor";
 
 function peso(n: number) {
   try {
@@ -358,6 +359,10 @@ function EntryTile({ entry, onOpen }: { entry: CatalogEntry; onOpen: () => void 
             {variantCount}
           </span>
         ) : null}
+        <CardCornerDecor
+          seed={entry.displayName}
+          className="pointer-events-none absolute right-1 top-1 h-6 w-6 drop-shadow-sm"
+        />
       </div>
 
       <div className="p-2">

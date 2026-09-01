@@ -19,6 +19,10 @@ import { getAuth } from "firebase/auth";
 import { useFirebase } from "@/firebase";
 import { formatCountdown } from "@/lib/refill-cooldown";
 import { applyRefillTap } from "@/lib/refill-selection";
+import { ParolStar } from "@/components/christmas/ParolStar";
+import { GarlandStrip } from "@/components/christmas/GarlandStrip";
+import { PineSprigCorner } from "@/components/christmas/PineSprigCorner";
+import { HangingOrnaments } from "@/components/christmas/HangingOrnaments";
 
 export type RefillCooldowns = {
   cooldownMs: number;
@@ -104,11 +108,18 @@ export function CustomerRefillModal(props: {
   if (isMobile) {
     return (
       <Drawer open={props.open} onOpenChange={handleOpenChange}>
-        <DrawerContent>
-          <DrawerHeader className="text-left">
-            <DrawerTitle>Order Refill</DrawerTitle>
-            <DrawerDescription>Choose 1 flavor per meat. Order each meat again once it arrives.</DrawerDescription>
+        <DrawerContent className="p-0 gap-0">
+          <DrawerHeader className="text-left bg-pine-deep pb-3">
+            <div className="flex items-center gap-2">
+              <ParolStar className="h-6 w-5 shrink-0" />
+              <DrawerTitle className="text-white">Order Refill</DrawerTitle>
+            </div>
+            <DrawerDescription className="text-white/75">
+              Choose 1 flavor per meat. Order each meat again once it arrives.
+            </DrawerDescription>
+            <GarlandStrip count={7} className="pt-1" />
           </DrawerHeader>
+          <HangingOrnaments className="pt-1 pb-2" />
           {content}
         </DrawerContent>
       </Drawer>
@@ -118,10 +129,19 @@ export function CustomerRefillModal(props: {
   return (
     <Dialog open={props.open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-4xl p-0 gap-0">
-        <DialogHeader className="p-4 pb-0">
-          <DialogTitle>Order Refill</DialogTitle>
-          <DialogDescription>Choose 1 flavor per meat. Order each meat again once it arrives.</DialogDescription>
+        <DialogHeader className="p-0 gap-0">
+          <div className="bg-pine-deep rounded-t-lg px-4 pt-4 pb-3">
+            <div className="flex items-center gap-2">
+              <ParolStar className="h-6 w-5 shrink-0" />
+              <DialogTitle className="text-white">Order Refill</DialogTitle>
+            </div>
+            <DialogDescription className="text-white/75 mt-1">
+              Choose 1 flavor per meat. Order each meat again once it arrives.
+            </DialogDescription>
+            <GarlandStrip count={9} className="pt-2" />
+          </div>
         </DialogHeader>
+        <HangingOrnaments className="pt-1 pb-2" />
         {content}
       </DialogContent>
     </Dialog>
@@ -876,11 +896,17 @@ function CustomerRefillContent({
         </div>
       </div>
 
-      <div className="p-4 border-t flex justify-end gap-2">
-        <Button variant="ghost" onClick={closeAndReset}>Cancel</Button>
-        <Button onClick={submitCart} disabled={isSubmitting || !!sessionIsLocked || (cart.size === 0 && !Object.values(otherQty).some((v) => Number(v || 0) > 0))}>
-          {isSubmitting ? <Loader2 className="animate-spin" /> : `Send`}
-        </Button>
+      <div className="relative border-t">
+        <GarlandStrip count={11} className="absolute inset-x-0 -top-[9px]" />
+        <div className="p-4 pt-5 flex items-center gap-2">
+          <PineSprigCorner className="hidden sm:block h-8 w-16 opacity-70" />
+          <div className="flex flex-1 justify-end gap-2">
+            <Button variant="ghost" onClick={closeAndReset}>Cancel</Button>
+            <Button onClick={submitCart} disabled={isSubmitting || !!sessionIsLocked || (cart.size === 0 && !Object.values(otherQty).some((v) => Number(v || 0) > 0))}>
+              {isSubmitting ? <Loader2 className="animate-spin" /> : `Send`}
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

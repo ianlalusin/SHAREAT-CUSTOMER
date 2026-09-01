@@ -74,9 +74,82 @@
   100% { transform: translateY(110vh) translateX(14px); opacity: 0; }
 }
 
+@keyframes christmas-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 255, 255, .4); }
+  50% { transform: scale(1.12); box-shadow: 0 0 0 7px rgba(255, 255, 255, 0); }
+}
+.christmas-pulse {
+  animation: christmas-pulse 1.8s ease-in-out infinite;
+}
+
+/* Corner decor (parol/tree/ornaments/santa/reindeer/sprig on cards) — a cheap
+   one-time pop-in plus a slow idle sway. transform/opacity only (no fill or
+   stroke animation) so it stays cheap even across a long scrolling grid. */
+@keyframes christmas-corner-pop {
+  from { transform: scale(0.4); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+@keyframes christmas-corner-sway {
+  0%, 100% { transform: rotate(-4deg); }
+  50% { transform: rotate(4deg); }
+}
+.christmas-corner-decor {
+  transform-origin: center;
+  animation:
+    christmas-corner-pop .4s ease-out both,
+    christmas-corner-sway 3.4s ease-in-out .4s infinite;
+  will-change: transform;
+}
+
+/* Santa's sleigh — glides left to right across the top of the screen every
+   couple of minutes, then sits off-screen for the rest of the cycle. Two
+   nested layers: the outer handles the long glide-then-wait cycle (translateX
+   only), the inner adds a small independent up/down bob so it reads as
+   flying rather than sliding on rails. */
+.santa-sleigh-track {
+  position: fixed;
+  top: 64px;
+  left: 0;
+  width: 100%;
+  height: 90px;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 25;
+}
+.santa-sleigh-bob {
+  width: 260px;
+  height: 90px;
+  animation: santa-sleigh-glide 75s linear infinite;
+  will-change: transform;
+}
+.santa-sleigh-scene {
+  width: 100%;
+  height: 100%;
+  animation: santa-sleigh-bob 2.4s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes santa-sleigh-glide {
+  0%   { transform: translateX(-320px); }
+  16%  { transform: translateX(calc(100vw + 40px)); }
+  100% { transform: translateX(calc(100vw + 40px)); }
+}
+@keyframes santa-sleigh-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+.santa-sleigh-sparkle circle {
+  animation: christmas-twinkle 1.4s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .christmas-twinkle,
-  .christmas-snow-drop {
+  .christmas-snow-drop,
+  .christmas-pulse,
+  .christmas-corner-decor,
+  .santa-sleigh-bob,
+  .santa-sleigh-scene,
+  .santa-sleigh-sparkle circle {
     animation: none !important;
   }
+  .santa-sleigh-track { display: none; }
 }
