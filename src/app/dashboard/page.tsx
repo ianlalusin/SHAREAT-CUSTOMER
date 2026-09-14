@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { collection, doc, getDocs, onSnapshot, query, where } from "firebase/firestore";
-import { Loader2, Plus, Bell, Star, Flame, Gamepad2 } from "lucide-react";
+import { Loader2, Plus, Bell, Star, Flame, Gamepad2, ShoppingBag } from "lucide-react";
 
 import { DashboardHeader } from "@/components/dashboard/Header";
+import { cn } from "@/lib/utils";
+import { waitForAuthUser } from "@/lib/auth-ready";
 import { Button } from "@/components/ui/button";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { CustomerRefillModal, type RefillCooldowns } from "@/components/customer/CustomerRefillModal";
@@ -37,6 +39,14 @@ type SessionDTO = {
   sessionMode: string;
   refillCooldowns?: RefillCooldowns | null;
 };
+
+function pesoLabel(n: number) {
+  try {
+    return new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(n || 0);
+  } catch {
+    return `₱${Number(n || 0)}`;
+  }
+}
 
 function getCookie(name: string) {
   if (typeof document === "undefined") return "";
@@ -118,8 +128,10 @@ export default function DashboardPage() {
     async function run() {
       setLoadingSession(true);
 
-      const auth = getAuth();
-      const user = auth.currentUser;
+      // Not `getAuth().currentUser`: that is null on every hard refresh until
+      // persistence rehydrates, and it bounced every reloading diner to "/".
+      const user = await waitForAuthUser();
+      if (cancelled) return;
 
       if (!user) {
         router.push("/");
@@ -201,14 +213,19 @@ export default function DashboardPage() {
    */
   const [hasGames, setHasGames] = useState(false);
 
+  // Parked basket summary from the menu, so the action grid can offer a
+  // second "Review order" button where the diner is actually looking.
+  const [cartSummary, setCartSummary] = useState({ count: 0, total: 0 });
+  const [reviewOpenRequest, setReviewOpenRequest] = useState(0);
+
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
 
     (async () => {
       try {
-        const user = getAuth().currentUser;
-        if (!user) return;
+        const user = await waitForAuthUser();
+        if (!user || cancelled) return;
         const res = await fetch("/api/customer/games", {
           headers: { Authorization: `Bearer ${await user.getIdToken()}` },
           cache: "no-store",
@@ -405,11 +422,36 @@ export default function DashboardPage() {
             rather than becoming a fifth equal-weight button competing with
             "Order Refill" for attention.
           */}
+          {/*
+            Only while something is parked in the basket. "Add to order" closes
+            the item sheet and the diner looks back up here, so without this
+            they read the red button as "sent" when the order is still parked.
+            Shares the row with Fun & Games when both are present.
+          */}
+          {cartSummary.count > 0 && (
+          <Button
+            className={cn(
+              "h-14 rounded-2xl font-bold shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all",
+              // Half a 420px row is tight for "Review order (n) · ₱1,234".
+              hasGames ? "col-span-1 px-2 text-sm" : "col-span-2 text-base"
+            )}
+            onClick={() => setReviewOpenRequest((n) => n + 1)}
+            data-basket-target
+            aria-label={`Review order, ${cartSummary.count} item${cartSummary.count === 1 ? "" : "s"}, ${pesoLabel(cartSummary.total)}`}
+          >
+            <ShoppingBag className="mr-2 h-5 w-5" />
+            Review order ({cartSummary.count}) · {pesoLabel(cartSummary.total)}
+          </Button>
+          )}
+
           {hasGames && (
           <button
             type="button"
             onClick={() => router.push("/play")}
-            className="col-span-2 h-14 rounded-2xl border-2 border-dashed border-primary/30 bg-white text-primary font-bold text-base flex items-center justify-center gap-2 hover:bg-primary/5 active:scale-[0.98] transition-all"
+            className={cn(
+              "h-14 rounded-2xl border-2 border-dashed border-primary/30 bg-white text-primary font-bold text-base flex items-center justify-center gap-2 hover:bg-primary/5 active:scale-[0.98] transition-all",
+              cartSummary.count > 0 ? "col-span-1" : "col-span-2"
+            )}
             aria-label="Open Fun and Games"
           >
             <Gamepad2 className="h-5 w-5" />
@@ -418,7 +460,12 @@ export default function DashboardPage() {
           )}
         </div>
 
-        <CustomerCatalog orders={orders} onOrderPlaced={refreshOrders} />
+        <CustomerCatalog
+          orders={orders}
+          onOrderPlaced={refreshOrders}
+          onCartChange={setCartSummary}
+          reviewOpenRequest={reviewOpenRequest}
+        />
 
         <SessionOrdersPanel orders={orders} bill={runningBill} isLoading={ordersLoading} error={ordersError} />
       </div>

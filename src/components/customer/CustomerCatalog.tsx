@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { waitForAuthUser } from "@/lib/auth-ready";
+import { flyToBasket } from "@/lib/fly-to-basket";
 import Image from "next/image";
 import { AlertTriangle, Layers, Loader2, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 
@@ -65,9 +67,24 @@ interface CustomerCatalogProps {
   orders?: SessionOrder[];
   /** Called after an order is sent, so the shared history refreshes. */
   onOrderPlaced?: () => void;
+  /**
+   * Reports the parked basket whenever it changes, so the dashboard can show a
+   * second "Review order" entry point up by the action buttons. The only other
+   * exit from the basket is the sticky bar under the menu grid, which a diner
+   * who tapped "Add to order" and looked back up never sees.
+   */
+  onCartChange?: (summary: { count: number; total: number }) => void;
+  /** Bump this number to open the review sheet from outside the menu. */
+  reviewOpenRequest?: number;
 }
 
-export function CustomerCatalog({ overrideCategories, orders = [], onOrderPlaced }: CustomerCatalogProps = {}) {
+export function CustomerCatalog({
+  overrideCategories,
+  orders = [],
+  onOrderPlaced,
+  onCartChange,
+  reviewOpenRequest = 0,
+}: CustomerCatalogProps = {}) {
   const isPreview = overrideCategories !== undefined;
   const isMobile = useIsMobile();
 
@@ -101,7 +118,10 @@ export function CustomerCatalog({ overrideCategories, orders = [], onOrderPlaced
       try {
         setIsLoading(true);
 
-        const user = getAuth().currentUser;
+        // Awaited, not read synchronously: on a hard refresh currentUser is
+        // still null here and the menu rendered empty.
+        const user = await waitForAuthUser();
+        if (cancelled) return;
         if (!user) {
           setCategories([]);
           setIsLoading(false);
@@ -174,7 +194,7 @@ export function CustomerCatalog({ overrideCategories, orders = [], onOrderPlaced
     if (!categoryNames.includes(activeCategory)) setActiveCategory(ALL);
   }, [categoryNames, activeCategory]);
 
-  const addToCart = useCallback((line: Omit<CartLine, "key">) => {
+  const addToCart = useCallback((line: Omit<CartLine, "key">, origin?: DOMRect) => {
     const key = cartKey(line.entry, line.variant, line.picks, line.note);
     setCart((prev) => {
       const existing = prev.find((l) => l.key === key);
@@ -186,10 +206,35 @@ export function CustomerCatalog({ overrideCategories, orders = [], onOrderPlaced
       return [...prev, { ...line, key }];
     });
     setActiveEntry(null);
+    // Show the line going INTO the basket, not to the kitchen. The sheet's
+    // own <img> is already decoded; the raw URL would not load mid-flight.
+    if (origin) {
+      const shown = document.querySelector<HTMLImageElement>(`img[alt="${CSS.escape(line.entry.displayName)}"]`);
+      flyToBasket(origin, shown?.currentSrc || line.variant?.imageUrl || line.entry.imageUrl);
+    }
   }, []);
 
   const cartTotal = cart.reduce((sum, l) => sum + l.unitPrice * l.qty, 0);
   const cartCount = cart.reduce((sum, l) => sum + l.qty, 0);
+
+  useEffect(() => {
+    onCartChange?.({ count: cartCount, total: cartTotal });
+  }, [cartCount, cartTotal, onCartChange]);
+
+  useEffect(() => {
+    if (reviewOpenRequest > 0 && cart.length > 0) setIsReviewOpen(true);
+    // Only the request counter should reopen the sheet; a cart edit must not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewOpenRequest]);
+
+  /**
+   * One request id per basket, held until the kitchen has it. A fresh id on
+   * every tap only stopped two simultaneous taps; a retry after a timed-out
+   * POST that had actually landed ordered everything twice. The id is
+   * re-minted only when the basket's contents change, so a retry of an edited
+   * basket is a new order rather than a silent "already sent".
+   */
+  const requestRef = useRef<{ id: string; sig: string } | null>(null);
 
   const sendOrder = useCallback(async () => {
     if (isSending || cart.length === 0) return;
@@ -200,12 +245,18 @@ export function CustomerCatalog({ overrideCategories, orders = [], onOrderPlaced
       if (!user) throw new Error("Please rejoin your session.");
       const idToken = await user.getIdToken();
 
+      // `key` already folds in sku, picks and note, so key+qty is the basket.
+      const sig = JSON.stringify(cart.map((l) => [l.key, l.qty]));
+      if (!requestRef.current || requestRef.current.sig !== sig) {
+        requestRef.current = { id: crypto.randomUUID(), sig };
+      }
+      const clientRequestId = requestRef.current.id;
+
       const res = await fetch("/api/customer/submit-addon-order", {
         method: "POST",
         headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          // One id per submission, so a retry or a double tap cannot order twice.
-          clientRequestId: crypto.randomUUID(),
+          clientRequestId,
           items: cart.map((l) => ({
             productId: l.entry.productId,
             variantId: l.variant?.productId ?? null,
@@ -217,8 +268,12 @@ export function CustomerCatalog({ overrideCategories, orders = [], onOrderPlaced
       });
 
       const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not send your order.");
+      // A retry of a request that did land comes back 409 "already sent". The
+      // kitchen has it, so this is the success it looks like from the table.
+      const alreadySent = res.status === 409 && /already sent/i.test(String(json?.error || ""));
+      if (!alreadySent && (!res.ok || !json?.ok)) throw new Error(json?.error || "Could not send your order.");
 
+      requestRef.current = null;
       setCart([]);
       setIsReviewOpen(false);
       // A toast, not a banner: this confirms one action and should get out of
@@ -287,7 +342,7 @@ export function CustomerCatalog({ overrideCategories, orders = [], onOrderPlaced
 
       {cartCount > 0 ? (
         <div className="sticky bottom-4 z-20 mt-4">
-          <Button className="w-full h-12 rounded-2xl shadow-lg" onClick={() => setIsReviewOpen(true)}>
+          <Button className="w-full h-12 rounded-2xl shadow-lg" onClick={() => setIsReviewOpen(true)} data-basket-target>
             <ShoppingBag className="mr-2 h-4 w-4" />
             Review order ({cartCount}) · {peso(cartTotal)}
           </Button>
@@ -390,7 +445,7 @@ function EntrySheet({
   canOrder: boolean;
   orders: SessionOrder[];
   onClose: () => void;
-  onAdd: (line: Omit<CartLine, "key">) => void;
+  onAdd: (line: Omit<CartLine, "key">, origin?: DOMRect) => void;
 }) {
   const open = !!entry;
   const orderable = !!entry && canOrder && entry.orderable;
@@ -449,7 +504,7 @@ function EntryDetail({
   entry: CatalogEntry;
   orderable: boolean;
   orders: SessionOrder[];
-  onAdd: (line: Omit<CartLine, "key">) => void;
+  onAdd: (line: Omit<CartLine, "key">, origin?: DOMRect) => void;
 }) {
   const variants = entry.kind === "group" ? entry.variants ?? [] : [];
   const [selectedId, setSelectedId] = useState<string>(variants[0]?.productId ?? "");
@@ -665,16 +720,20 @@ function EntryDetail({
           <Button
             className="w-full h-12 rounded-2xl"
             disabled={!canAdd}
-            onClick={() =>
-              onAdd({
-                entry,
-                variant: selected,
-                picks,
-                picksText,
-                unitPrice,
-                qty,
-                note: note.trim(),
-              })
+            onClick={(e) =>
+              onAdd(
+                {
+                  entry,
+                  variant: selected,
+                  picks,
+                  picksText,
+                  unitPrice,
+                  qty,
+                  note: note.trim(),
+                },
+                // Captured now: the sheet closes on add and this button unmounts.
+                e.currentTarget.getBoundingClientRect()
+              )
             }
           >
             {missingRequired.length > 0

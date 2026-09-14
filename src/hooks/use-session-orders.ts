@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { getAuth } from "firebase/auth";
+import { waitForAuthUser } from "@/lib/auth-ready";
 
 /**
  * The table's shared order history.
@@ -30,7 +30,9 @@ export function useSessionOrders(enabled: boolean) {
   const refresh = useCallback(async () => {
     if (!enabled) return;
     try {
-      const user = getAuth().currentUser;
+      // Awaited: on a hard refresh currentUser is still null on the first
+      // tick, and the order list stayed empty until the next poll.
+      const user = await waitForAuthUser();
       if (!user) return;
       const idToken = await user.getIdToken();
       const res = await fetch("/api/customer/session-orders", {

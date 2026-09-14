@@ -205,9 +205,11 @@ export function resolveOrderLines(snapshot: any, requested: unknown): ResolveRes
   for (const raw of lines as OrderRequestLine[]) {
     const productId = String(raw?.productId || "");
     const variantId = raw?.variantId ? String(raw.variantId) : "";
-    const qty = Math.floor(num(raw?.qty));
+    const qty = num(raw?.qty);
 
     if (!productId) return fail("Invalid item in your order.");
+    // Reject rather than floor: 1.5 silently became 1 on the ticket.
+    if (!Number.isInteger(qty)) return fail("Quantity must be a whole number.");
     if (qty < 1) return fail("Quantity must be at least 1.");
     if (qty > MAX_QTY_PER_LINE) return fail(`You can order at most ${MAX_QTY_PER_LINE} of one item at a time.`);
 

@@ -112,6 +112,16 @@ describe("resolveOrderLines — gates", () => {
     expect(resolveOrderLines(snapshot(), [line({ qty: -3 })]).ok).toBe(false);
     expect(resolveOrderLines(snapshot(), [line({ qty: MAX_QTY_PER_LINE + 1 })]).ok).toBe(false);
   });
+
+  it("refuses a fractional quantity instead of flooring it onto the ticket", () => {
+    const r = resolveOrderLines(snapshot(), [line({ qty: 1.5 })]);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/whole number/i);
+    expect(resolveOrderLines(snapshot(), [line({ qty: "abc" })]).ok).toBe(false);
+    // A numeric string is still a whole number; the stepper never sends one,
+    // but nothing is gained by refusing it.
+    expect(ok(resolveOrderLines(snapshot(), [line({ qty: "2" })]))[0].qty).toBe(2);
+  });
 });
 
 describe("resolveOrderLines — pricing is server-authoritative", () => {
