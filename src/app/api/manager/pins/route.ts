@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase/admin";
+import type { Firestore } from "firebase-admin/firestore";
+import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { requireStoreAccess, MANAGER_ROLES } from "@/lib/server/admin/access";
 
 export const runtime = "nodejs";
@@ -20,6 +21,46 @@ export type PinRow = {
   expiresAtMs: number;
   archivedAtMs: number;
 };
+
+/**
+ * Delete the Firebase Auth users behind a PIN's participants.
+ *
+ * Every PIN sign-in mints a custom token for `cust_part_<deviceHash>`, and
+ * `signInWithCustomToken` creates an Auth user for it that nothing removes —
+ * the pool passed 7,000 before this was noticed. Retiring a PIN on the POS
+ * side now deletes them; this covers the other exit, a manager deleting the
+ * PIN row here. Best-effort: a failure must never block the row delete, and
+ * only `cust_` uids are ever touched so a mis-set field cannot reach a staff
+ * or loyalty account. A 48h idle sweep in POS catches anything missed.
+ */
+async function deleteParticipantAuthUsers(
+  db: Firestore,
+  storeId: string,
+  sessionId: string,
+  pin: string
+): Promise<number> {
+  if (!sessionId) return 0;
+  const snap = await db
+    .collection(`stores/${storeId}/activeSessions/${sessionId}/customerParticipants`)
+    .where("pinSnapshot", "==", pin)
+    .get();
+  const uids = Array.from(
+    new Set(
+      snap.docs
+        .map((d) => String(d.data()?.claimedByUid || ""))
+        .filter((uid) => uid.startsWith("cust_"))
+    )
+  );
+  if (uids.length === 0) return 0;
+  const auth = getAdminAuth();
+  const results = await Promise.allSettled(uids.map((uid) => auth.deleteUser(uid)));
+  let deleted = 0;
+  results.forEach((r, i) => {
+    if (r.status === "fulfilled" || (r.reason as any)?.code === "auth/user-not-found") deleted++;
+    else console.warn("[manager/pins] auth user delete failed", uids[i], (r.reason as any)?.message);
+  });
+  return deleted;
+}
 
 function toRow(id: string, x: any): PinRow {
   return {
@@ -109,6 +150,11 @@ export async function DELETE(req: Request) {
     return bad("That table is still seated. Wait for it to expire or be reissued.", 409);
   }
 
+  const sessionId = String((snap.data() as any)?.sessionId || "");
   await ref.delete();
-  return NextResponse.json({ ok: true, pin });
+  const authDeleted = await deleteParticipantAuthUsers(db, storeId, sessionId, pin).catch((e) => {
+    console.warn("[manager/pins] participant auth cleanup failed", pin, e?.message);
+    return 0;
+  });
+  return NextResponse.json({ ok: true, pin, authDeleted });
 }
