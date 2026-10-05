@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import { canDinerUnlink, CLEARED_LINKER_FIELDS } from "@/lib/server/session-link";
 
 export const runtime = "nodejs";
 
@@ -34,12 +35,17 @@ export async function POST(req: Request) {
     if (sData.linkedCustomerLockedAt) {
       return bad("This session has been paid; link can no longer be changed.", 409);
     }
+    // A cashier link is earn-only and belongs to the cashier: no diner at the
+    // table may drop it (the caller is not the linker).
+    const verdict = canDinerUnlink(sData);
+    if (!verdict.ok) return bad(verdict.error, verdict.status);
   }
 
   const clear = {
     linkedCustomerPhone: null,
     linkedByParticipantId: null,
     linkedCustomerName: null,
+    ...CLEARED_LINKER_FIELDS,
   };
 
   const batch = db.batch();

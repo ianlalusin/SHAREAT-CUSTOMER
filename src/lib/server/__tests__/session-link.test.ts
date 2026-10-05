@@ -1,0 +1,67 @@
+import { describe, it, expect } from "vitest";
+import { canDinerUnlink, decideDinerLink, isCashierLinked, CLEARED_LINKER_FIELDS } from "../session-link";
+
+const cashierLink = {
+  linkedCustomerPhone: "09170000001",
+  linkedCustomerName: "Ana",
+  linkedByParticipantId: null,
+  linkedBy: "cashier",
+  linkedByUid: "uid-1",
+  linkedAt: "t",
+};
+const dinerLink = { ...cashierLink, linkedBy: null, linkedByUid: null, linkedAt: null, linkedByParticipantId: "p1" };
+
+describe("isCashierLinked", () => {
+  it("is true only for linkedBy === 'cashier'", () => {
+    expect(isCashierLinked(cashierLink)).toBe(true);
+    expect(isCashierLinked(dinerLink)).toBe(false);
+    expect(isCashierLinked({})).toBe(false);
+    expect(isCashierLinked(null)).toBe(false);
+  });
+});
+
+describe("decideDinerLink", () => {
+  it("allows linking onto a missing or unlinked session", () => {
+    expect(decideDinerLink(null, "0917")).toEqual({ ok: true });
+    expect(decideDinerLink({ linkedCustomerPhone: null }, "0917")).toEqual({ ok: true });
+  });
+
+  it("409s when the session is locked", () => {
+    const r = decideDinerLink({ linkedCustomerLockedAt: 1 }, "0917");
+    expect(r).toMatchObject({ ok: false, status: 409 });
+  });
+
+  it("409s a different phone onto a diner link", () => {
+    const r = decideDinerLink(dinerLink, "09179999999");
+    expect(r).toMatchObject({ ok: false, status: 409 });
+    expect((r as any).error).toContain("unlink");
+  });
+
+  it("409s a different phone onto a cashier link, without telling them to unlink", () => {
+    const r = decideDinerLink(cashierLink, "09179999999");
+    expect(r).toMatchObject({ ok: false, status: 409 });
+    expect((r as any).error).toContain("cashier");
+    expect((r as any).error).not.toContain("unlink");
+  });
+
+  it("allows the SAME phone onto a cashier link (upgrade) and a diner link (idempotent)", () => {
+    expect(decideDinerLink(cashierLink, "09170000001")).toEqual({ ok: true });
+    expect(decideDinerLink(dinerLink, "09170000001")).toEqual({ ok: true });
+  });
+});
+
+describe("canDinerUnlink", () => {
+  it("refuses a cashier link with 403", () => {
+    expect(canDinerUnlink(cashierLink)).toMatchObject({ ok: false, status: 403 });
+  });
+  it("allows a diner link or nothing", () => {
+    expect(canDinerUnlink(dinerLink)).toEqual({ ok: true });
+    expect(canDinerUnlink(null)).toEqual({ ok: true });
+  });
+});
+
+describe("CLEARED_LINKER_FIELDS", () => {
+  it("nulls every cashier-provenance field", () => {
+    expect(CLEARED_LINKER_FIELDS).toEqual({ linkedBy: null, linkedByUid: null, linkedAt: null });
+  });
+});
