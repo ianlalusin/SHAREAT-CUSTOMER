@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import bcrypt from "bcryptjs";
 import { FieldValue } from "firebase-admin/firestore";
+import { resolveSessionCard } from "@/lib/server/session-link";
 
 export const runtime = "nodejs";
 
@@ -34,8 +35,15 @@ export async function POST(req: Request) {
     if (!storeId || !sessionId) return bad("Session claims missing storeId/sessionId.", 403);
 
     const activeSnap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
-    phone = activeSnap.data()?.linkedCustomerPhone ?? null;
-    if (!phone) return bad("No linked Sharelebrator account on this session.", 404);
+    // Only the participant that linked the card may edit it (password is also
+    // required below); a cashier link is earn-only.
+    const card = resolveSessionCard(activeSnap.data(), String(decoded.participantId || ""));
+    if (!card.ok) {
+      return card.reason === "none"
+        ? bad("No linked Sharelebrator account on this session.", 404)
+        : bad(card.message, 403);
+    }
+    phone = card.phone;
   } else if (decoded.loyaltyCustomer === true) {
     phone = String(decoded.phone || "");
     if (!phone) return bad("Loyalty token missing phone claim.", 403);

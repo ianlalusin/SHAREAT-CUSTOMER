@@ -1,25 +1,12 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { FieldValue } from "firebase-admin/firestore";
+import { resolveTokenCard } from "@/lib/server/session-link";
 
 export const runtime = "nodejs";
 
 function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
-}
-
-// Resolve the loyalty member's phone from either auth mode (session-linked
-// customer or a loyalty-card login). Mirrors /me, /rewards, /redeem.
-async function resolvePhone(db: any, decoded: any): Promise<string | null> {
-  if (decoded.customer === true) {
-    const storeId = String(decoded.storeId || "");
-    const sessionId = String(decoded.sessionId || "");
-    if (!storeId || !sessionId) return null;
-    const snap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
-    return snap.exists ? (snap.data()?.linkedCustomerPhone ?? null) : null;
-  }
-  if (decoded.loyaltyCustomer === true) return String(decoded.phone || "") || null;
-  return null;
 }
 
 /**
@@ -50,8 +37,9 @@ export async function POST(req: Request) {
   if (!voucherId) return bad("Missing voucherId.");
 
   const db = getAdminDb();
-  const phone = await resolvePhone(db, decoded);
-  if (!phone) return bad("No loyalty card linked.", 403);
+  const card = await resolveTokenCard(db, decoded);
+  if (!card.ok) return bad(card.message, 403);
+  const phone = card.phone;
 
   const voucherRef = db.doc(`loyaltyRedemptions/${voucherId}`);
 

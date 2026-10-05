@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { canDinerUnlink, decideDinerLink, isCashierLinked, CLEARED_LINKER_FIELDS } from "../session-link";
+import {
+  canDinerUnlink,
+  decideDinerLink,
+  isCashierLinked,
+  resolveSessionCard,
+  resolveTokenCard,
+  CLEARED_LINKER_FIELDS,
+} from "../session-link";
 
 const cashierLink = {
   linkedCustomerPhone: "09170000001",
@@ -63,5 +70,45 @@ describe("canDinerUnlink", () => {
 describe("CLEARED_LINKER_FIELDS", () => {
   it("nulls every cashier-provenance field", () => {
     expect(CLEARED_LINKER_FIELDS).toEqual({ linkedBy: null, linkedByUid: null, linkedAt: null });
+  });
+});
+
+describe("resolveSessionCard", () => {
+  it("gives the card to the participant that linked it", () => {
+    expect(resolveSessionCard(dinerLink, "p1")).toEqual({ ok: true, phone: "09170000001" });
+  });
+  it("refuses another participant at the table", () => {
+    expect(resolveSessionCard(dinerLink, "p2")).toMatchObject({ ok: false, reason: "other" });
+    expect(resolveSessionCard(dinerLink, "")).toMatchObject({ ok: false, reason: "other" });
+  });
+  it("refuses everyone on a cashier link, with its own reason", () => {
+    expect(resolveSessionCard(cashierLink, "p1")).toMatchObject({ ok: false, reason: "cashier" });
+    expect(resolveSessionCard({ ...cashierLink, linkedByParticipantId: "p1" }, "p1")).toMatchObject({
+      ok: false,
+      reason: "cashier",
+    });
+  });
+  it("reports no card when nothing is linked", () => {
+    expect(resolveSessionCard({ linkedCustomerPhone: null }, "p1")).toMatchObject({ ok: false, reason: "none" });
+    expect(resolveSessionCard(null, "p1")).toMatchObject({ ok: false, reason: "none" });
+  });
+});
+
+describe("resolveTokenCard", () => {
+  const dbWith = (data: any) => ({ doc: () => ({ get: async () => ({ exists: !!data, data: () => data }) }) });
+  const sess = (participantId: string) => ({ customer: true, storeId: "s", sessionId: "x", participantId });
+
+  it("applies the session rule to table tokens", async () => {
+    expect(await resolveTokenCard(dbWith(dinerLink), sess("p1"))).toEqual({ ok: true, phone: "09170000001" });
+    expect(await resolveTokenCard(dbWith(dinerLink), sess("p2"))).toMatchObject({ ok: false, reason: "other" });
+    expect(await resolveTokenCard(dbWith(cashierLink), sess("p1"))).toMatchObject({ ok: false, reason: "cashier" });
+    expect(await resolveTokenCard(dbWith(null), sess("p1"))).toMatchObject({ ok: false, reason: "none" });
+  });
+  it("trusts a loyalty-card login's own phone", async () => {
+    expect(await resolveTokenCard(dbWith(null), { loyaltyCustomer: true, phone: "0917" })).toEqual({ ok: true, phone: "0917" });
+    expect(await resolveTokenCard(dbWith(null), { loyaltyCustomer: true })).toMatchObject({ ok: false });
+  });
+  it("rejects other token types", async () => {
+    expect(await resolveTokenCard(dbWith(dinerLink), {})).toMatchObject({ ok: false, reason: "none" });
   });
 });

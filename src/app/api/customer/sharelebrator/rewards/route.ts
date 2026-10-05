@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { FieldValue } from "firebase-admin/firestore";
 import { isRewardOfferedAtStore } from "@/lib/loyaltyRewardScope";
+import { resolveTokenCard } from "@/lib/server/session-link";
 
 export const runtime = "nodejs";
 
@@ -49,20 +50,6 @@ async function expireStaleVouchers(db: any, docs: any[]): Promise<void> {
   }
 }
 
-// Resolve the loyalty member's phone from either auth mode (session-linked
-// customer or a loyalty-card login). Mirrors /me and transfer-points.
-async function resolvePhone(db: any, decoded: any): Promise<string | null> {
-  if (decoded.customer === true) {
-    const storeId = String(decoded.storeId || "");
-    const sessionId = String(decoded.sessionId || "");
-    if (!storeId || !sessionId) return null;
-    const snap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
-    return snap.exists ? (snap.data()?.linkedCustomerPhone ?? null) : null;
-  }
-  if (decoded.loyaltyCustomer === true) return String(decoded.phone || "") || null;
-  return null;
-}
-
 export async function GET(req: Request) {
   const authHeader = req.headers.get("authorization") || "";
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
@@ -76,8 +63,11 @@ export async function GET(req: Request) {
   }
 
   const db = getAdminDb();
-  const phone = await resolvePhone(db, decoded);
-  if (!phone) return NextResponse.json({ ok: true, linked: false, rewards: [], vouchers: [], pointsBalance: 0 });
+  // Not the cardholder (or a cashier link) reads as "no card": nothing of the
+  // linked member's vouchers or balance leaks to the rest of the table.
+  const card = await resolveTokenCard(db, decoded);
+  if (!card.ok) return NextResponse.json({ ok: true, linked: false, rewards: [], vouchers: [], pointsBalance: 0 });
+  const phone = card.phone;
 
   try {
     const rewardsSnap = await db.collection("loyaltyRewards").get();

@@ -75,3 +75,60 @@ export function canDinerUnlink(
   }
   return { ok: true };
 }
+
+export type SessionCard =
+  | { ok: true; phone: string }
+  | { ok: false; reason: "none" | "cashier" | "other"; message: string };
+
+/**
+ * Which card, if any, the caller may ACT on (redeem, transfer, edit profile…)
+ * given the shared session doc. Same ownership rule as /me: only the
+ * participant that linked the card gets it — everyone else at the table shares
+ * the session doc but not the card.
+ *
+ * A cashier link has no participant (`linkedByParticipantId` null) and is
+ * earn-only in POS, so it is refused outright with its own message; no diner
+ * can act on it until the cardholder links it themselves (same phone), which
+ * upgrades it (see decideDinerLink).
+ */
+export function resolveSessionCard(
+  data: Record<string, any> | null | undefined,
+  participantId: string
+): SessionCard {
+  const phone = data?.linkedCustomerPhone as string | null | undefined;
+  if (!phone) return { ok: false, reason: "none", message: "No loyalty card linked." };
+  if (isCashierLinked(data)) {
+    return {
+      ok: false,
+      reason: "cashier",
+      message:
+        "This card was linked by the cashier and can only earn points. Log in with your card on your own phone to use it.",
+    };
+  }
+  const owner = String(data?.linkedByParticipantId || "");
+  if (!owner || !participantId || owner !== participantId) {
+    return { ok: false, reason: "other", message: "This card belongs to someone else at your table." };
+  }
+  return { ok: true, phone };
+}
+
+/**
+ * The card behind a verified ID token: a table session (subject to
+ * resolveSessionCard) or a loyalty-card login (the token's own phone).
+ */
+export async function resolveTokenCard(db: any, decoded: any): Promise<SessionCard> {
+  const none: SessionCard = { ok: false, reason: "none", message: "No loyalty card linked." };
+  if (decoded.customer === true) {
+    const storeId = String(decoded.storeId || "");
+    const sessionId = String(decoded.sessionId || "");
+    if (!storeId || !sessionId) return none;
+    const snap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
+    if (!snap.exists) return none;
+    return resolveSessionCard(snap.data(), String(decoded.participantId || ""));
+  }
+  if (decoded.loyaltyCustomer === true) {
+    const phone = String(decoded.phone || "");
+    return phone ? { ok: true, phone } : none;
+  }
+  return none;
+}
