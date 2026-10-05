@@ -219,19 +219,24 @@ export async function POST(req: Request) {
      * session is locked — the bill is settled and nothing about the link should
      * move — but they still get the card back, having proved it is theirs.
      */
-    const ownerSnap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
-    const ownerData = ownerSnap.exists ? (ownerSnap.data() as any) : null;
-    const isSessionCardholder = !!ownerData && ownerData.linkedCustomerPhone === phone;
+    const ownerRef = db.doc(`stores/${storeId}/activeSessions/${sessionId}`);
+    const ownerSessionRef = db.doc(`stores/${storeId}/sessions/${sessionId}`);
 
-    if (isSessionCardholder && !ownerData.linkedCustomerLockedAt && participantId) {
-      // Also upgrades a cashier link to a diner link: they proved the card.
-      const rebind = { linkedByParticipantId: participantId, ...CLEARED_LINKER_FIELDS };
-      const batch = db.batch();
-      batch.update(db.doc(`stores/${storeId}/activeSessions/${sessionId}`), rebind);
-      const sSnap = await db.doc(`stores/${storeId}/sessions/${sessionId}`).get();
-      if (sSnap.exists) batch.update(db.doc(`stores/${storeId}/sessions/${sessionId}`), rebind);
-      await batch.commit();
-    }
+    // Re-checked inside the transaction so the re-bind cannot land on a link
+    // that was changed, or locked by payment, since it was read.
+    const isSessionCardholder = await db.runTransaction(async (tx: any) => {
+      const ownerSnap = await tx.get(ownerRef);
+      const sSnap = await tx.get(ownerSessionRef);
+      const ownerData = ownerSnap.exists ? (ownerSnap.data() as any) : null;
+      const isCardholder = !!ownerData && ownerData.linkedCustomerPhone === phone;
+      if (isCardholder && !ownerData.linkedCustomerLockedAt && participantId) {
+        // Also upgrades a cashier link to a diner link: they proved the card.
+        const rebind = { linkedByParticipantId: participantId, ...CLEARED_LINKER_FIELDS };
+        tx.update(ownerRef, rebind);
+        if (sSnap.exists) tx.update(ownerSessionRef, rebind);
+      }
+      return isCardholder;
+    });
 
     return NextResponse.json({
       ok: true,
