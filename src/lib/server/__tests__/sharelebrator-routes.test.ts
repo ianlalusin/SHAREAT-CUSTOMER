@@ -70,6 +70,7 @@ import { POST as unlinkPOST } from "@/app/api/customer/sharelebrator/unlink-sess
 import { POST as redeemPOST } from "@/app/api/customer/sharelebrator/redeem/route";
 import { POST as transferPOST } from "@/app/api/customer/sharelebrator/transfer-points/route";
 import { POST as profilePOST } from "@/app/api/customer/sharelebrator/update-profile/route";
+import { GET as meGET } from "@/app/api/customer/sharelebrator/me/route";
 import { GET as rewardsGET } from "@/app/api/customer/sharelebrator/rewards/route";
 import { POST as collectPOST } from "@/app/api/customer/sharelebrator/collect-voucher/route";
 
@@ -417,5 +418,34 @@ describe("edge cases", () => {
     expect(res.status).toBe(200);
     expect(h.store.get(ACTIVE)).toMatchObject({ linkedCustomerName: "Anita", linkedByParticipantId: "p1" });
     expect(h.store.get(SESSION).linkedCustomerName).toBe("Anita");
+  });
+});
+
+describe("/me tells the diner who to ask", () => {
+  const get = (t: string) => meGET(new Request("http://x", { headers: { authorization: `Bearer ${t}` } }));
+
+  it("flags a cashier link as byCashier, with only the display name", async () => {
+    seed(cashierLink);
+    const body = await (await get(token("p2"))).json();
+    expect(body).toEqual({
+      ok: true,
+      linked: false,
+      sessionLink: { byOther: true, byCashier: true, name: "Ana" },
+    });
+  });
+
+  it("flags another diner's link as not byCashier", async () => {
+    seed({ ...cashierLink, linkedBy: null, linkedByUid: null, linkedAt: null, linkedByParticipantId: "p1" });
+    const body = await (await get(token("p2"))).json();
+    expect(body.sessionLink).toEqual({ byOther: true, byCashier: false, name: "Ana" });
+  });
+
+  it("still hides the card from the cashier-linked table's diners but not from an upgraded diner", async () => {
+    seed(cashierLink);
+    expect((await (await get(token("p1"))).json()).linked).toBe(false);
+    await linkPOST(req(token("p1"), login(ANA))); // same card upgrades the link
+    const body = await (await get(token("p1"))).json();
+    expect(body.linked).toBe(true);
+    expect(body.sessionLink).toBeUndefined();
   });
 });

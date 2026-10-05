@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { loadLoyaltyCard } from "@/lib/server/loyalty-card";
+import { isCashierLinked } from "@/lib/server/session-link";
 
 export const runtime = "nodejs";
 
@@ -60,6 +61,9 @@ export async function GET(req: Request) {
         // to say who to ask, and no more.
         sessionLink: {
           byOther: true,
+          // Who must be asked to change it: only the cashier can undo a
+          // cashier link, so the UI points the diner there, not at the card.
+          byCashier: isCashierLinked(sessionData),
           name: String(sessionData?.linkedCustomerName || "another diner"),
         },
       });
