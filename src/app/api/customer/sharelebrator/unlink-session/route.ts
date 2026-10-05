@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import { canDinerUnlink, CLEARED_LINKER_FIELDS } from "@/lib/server/session-link";
 
 export const runtime = "nodejs";
 
@@ -28,25 +29,33 @@ export async function POST(req: Request) {
   const activeRef = db.doc(`stores/${storeId}/activeSessions/${sessionId}`);
   const sessionRef = db.doc(`stores/${storeId}/sessions/${sessionId}`);
 
-  const activeSnap = await activeRef.get();
-  if (activeSnap.exists) {
-    const sData = activeSnap.data() as any;
-    if (sData.linkedCustomerLockedAt) {
-      return bad("This session has been paid; link can no longer be changed.", 409);
-    }
-  }
-
   const clear = {
     linkedCustomerPhone: null,
     linkedByParticipantId: null,
     linkedCustomerName: null,
+    ...CLEARED_LINKER_FIELDS,
   };
 
-  const batch = db.batch();
-  if (activeSnap.exists) batch.update(activeRef, clear);
-  const sessionSnap = await sessionRef.get();
-  if (sessionSnap.exists) batch.update(sessionRef, clear);
-  await batch.commit();
+  // Check and write in one transaction: a cashier link (or a payment lock)
+  // landing between a separate read and write must not be nulled by a diner.
+  const rejected = await db.runTransaction(async (tx: any) => {
+    const activeSnap = await tx.get(activeRef);
+    const sessionSnap = await tx.get(sessionRef);
+    if (activeSnap.exists) {
+      const sData = activeSnap.data() as any;
+      if (sData.linkedCustomerLockedAt) {
+        return { error: "This session has been paid; link can no longer be changed.", status: 409 };
+      }
+      // A cashier link is earn-only and belongs to the cashier: no diner at the
+      // table may drop it (the caller is not the linker).
+      const verdict = canDinerUnlink(sData);
+      if (!verdict.ok) return verdict;
+    }
+    if (activeSnap.exists) tx.update(activeRef, clear);
+    if (sessionSnap.exists) tx.update(sessionRef, clear);
+    return null;
+  });
+  if (rejected) return bad(rejected.error, rejected.status);
 
   return NextResponse.json({ ok: true });
 }

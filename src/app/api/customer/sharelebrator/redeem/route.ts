@@ -3,6 +3,7 @@ import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
 import { FieldValue } from "firebase-admin/firestore";
 import { isRewardOfferedAtStore } from "@/lib/loyaltyRewardScope";
+import { resolveTokenCard } from "@/lib/server/session-link";
 
 export const runtime = "nodejs";
 
@@ -16,18 +17,6 @@ function genCode(len = 6): string {
 
 function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
-}
-
-async function resolvePhone(db: any, decoded: any): Promise<string | null> {
-  if (decoded.customer === true) {
-    const storeId = String(decoded.storeId || "");
-    const sessionId = String(decoded.sessionId || "");
-    if (!storeId || !sessionId) return null;
-    const snap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
-    return snap.exists ? (snap.data()?.linkedCustomerPhone ?? null) : null;
-  }
-  if (decoded.loyaltyCustomer === true) return String(decoded.phone || "") || null;
-  return null;
 }
 
 export async function POST(req: Request) {
@@ -52,8 +41,11 @@ export async function POST(req: Request) {
   if (!rewardId) return bad("Missing rewardId.");
 
   const db = getAdminDb();
-  const phone = await resolvePhone(db, decoded);
-  if (!phone) return bad("No loyalty card linked.", 403);
+  // Only the participant that linked the card may redeem it; a cashier link is
+  // earn-only (see resolveSessionCard).
+  const card = await resolveTokenCard(db, decoded);
+  if (!card.ok) return bad(card.message, 403);
+  const phone = card.phone;
 
   /**
    * Which branch is issuing this voucher — from the token, never the body.

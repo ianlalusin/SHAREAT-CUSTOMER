@@ -3,6 +3,7 @@ import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { normalizePhone } from "@/lib/phone";
 import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import { resolveSessionCard } from "@/lib/server/session-link";
 
 export const runtime = "nodejs";
 
@@ -69,7 +70,11 @@ export async function POST(req: Request) {
     if (!storeId || !sessionId) return bad("Session claims missing.", 403);
     const activeSnap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
     if (!activeSnap.exists) return bad("Session not found.", 404);
-    senderPhone = (activeSnap.data() as any)?.linkedCustomerPhone ?? null;
+    // Only the participant that linked the card may spend it; a cashier link is
+    // earn-only (see resolveSessionCard).
+    const card = resolveSessionCard(activeSnap.data(), String(decoded.participantId || ""));
+    if (!card.ok) return bad(card.message, card.reason === "none" ? 400 : 403);
+    senderPhone = card.phone;
   } else if (decoded.loyaltyCustomer === true) {
     senderPhone = String(decoded.phone || "");
   } else {

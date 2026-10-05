@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { FieldValue } from "firebase-admin/firestore";
 import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
 import { loadLoyaltyCard } from "@/lib/server/loyalty-card";
+import { CLEARED_LINKER_FIELDS, decideDinerLink } from "@/lib/server/session-link";
 
 export const runtime = "nodejs";
 
@@ -80,7 +81,10 @@ export async function POST(req: Request) {
 
   // First-come lock: if this session is already linked to a different phone,
   // reject early. The existing linker must unlink before a different card can
-  // claim this session. Re-linking with the same phone is idempotent-OK.
+  // claim this session. Re-linking with the same phone is idempotent-OK — and
+  // when the existing link is the cashier's, the same phone upgrades it to a
+  // diner link (see decideDinerLink). This is only an early exit: bcrypt runs
+  // after it, so the write below re-applies the rule inside a transaction.
   const linkToSession = body.linkToSession !== false;
 
   const activeRefPreCheck = db.doc(`stores/${storeId}/activeSessions/${sessionId}`);
@@ -88,18 +92,8 @@ export async function POST(req: Request) {
   // no first-come rule to apply.
   const preCheckSnap = linkToSession ? await activeRefPreCheck.get() : null;
   if (linkToSession && preCheckSnap?.exists) {
-    const preData = preCheckSnap!.data() as any;
-    if (preData.linkedCustomerLockedAt) {
-      return bad("This session has already been paid; link is locked.", 409);
-    }
-    const currentLink = preData.linkedCustomerPhone as string | null | undefined;
-    if (currentLink && currentLink !== phone) {
-      const currentName = preData.linkedCustomerName || "another card";
-      return bad(
-        `This session is already linked to ${currentName}. Ask them to unlink first before linking your card.`,
-        409
-      );
-    }
+    const verdict = decideDinerLink(preCheckSnap.data(), phone);
+    if (!verdict.ok) return bad(verdict.error, verdict.status);
   }
 
   // Resolve customer (login or signup)
@@ -225,18 +219,24 @@ export async function POST(req: Request) {
      * session is locked — the bill is settled and nothing about the link should
      * move — but they still get the card back, having proved it is theirs.
      */
-    const ownerSnap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
-    const ownerData = ownerSnap.exists ? (ownerSnap.data() as any) : null;
-    const isSessionCardholder = !!ownerData && ownerData.linkedCustomerPhone === phone;
+    const ownerRef = db.doc(`stores/${storeId}/activeSessions/${sessionId}`);
+    const ownerSessionRef = db.doc(`stores/${storeId}/sessions/${sessionId}`);
 
-    if (isSessionCardholder && !ownerData.linkedCustomerLockedAt && participantId) {
-      const rebind = { linkedByParticipantId: participantId };
-      const batch = db.batch();
-      batch.update(db.doc(`stores/${storeId}/activeSessions/${sessionId}`), rebind);
-      const sSnap = await db.doc(`stores/${storeId}/sessions/${sessionId}`).get();
-      if (sSnap.exists) batch.update(db.doc(`stores/${storeId}/sessions/${sessionId}`), rebind);
-      await batch.commit();
-    }
+    // Re-checked inside the transaction so the re-bind cannot land on a link
+    // that was changed, or locked by payment, since it was read.
+    const isSessionCardholder = await db.runTransaction(async (tx: any) => {
+      const ownerSnap = await tx.get(ownerRef);
+      const sSnap = await tx.get(ownerSessionRef);
+      const ownerData = ownerSnap.exists ? (ownerSnap.data() as any) : null;
+      const isCardholder = !!ownerData && ownerData.linkedCustomerPhone === phone;
+      if (isCardholder && !ownerData.linkedCustomerLockedAt && participantId) {
+        // Also upgrades a cashier link to a diner link: they proved the card.
+        const rebind = { linkedByParticipantId: participantId, ...CLEARED_LINKER_FIELDS };
+        tx.update(ownerRef, rebind);
+        if (sSnap.exists) tx.update(ownerSessionRef, rebind);
+      }
+      return isCardholder;
+    });
 
     return NextResponse.json({
       ok: true,
@@ -249,29 +249,32 @@ export async function POST(req: Request) {
     });
   }
 
-  // Write link to session — reject if already locked
+  // Write link to session. Re-check "first card wins" at commit time: bcrypt
+  // (and the pre-check above) ran earlier, so another card — a cashier's, say —
+  // may have claimed the session since.
   const activeRef = db.doc(`stores/${storeId}/activeSessions/${sessionId}`);
   const sessionRef = db.doc(`stores/${storeId}/sessions/${sessionId}`);
-
-  const activeSnap = await activeRef.get();
-  if (activeSnap.exists) {
-    const sData = activeSnap.data() as any;
-    if (sData.linkedCustomerLockedAt) {
-      return bad("This session has already been paid; link is locked.", 409);
-    }
-  }
 
   const linkData = {
     linkedCustomerPhone: phone,
     linkedCustomerName: customerName,
     linkedByParticipantId: participantId || null,
+    // A diner link is never "via cashier".
+    ...CLEARED_LINKER_FIELDS,
   };
 
-  const batch = db.batch();
-  if (activeSnap.exists) batch.update(activeRef, linkData);
-  const sessionSnap = await sessionRef.get();
-  if (sessionSnap.exists) batch.update(sessionRef, linkData);
-  await batch.commit();
+  const rejected = await db.runTransaction(async (tx: any) => {
+    const activeSnap = await tx.get(activeRef);
+    const sessionSnap = await tx.get(sessionRef);
+    if (activeSnap.exists) {
+      const verdict = decideDinerLink(activeSnap.data(), phone);
+      if (!verdict.ok) return verdict;
+    }
+    if (activeSnap.exists) tx.update(activeRef, linkData);
+    if (sessionSnap.exists) tx.update(sessionRef, linkData);
+    return null;
+  });
+  if (rejected) return bad(rejected.error, rejected.status);
 
   return NextResponse.json({ ok: true, phone, name: customerName });
 }
