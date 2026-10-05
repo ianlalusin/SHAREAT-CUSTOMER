@@ -13,6 +13,7 @@ import { format } from "date-fns";
 import { SharelebratorLinkCard } from "./SharelebratorLinkCard";
 import { SharelebratorProfileEditDialog } from "./SharelebratorProfileEditDialog";
 import { SharelebratorTransferDialog } from "./SharelebratorTransferDialog";
+import { takenTableCopy } from "@/lib/sharelebrator-link-copy";
 
 interface Props {
   storeId: string;
@@ -25,10 +26,11 @@ type MeResponse = {
   locked?: boolean;
   /**
    * Set when the table's card belongs to a different diner. Carries the
-   * cardholder's display name and nothing else — the card itself never leaves
-   * the server for anyone but the phone that linked it.
+   * cardholder's display name and whether the cashier linked it (so the diner
+   * is told who to ask) — the card itself never leaves the server for anyone
+   * but the phone that linked it.
    */
-  sessionLink?: { byOther: true; name: string };
+  sessionLink?: { byOther: true; name: string; byCashier?: boolean };
   customer?: {
     phone: string;
     name: string;
@@ -139,6 +141,7 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
 
   if (!data?.linked) {
     const takenBy = data?.sessionLink?.byOther ? data.sessionLink.name : null;
+    const takenCopy = takenBy ? takenTableCopy({ name: takenBy, byCashier: data?.sessionLink?.byCashier }) : null;
 
     if (readOnlyCard) {
       return (
@@ -146,8 +149,8 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
           <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4">
             <p className="text-sm font-bold text-zinc-900">Your card — view only</p>
             <p className="mt-1 text-sm text-zinc-600">
-              {takenBy
-                ? `This meal is earning points for ${takenBy}'s card, so nothing here will change tonight.`
+              {takenCopy
+                ? takenCopy.readOnly
                 : "This session isn't linked to your card, so nothing here will change tonight."}
             </p>
             <Button
@@ -186,16 +189,10 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
     }
     return (
       <div className="max-w-md mx-auto mt-4 space-y-3">
-        {takenBy ? (
+        {takenCopy ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-            <p className="text-sm font-bold text-amber-900">
-              This table is already using {takenBy}&apos;s card
-            </p>
-            <p className="mt-1 text-sm text-amber-900/80">
-              A session can hold one Sharelebrator card, and this one earns points for{" "}
-              {takenBy}. Ask them to unlink it if you&apos;d like this meal on your card
-              instead.
-            </p>
+            <p className="text-sm font-bold text-amber-900">{takenCopy.title}</p>
+            <p className="mt-1 text-sm text-amber-900/80">{takenCopy.body}</p>
             <p className="mt-2 text-sm text-amber-900/80">
               You can still open your own card below — it just won&apos;t collect points
               from this table.
