@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  rankScore, applyVerdict, isRankable, compareForTop,
+  rankScore, applyVerdict, isRankable, compareForTop, compareForPopular, displayScore,
   PRIOR_MEAN, MIN_VOTES_TO_RANK,
 } from "@/lib/games/recipe/rank";
 import { EMPTY_COUNTS, type RecipeCounts } from "@/lib/games/recipe/types";
@@ -90,5 +90,36 @@ describe("compareForTop", () => {
     expect(compareForTop(row(0.9, 10, 1), row(0.8, 99, 9))).toBeLessThan(0);
     expect(compareForTop(row(0.9, 50, 1), row(0.9, 10, 9))).toBeLessThan(0);
     expect(compareForTop(row(0.9, 10, 900), row(0.9, 10, 100))).toBeLessThan(0);
+  });
+});
+
+describe("displayScore", () => {
+  it("is null until somebody rates it, never the 50 the prior would print", () => {
+    expect(displayScore(EMPTY_COUNTS, rankScore(EMPTY_COUNTS, 0))).toBeNull();
+  });
+  it("is 0-100 and moves with the votes", () => {
+    const loved = counts(0, 0, 20);
+    const hated = counts(20, 0, 0);
+    const lovedScore = displayScore(loved, rankScore(loved, sum(loved)))!;
+    const hatedScore = displayScore(hated, rankScore(hated, sum(hated)))!;
+    expect(lovedScore).toBeGreaterThan(50);
+    expect(hatedScore).toBeLessThan(50);
+    expect(lovedScore).toBeLessThanOrEqual(100);
+    expect(hatedScore).toBeGreaterThanOrEqual(0);
+  });
+  it("clamps and survives junk", () => {
+    expect(displayScore(counts(0, 0, 1), 7)).toBe(100);
+    expect(displayScore(counts(0, 0, 1), -2)).toBe(0);
+    expect(displayScore(counts(0, 0, 1), NaN)).toBeNull();
+  });
+});
+
+describe("compareForPopular", () => {
+  const r = (total: number, score: number, at: number) => ({
+    counts: { yuck: 0, good: total, yummy: 0, total }, rankScore: score, publishedAtMs: at,
+  });
+  it("puts turnout first, then score, then recency", () => {
+    const list = [r(3, 0.9, 1), r(30, 0.4, 1), r(3, 0.5, 5), r(3, 0.9, 7)];
+    expect([...list].sort(compareForPopular)).toEqual([list[1], list[3], list[0], list[2]]);
   });
 });

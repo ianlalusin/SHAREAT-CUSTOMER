@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildTop, buildFresh, buildFeatured, buildFeed } from "@/lib/games/recipe/feed";
+import { buildTop, buildPopular, buildFresh, buildFeatured, buildFeed } from "@/lib/games/recipe/feed";
 import type { RankableRecipe } from "@/lib/games/recipe/feed";
 import { rankScore } from "@/lib/games/recipe/rank";
 import type { RecipeStatus } from "@/lib/games/recipe/types";
@@ -109,6 +109,35 @@ describe("buildFeed", () => {
   });
 
   it("survives an empty collection", () => {
-    expect(buildFeed([], 7)).toEqual({ top: [], fresh: [], featured: [], updatedAtMs: 7 });
+    expect(buildFeed([], 7)).toEqual({ top: [], popular: [], fresh: [], featured: [], updatedAtMs: 7 });
+  });
+});
+
+describe("buildPopular", () => {
+  it("orders by number of ratings, then score, then recency", () => {
+    const out = buildPopular([
+      make("same-old", { yummy: 3, publishedAtMs: 1 }),
+      make("many-ok", { good: 12, publishedAtMs: 2 }),
+      make("lower-score", { good: 3, publishedAtMs: 9 }),
+      make("same-new", { yummy: 3, publishedAtMs: 8 }),
+    ]);
+    // 12 ratings beat 3; of the 3-rating recipes the higher score wins, and
+    // identical score and turnout fall back to the newer recipe.
+    expect(out.map((r) => r.id)).toEqual(["many-ok", "same-new", "same-old", "lower-score"]);
+  });
+
+  it("has no vote floor, but leaves out unrated and unpublished recipes", () => {
+    const out = buildPopular([
+      make("one", { yummy: 1 }),
+      make("none"),
+      make("hidden", { yummy: 40, status: "hidden" }),
+    ]);
+    expect(out.map((r) => r.id)).toEqual(["one"]);
+  });
+
+  it("is capped and never carries the moderation status", () => {
+    const many = Array.from({ length: 5 }, (_, i) => make(`r${i}`, { yummy: i + 1 }));
+    expect(buildPopular(many, 2)).toHaveLength(2);
+    expect(buildPopular(many)[0]).not.toHaveProperty("status");
   });
 });

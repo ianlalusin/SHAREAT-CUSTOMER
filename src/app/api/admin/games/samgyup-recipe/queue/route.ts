@@ -52,6 +52,7 @@ export async function GET(req: Request) {
       hasFreeText: r.hasFreeText,
       status: r.status,
       counts: r.counts,
+      rankScore: r.rankScore,
       featured: r.featured,
       createdAtMs: r.createdAtMs,
     }));

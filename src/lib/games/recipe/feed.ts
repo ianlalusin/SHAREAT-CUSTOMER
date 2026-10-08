@@ -1,4 +1,4 @@
-import { compareForTop, isRankable } from "./rank";
+import { compareForPopular, compareForTop, isRankable } from "./rank";
 import type { RecipeCard, RecipeFeed, RecipeStatus } from "./types";
 
 /**
@@ -9,6 +9,8 @@ import type { RecipeCard, RecipeFeed, RecipeStatus } from "./types";
  * is subtly wrong for two of the three:
  *
  *   top      — rank-ordered, and gated on having enough votes to mean anything.
+ *   popular  — most-rated first. No vote floor: popularity is the turnout, so
+ *              a recipe with three ratings simply sits below one with thirty.
  *   fresh    — recency-ordered, ignores score entirely. This is the discovery
  *              shelf: without it a new recipe can never accumulate the votes
  *              that would qualify it for `top`, so the board would ossify
@@ -40,6 +42,14 @@ export function buildTop(recipes: RankableRecipe[], size = TOP_SIZE): RecipeCard
     .map(toCard);
 }
 
+export function buildPopular(recipes: RankableRecipe[], size = TOP_SIZE): RecipeCard[] {
+  return recipes
+    .filter((r) => isPublicStatus(r.status) && r.counts.total > 0)
+    .sort(compareForPopular)
+    .slice(0, size)
+    .map(toCard);
+}
+
 export function buildFresh(recipes: RankableRecipe[], size = FRESH_SIZE): RecipeCard[] {
   return recipes
     .filter((r) => isPublicStatus(r.status))
@@ -59,6 +69,7 @@ export function buildFeatured(recipes: RankableRecipe[], size = FEATURED_SIZE): 
 export function buildFeed(recipes: RankableRecipe[], nowMs: number): RecipeFeed {
   return {
     top: buildTop(recipes),
+    popular: buildPopular(recipes),
     fresh: buildFresh(recipes),
     featured: buildFeatured(recipes),
     updatedAtMs: nowMs,

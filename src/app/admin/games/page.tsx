@@ -14,6 +14,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { RecipeStep } from "@/lib/games/recipe/types";
 import { RecipeEditDialog, type EditableRecipe } from "@/components/games/recipe/RecipeEditDialog";
 import { GamePlayStats } from "@/components/games/admin/GamePlayStats";
+import { RecipeScoreLine } from "@/components/games/recipe/RecipeScoreLine";
 
 type GameRow = { id: string; title: string; tagline: string; configured: boolean; isActive: boolean };
 type QueueRow = {
@@ -27,6 +28,7 @@ type QueueRow = {
   status: string;
   featured: boolean;
   counts: { yuck: number; good: number; yummy: number; total: number };
+  rankScore: number;
   createdAtMs: number;
 };
 
@@ -245,6 +247,7 @@ export default function AdminGamesPage() {
                       <p className="text-xs text-muted-foreground">
                         {r.displayName} · {r.storeName} · {new Date(r.createdAtMs).toLocaleString()}
                       </p>
+                      <RecipeScoreLine counts={r.counts} rankScore={r.rankScore} />
                     </div>
                     <div className="flex shrink-0 gap-1">
                       {r.featured && <Badge className="rounded-xl bg-amber-500">Pick</Badge>}
