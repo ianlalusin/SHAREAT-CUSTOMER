@@ -9,6 +9,14 @@ describe("toPoints", () => {
       { x: 100, y: 0 },
     ]);
   });
+  it("offsets the plot so the peak keeps headroom", () => {
+    const pts = toPoints([0, 10], 100, 50, 10, 5, 20);
+    expect(pts).toEqual([
+      { x: 5, y: 70 }, // baseline = offsetY + height
+      { x: 105, y: 20 }, // peak sits offsetY below the top of the drawing
+    ]);
+  });
+
   it("never divides by a zero max and clamps negatives", () => {
     expect(toPoints([0, 0], 10, 10, 0).every((p) => p.y === 10)).toBe(true);
     expect(toPoints([-3], 10, 10, 5)).toEqual([{ x: 5, y: 10 }]);
