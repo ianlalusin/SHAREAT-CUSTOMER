@@ -66,12 +66,24 @@ export function areaPath(points: Point[], baselineY: number): string {
   return `${smoothPath(points)} L${last.x},${baselineY} L${first.x},${baselineY} Z`;
 }
 
-/** Evenly spread `count` values over [0,width], and map values onto [0,height] (0 at the bottom). */
-export function toPoints(values: number[], width: number, height: number, max: number): Point[] {
+/**
+ * Evenly spread `values` over `width`, and map them onto `height` (0 at the
+ * bottom of the plot). `offsetX`/`offsetY` shift the whole plot inside its
+ * drawing space — the headroom that keeps the peak and the line's own stroke
+ * from being cut off at the edge.
+ */
+export function toPoints(
+  values: number[],
+  width: number,
+  height: number,
+  max: number,
+  offsetX = 0,
+  offsetY = 0
+): Point[] {
   const top = Math.max(1, max);
   const step = values.length > 1 ? width / (values.length - 1) : 0;
   return values.map((v, i) => ({
-    x: values.length > 1 ? i * step : width / 2,
-    y: height - (Math.max(0, v) / top) * height,
+    x: offsetX + (values.length > 1 ? i * step : width / 2),
+    y: offsetY + height - (Math.max(0, v) / top) * height,
   }));
 }

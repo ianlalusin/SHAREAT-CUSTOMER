@@ -11,6 +11,14 @@ export const colorFor = (i: number) => GAME_COLORS[i % GAME_COLORS.length];
 /** Chart drawing space. The SVG stretches to the card; strokes stay 2px (non-scaling). */
 const CHART_W = 600;
 const CHART_H = 150;
+/** Room around the plot: the peak must not touch the top, nor the stroke the sides. */
+const PAD_X = 6;
+const PAD_TOP = 22;
+const PAD_BOTTOM = 4;
+const PLOT_W = CHART_W - PAD_X * 2;
+const PLOT_H = CHART_H - PAD_TOP - PAD_BOTTOM;
+const BASE_Y = PAD_TOP + PLOT_H;
+const plot = (values: number[], max: number) => toPoints(values, PLOT_W, PLOT_H, max, PAD_X, PAD_TOP);
 
 export function GamePlayChart({
   games,
@@ -54,9 +62,10 @@ export function GamePlayChart({
                     ))}
                   </defs>
 
-                  {/* baseline + half-way guide */}
-                  <line x1="0" x2={CHART_W} y1={CHART_H} y2={CHART_H} stroke="#e4e4e7" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-                  <line x1="0" x2={CHART_W} y1={CHART_H / 2} y2={CHART_H / 2} stroke="#f4f4f5" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                  {/* top / half-way / baseline guides */}
+                  <line x1="0" x2={CHART_W} y1={PAD_TOP} y2={PAD_TOP} stroke="#f4f4f5" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                  <line x1="0" x2={CHART_W} y1={BASE_Y} y2={BASE_Y} stroke="#e4e4e7" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                  <line x1="0" x2={CHART_W} y1={PAD_TOP + PLOT_H / 2} y2={PAD_TOP + PLOT_H / 2} stroke="#f4f4f5" strokeWidth="1" vectorEffect="non-scaling-stroke" />
 
                   {/* Days before the two-metric cutover only ever had a single
                       "plays" figure. Drawn grey rather than dropped: a chart
@@ -64,20 +73,20 @@ export function GamePlayChart({
                       counter. */}
                   {legacyPlays > 0 &&
                     (() => {
-                      const pts = toPoints(series.map((d) => (d.totals[metric] === 0 ? d.legacyPlays : 0)), CHART_W, CHART_H, chartMax);
+                      const pts = plot(series.map((d) => (d.totals[metric] === 0 ? d.legacyPlays : 0)), chartMax);
                       return (
                         <>
-                          <path d={areaPath(pts, CHART_H)} fill="#a1a1aa" fillOpacity="0.18" />
+                          <path d={areaPath(pts, BASE_Y)} fill="#a1a1aa" fillOpacity="0.18" />
                           <path d={smoothPath(pts)} fill="none" stroke="#a1a1aa" strokeWidth="2" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
                         </>
                       );
                     })()}
 
                   {games.map((g, i) => {
-                    const pts = toPoints(series.map((d) => d.unique[g.id]?.[metric] || 0), CHART_W, CHART_H, chartMax);
+                    const pts = plot(series.map((d) => d.unique[g.id]?.[metric] || 0), chartMax);
                     return (
                       <g key={g.id}>
-                        <path d={areaPath(pts, CHART_H)} fill={`url(#area-${g.id})`} />
+                        <path d={areaPath(pts, BASE_Y)} fill={`url(#area-${g.id})`} />
                         <path
                           d={smoothPath(pts)}
                           fill="none"
@@ -106,7 +115,7 @@ export function GamePlayChart({
                     />
                   ))}
                 </div>
-                <span className="pointer-events-none absolute left-0 top-0 text-[10px] font-bold tabular-nums text-muted-foreground">
+                <span className="pointer-events-none absolute left-0 top-0 text-[10px] leading-none font-bold tabular-nums text-muted-foreground">
                   {chartMax}
                 </span>
               </div>
