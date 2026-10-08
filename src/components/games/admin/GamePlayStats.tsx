@@ -7,6 +7,7 @@ import { Loader2, BarChart3 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useRate, storeLabel, type DayStat, type MetricCounts } from "@/lib/games/stats";
+import { GamePlayChart, colorFor } from "./GamePlayChart";
 import type { GameMetric, GameMetricDefinitions } from "@/lib/games/metrics";
 
 type GameRow = { id: string; title: string; metrics: GameMetricDefinitions };
@@ -24,9 +25,6 @@ type Payload = {
   storeNames?: Record<string, string>;
 };
 
-/** One colour per game, stable across the chart, the legend and the totals. */
-const BAR = ["bg-primary", "bg-amber-500", "bg-emerald-600", "bg-sky-600"];
-const DOT = ["bg-primary", "bg-amber-500", "bg-emerald-600", "bg-sky-600"];
 
 const WINDOWS = [7, 14, 30];
 const METRICS: { key: GameMetric; label: string }[] = [
@@ -163,7 +161,7 @@ export function GamePlayStats() {
               </div>
               {data.games.map((g, i) => (
                 <div key={g.id} className="flex items-center gap-2">
-                  <span className={`h-2.5 w-2.5 rounded-full ${DOT[i % DOT.length]}`} />
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colorFor(i) }} />
                   <span className="text-sm">
                     <span className="font-bold tabular-nums">{data.totals[g.id]?.[metric] ?? 0}</span>{" "}
                     <span className="text-muted-foreground">
@@ -174,62 +172,8 @@ export function GamePlayStats() {
               ))}
             </div>
 
-            {/* ---- the chart: one stacked column per day ---- */}
-            <div className="mt-5 overflow-x-auto">
-              {/* No `items-end` here: the columns must stretch to the full 150px.
-                  The bars are sized in percent, and a percentage height needs a
-                  definite parent — with items-end each column shrank to its
-                  content, every bar resolved to 0px, and the chart drew
-                  nothing at all. The columns bottom-align themselves
-                  (justify-end). */}
-              <div className="flex min-w-[420px] gap-1.5" style={{ height: 150 }}>
-                {data.series.map((d) => {
-                  const total = d.totals[metric];
-                  const height = Math.max(total, d.legacyPlays);
-                  return (
-                    <div key={d.dayId} className="group flex flex-1 flex-col items-center justify-end gap-1">
-                      <span className="text-[10px] font-bold tabular-nums text-muted-foreground opacity-0 group-hover:opacity-100">
-                        {total || d.legacyPlays}
-                      </span>
-                      <div
-                        className="flex w-full flex-col-reverse justify-start overflow-hidden rounded-md bg-zinc-100"
-                        style={{ height: `${Math.max(3, (height / data.peak[metric]) * 100)}%` }}
-                        title={`${d.date} · ${total} ${metric === "view" ? "view" : "use"}${total === 1 ? "" : "s"}`}
-                      >
-                        {/* Days before the two-metric cutover only ever had a
-                            single "plays" figure. Drawn grey rather than
-                            dropped: a chart that steps to zero on the cutover
-                            date reads as a broken counter. */}
-                        {total === 0 && d.legacyPlays > 0 ? (
-                          <div className="h-full bg-zinc-300" title={`${d.legacyPlays} plays (old metric)`} />
-                        ) : (
-                          data.games.map((g, i) =>
-                            (d.unique[g.id]?.[metric] || 0) > 0 ? (
-                              <div
-                                key={g.id}
-                                className={BAR[i % BAR.length]}
-                                style={{ height: `${((d.unique[g.id]?.[metric] || 0) / total) * 100}%` }}
-                              />
-                            ) : null
-                          )
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              {/* Only the ends are labelled: a tick under every column is
-                  unreadable at 30 days and tells nobody anything new. */}
-              <div className="mt-1.5 flex justify-between text-[10px] text-muted-foreground">
-                <span>{data.series[0]?.date}</span>
-                <span>{data.series[data.series.length - 1]?.date}</span>
-              </div>
-              {data.legacyPlays > 0 && (
-                <p className="mt-1.5 text-[11px] text-muted-foreground">
-                  Grey days are the retired single-play count, kept so the line does not appear to break.
-                </p>
-              )}
-            </div>
+            {/* ---- the chart: one smooth line per game, shaded underneath ---- */}
+            <GamePlayChart games={data.games} series={data.series} metric={metric} legacyPlays={data.legacyPlays} />
 
             {/* ---- by branch ---- */}
             {stores.length > 0 && (
