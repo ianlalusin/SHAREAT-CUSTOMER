@@ -6,7 +6,7 @@ import { Loader2, BarChart3 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useRate, type DayStat, type MetricCounts } from "@/lib/games/stats";
+import { useRate, storeLabel, type DayStat, type MetricCounts } from "@/lib/games/stats";
 import type { GameMetric, GameMetricDefinitions } from "@/lib/games/metrics";
 
 type GameRow = { id: string; title: string; metrics: GameMetricDefinitions };
@@ -20,6 +20,8 @@ type Payload = {
   peak: Record<GameMetric, number>;
   legacyPlays: number;
   byStore: Record<string, Record<string, MetricCounts>>;
+  /** storeId -> display name, for the branches in `byStore`. */
+  storeNames?: Record<string, string>;
 };
 
 /** One colour per game, stable across the chart, the legend and the totals. */
@@ -174,7 +176,13 @@ export function GamePlayStats() {
 
             {/* ---- the chart: one stacked column per day ---- */}
             <div className="mt-5 overflow-x-auto">
-              <div className="flex min-w-[420px] items-end gap-1.5" style={{ height: 150 }}>
+              {/* No `items-end` here: the columns must stretch to the full 150px.
+                  The bars are sized in percent, and a percentage height needs a
+                  definite parent — with items-end each column shrank to its
+                  content, every bar resolved to 0px, and the chart drew
+                  nothing at all. The columns bottom-align themselves
+                  (justify-end). */}
+              <div className="flex min-w-[420px] gap-1.5" style={{ height: 150 }}>
                 {data.series.map((d) => {
                   const total = d.totals[metric];
                   const height = Math.max(total, d.legacyPlays);
@@ -232,7 +240,7 @@ export function GamePlayStats() {
                 <div className="space-y-1.5">
                   {stores.map(([storeId, counts]) => (
                     <div key={storeId} className="flex items-center justify-between gap-3 text-sm">
-                      <span className="truncate font-medium">{storeId}</span>
+                      <span className="truncate font-medium">{storeLabel(storeId, data.storeNames)}</span>
                       <span className="shrink-0 tabular-nums text-muted-foreground">
                         {data.games
                           .filter((g) => (counts[g.id]?.[metric] || 0) > 0)

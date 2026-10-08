@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   dayIdFor, isoDateFor, recentDayIds, dayIdToIso, buildSeries, toMetricCounts,
-  totalsByGame, grandTotal, peakDay, useRate, totalLegacyPlays, MAX_STATS_DAYS,
+  totalsByGame, grandTotal, peakDay, useRate, totalLegacyPlays, MAX_STATS_DAYS, storeLabel,
   type RawDay,
 } from "@/lib/games/stats";
 
@@ -180,5 +180,18 @@ describe("useRate", () => {
   /** Nobody viewed it, so nobody failed to use it — not a division by zero. */
   it("is zero when nobody has viewed it", () => {
     expect(useRate({ view: 0, use: 0 })).toBe(0);
+  });
+});
+
+describe("storeLabel", () => {
+  it("uses the store name when there is one", () => {
+    expect(storeLabel("s-123", { "s-123": "SharEat Hub" })).toBe("SharEat Hub");
+    expect(storeLabel("s-123", { "s-123": "  SharEat Hub " })).toBe("SharEat Hub");
+  });
+  it("falls back to the id when the name is missing, blank or the map is absent", () => {
+    expect(storeLabel("s-123", {})).toBe("s-123");
+    expect(storeLabel("s-123", { "s-123": "  " })).toBe("s-123");
+    expect(storeLabel("s-123", undefined)).toBe("s-123");
+    expect(storeLabel("s-123", null)).toBe("s-123");
   });
 });

@@ -27,6 +27,20 @@ export async function GET(req: Request) {
     Object.entries(byStore).filter(([storeId]) => allowed.has(storeId))
   );
 
+  // Names for the branches being shown; the day documents only carry IDs.
+  const db = getAdminDb();
+  const storeNames: Record<string, string> = {};
+  await Promise.all(
+    Object.keys(scopedByStore).map(async (storeId) => {
+      try {
+        const name = (await db.doc(`stores/${storeId}`).get()).data()?.name;
+        if (typeof name === "string" && name.trim()) storeNames[storeId] = name.trim();
+      } catch {
+        // Unreadable store: the screen falls back to the ID.
+      }
+    })
+  );
+
   return NextResponse.json({
     ok: true,
     days,
@@ -39,5 +53,6 @@ export async function GET(req: Request) {
     peak: { view: peakDay(series, "view"), use: peakDay(series, "use") },
     legacyPlays: totalLegacyPlays(series),
     byStore: scopedByStore,
+    storeNames,
   });
 }
