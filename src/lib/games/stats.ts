@@ -194,3 +194,14 @@ export function useRate(counts: MetricCounts): number {
 export function totalLegacyPlays(series: DayStat[]): number {
   return series.reduce((sum, d) => sum + d.legacyPlays, 0);
 }
+
+/**
+ * What to call a branch on screen. The day documents are keyed by store ID,
+ * which means nothing to a person; the name is looked up separately and may be
+ * missing (a deleted store, a store with no name), so fall back to the ID
+ * rather than printing a blank.
+ */
+export function storeLabel(storeId: string, names?: Record<string, string> | null): string {
+  const name = names?.[storeId];
+  return typeof name === "string" && name.trim() ? name.trim() : storeId;
+}

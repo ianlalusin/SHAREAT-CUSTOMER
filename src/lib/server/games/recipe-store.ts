@@ -154,12 +154,15 @@ export async function getFeed(db: Firestore): Promise<RecipeFeed> {
   const cache = snap.exists ? (snap.data() as any) : null;
   const updatedAtMs = Number(cache?.updatedAtMs || 0);
 
-  if (!cache || Date.now() - updatedAtMs > FEED_CACHE_TTL_MS) {
+  // A cached feed written before the `popular` shelf existed is rebuilt rather
+  // than served with an empty shelf for the rest of its TTL.
+  if (!cache || !Array.isArray(cache.popular) || Date.now() - updatedAtMs > FEED_CACHE_TTL_MS) {
     return rebuildOnce(db);
   }
 
   return {
     top: Array.isArray(cache.top) ? cache.top : [],
+    popular: cache.popular,
     fresh: Array.isArray(cache.fresh) ? cache.fresh : [],
     featured: Array.isArray(cache.featured) ? cache.featured : [],
     updatedAtMs,

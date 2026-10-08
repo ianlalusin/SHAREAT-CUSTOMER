@@ -41,6 +41,7 @@ export default function SamgyupRecipePage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
   const [editing, setEditing] = useState<ComposerRecipe | null>(null);
+  const [rankBy, setRankBy] = useState<"score" | "popular">("score");
 
   const load = useCallback(async () => {
     const headers: Record<string, string> = {};
@@ -51,7 +52,7 @@ export default function SamgyupRecipePage() {
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not load the board.");
 
-    setFeed(json.feed || EMPTY_FEED);
+    setFeed({ ...EMPTY_FEED, ...(json.feed || {}) });
     setCanPlay(!!json.canPlay);
 
     // "Mine" is the author's own shelf, and it is the reason a recipe waiting
@@ -99,7 +100,7 @@ export default function SamgyupRecipePage() {
     const patch = (list: RecipeCard[]) =>
       list.map((r) => (r.id === recipeId ? { ...r, counts } : r));
 
-    setFeed((f) => (f ? { ...f, top: patch(f.top), fresh: patch(f.fresh), featured: patch(f.featured) } : f));
+    setFeed((f) => (f ? { ...f, top: patch(f.top), popular: patch(f.popular), fresh: patch(f.fresh), featured: patch(f.featured) } : f));
     setMine((m) => (m ? m.map((r) => (r.id === recipeId ? { ...r, counts } : r)) : m));
 
     signalUse("samgyup-recipe");
@@ -112,6 +113,9 @@ export default function SamgyupRecipePage() {
       <p className="mt-1 text-sm text-muted-foreground">{hint}</p>
     </div>
   );
+
+  const popular = feed?.popular ?? [];
+  const ranked = rankBy === "score" ? feed?.top ?? [] : popular;
 
   return (
     <>
@@ -132,7 +136,7 @@ export default function SamgyupRecipePage() {
           /* Top is gated at MIN_VOTES_TO_RANK, so on a young board it is
              empty and the diner's first sight is "No ranked recipes yet".
              Open on Fresh until Top has earned something. */
-          <Tabs defaultValue={feed.top.length > 0 ? "top" : "fresh"}>
+          <Tabs defaultValue={feed.top.length > 0 || popular.length > 0 ? "top" : "fresh"}>
             <TabsList className="w-full grid grid-cols-4 rounded-2xl">
               <TabsTrigger value="top">Top</TabsTrigger>
               <TabsTrigger value="fresh">Fresh</TabsTrigger>
@@ -141,13 +145,33 @@ export default function SamgyupRecipePage() {
             </TabsList>
 
             <TabsContent value="top" className="mt-4 space-y-3">
-              {feed.top.length === 0
+              {/* Two ways to rank the same board. Score rewards recipes people
+                  liked; popular rewards recipes lots of people tried. */}
+              <div className="flex gap-1">
+                {([
+                  ["score", "Top rated"],
+                  ["popular", "Most popular"],
+                ] as const).map(([key, label]) => (
+                  <Button
+                    key={key}
+                    size="sm"
+                    variant={rankBy === key ? "default" : "outline"}
+                    className="rounded-xl px-3"
+                    onClick={() => setRankBy(key)}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+              {ranked.length === 0
                 ? empty(
                     <Trophy className="h-10 w-10" />,
-                    "No ranked recipes yet",
-                    "Recipes join the board once enough people have tried them."
+                    rankBy === "score" ? "No ranked recipes yet" : "No ratings yet",
+                    rankBy === "score"
+                      ? "Recipes join the board once enough people have tried them."
+                      : "Popular recipes appear as soon as people start rating them."
                   )
-                : feed.top.map((r, i) => (
+                : ranked.map((r, i) => (
                     <RecipeCardTile key={r.id} recipe={r} rank={i + 1} onOpen={() => openRecipe(r.id)} />
                   ))}
             </TabsContent>

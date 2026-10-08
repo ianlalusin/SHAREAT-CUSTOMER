@@ -42,9 +42,11 @@ export type RecipeCard = {
 
 export type RecipeFeed = {
   top: RecipeCard[];
+  /** Most-rated first. Same recipes as anywhere else, ordered by how many people rated them. */
+  popular: RecipeCard[];
   fresh: RecipeCard[];
   featured: RecipeCard[];
   updatedAtMs: number;
 };
 
-export const EMPTY_FEED: RecipeFeed = { top: [], fresh: [], featured: [], updatedAtMs: 0 };
+export const EMPTY_FEED: RecipeFeed = { top: [], popular: [], fresh: [], featured: [], updatedAtMs: 0 };

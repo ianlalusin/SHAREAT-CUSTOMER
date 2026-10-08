@@ -68,6 +68,34 @@ export function isRankable(counts: RecipeCounts): boolean {
 }
 
 /**
+ * The score as admins and diners read it: 0-100, or null when nobody has rated
+ * the recipe yet.
+ *
+ * `rankScore` of an unrated recipe is the neutral prior (0.5), which would print
+ * as "50" and read as a verdict nobody gave. Under MIN_VOTES_TO_RANK it is
+ * still mostly that prior — callers label it provisional.
+ */
+export function displayScore(counts: RecipeCounts, score: number): number | null {
+  if ((Number(counts?.total) || 0) <= 0) return null;
+  const s = Number(score);
+  if (!Number.isFinite(s)) return null;
+  return Math.round(Math.min(1, Math.max(0, s)) * 100);
+}
+
+/**
+ * Popularity order: how many people rated it, then score, then recency.
+ * Volume leads here — the score only separates recipes with the same turnout.
+ */
+export function compareForPopular(
+  a: { rankScore: number; counts: RecipeCounts; publishedAtMs: number },
+  b: { rankScore: number; counts: RecipeCounts; publishedAtMs: number }
+): number {
+  if (b.counts.total !== a.counts.total) return b.counts.total - a.counts.total;
+  if (b.rankScore !== a.rankScore) return b.rankScore - a.rankScore;
+  return b.publishedAtMs - a.publishedAtMs;
+}
+
+/**
  * Board order: score, then volume, then recency. Volume breaks ties because
  * between two equally-rated recipes the better-evidenced one deserves the slot.
  */
