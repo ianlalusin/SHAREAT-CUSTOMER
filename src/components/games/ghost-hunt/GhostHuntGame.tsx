@@ -339,8 +339,10 @@ function Intro({
           <li className="flex gap-3"><Step n={4} />Show your post and prize ticket to the cashier.</li>
         </ol>
         <p className="mt-4 text-xs text-muted-foreground">
-          {pack.noun === "ghost" ? "Ghosts" : "They"} come out {status.hours}. One prize per table per visit, while
-          today&apos;s prizes last. Prizes are valid on the day they are won.
+          {/* No "while prizes last": Philippine sales-promo rules (RA 7394) bar "until supply lasts"
+              wording, so the limit is stated as a fixed number per day instead. */}
+          {pack.noun === "ghost" ? "Ghosts" : "They"} come out {status.hours}. One prize per table per visit. Each
+          branch has a limited number of prizes per day. Prizes are valid on the day they are won.
         </p>
       </div>
 

@@ -260,15 +260,16 @@ export default function AdminGhostHuntPage() {
                 />
                 <Odds
                   label="…and it is a prize ghost"
-                  hint="Only while today's prizes last."
+                  hint="Only when this branch still has a prize available right now."
                   value={s.prizeShare}
                   onChange={(v) => set({ prizeShare: v })}
                 />
                 <Odds label="Otherwise it says hi (the rest fly by)" value={s.helloShare} onChange={(v) => set({ helloShare: v })} />
                 <p className="text-xs text-muted-foreground">
-                  About 1 prize ghost every{" "}
-                  {Math.max(1, Math.round(12 / Math.max(0.001, s.appearChance * s.prizeShare) / 60))} minutes of hunting,
-                  per phone.
+                  {(() => {
+                    const mins = Math.max(1, Math.round(12 / Math.max(0.001, s.appearChance * s.prizeShare) / 60));
+                    return `About 1 prize ghost every ${mins === 1 ? "minute" : `${mins} minutes`} of hunting, per phone, while a prize is available.`;
+                  })()}
                 </p>
               </div>
 
