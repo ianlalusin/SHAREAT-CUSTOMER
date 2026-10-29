@@ -373,3 +373,23 @@ export function genClaimCode(rand: () => number = Math.random, len = 5): string 
   for (let i = 0; i < len; i++) s += CODE_ALPHABET[Math.floor(rand() * CODE_ALPHABET.length)];
   return s;
 }
+
+/**
+ * Whether a prize ticket the PHONE saved earlier should still be shown.
+ *
+ * The phone keeps the last ticket so a diner can claim it at the counter
+ * after their table session has closed. It must not follow them around:
+ * once claimed, on another day (prizes are good for the day won), or at
+ * another branch, it is stale and only confuses — "See your prize" from last
+ * week's visit at a branch that is not even running the hunt.
+ * `storeId` is the branch the diner is at now, or null when away from a table.
+ */
+export function savedTicketStillValid(
+  ticket: { status: string; day: string; storeId?: string },
+  storeId: string | null,
+  nowMs: number
+): boolean {
+  if (ticket.status !== "won") return false;
+  if (ticket.day !== manilaDayKey(nowMs)) return false;
+  return !storeId || ticket.storeId === storeId;
+}

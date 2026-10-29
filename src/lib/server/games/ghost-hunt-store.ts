@@ -71,6 +71,7 @@ export type PublicTicket = {
   prizeId: string;
   prizeName: string;
   code: string;
+  storeId: string;
   storeName: string;
   tableDisplayName: string;
   day: string;
@@ -86,6 +87,7 @@ export function toTicket(c: CatchDoc): PublicTicket {
     prizeId: c.prizeId,
     prizeName: c.prizeName,
     code: c.code || "",
+    storeId: c.storeId,
     storeName: c.storeName,
     tableDisplayName: c.tableDisplayName,
     day: c.day,

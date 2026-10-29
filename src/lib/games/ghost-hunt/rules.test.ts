@@ -15,6 +15,7 @@ import {
   prizesRemaining,
   settingsForBranch,
   rollSpawn,
+  savedTicketStillValid,
   type GhostHuntSettings,
 } from "./rules";
 import { isGameEnabledForStore } from "@/lib/games/gameScope";
@@ -182,6 +183,28 @@ describe("per-time-slot pacing and odds", () => {
   it("keeps blank slot fields unset and clamps numbers", () => {
     const n = normalizeSettings({ windows: [{ ...lunch, share: "", prizeShare: null }, { ...dinner, share: 0.7, prizeShare: 3 }] });
     expect(n.windows).toEqual([lunch, { ...dinner, share: 0.7, prizeShare: 1 }]);
+  });
+});
+
+describe("savedTicketStillValid — the phone's old ticket", () => {
+  const today = at(2026, 11, 1, 19);
+  const t = { status: "won", day: "2026-11-01", storeId: "test-store" };
+
+  it("hides a TEST-store ticket at Lipa (the reported case)", () => {
+    expect(savedTicketStillValid(t, "lipa", today)).toBe(false);
+  });
+
+  it("shows an unclaimed ticket at the same branch, same day", () => {
+    expect(savedTicketStillValid(t, "test-store", today)).toBe(true);
+  });
+
+  it("shows it away from any table, so it can be claimed after the table closes", () => {
+    expect(savedTicketStillValid(t, null, today)).toBe(true);
+  });
+
+  it("hides it once claimed, or on another day", () => {
+    expect(savedTicketStillValid({ ...t, status: "claimed" }, "test-store", today)).toBe(false);
+    expect(savedTicketStillValid(t, "test-store", at(2026, 11, 2, 12))).toBe(false);
   });
 });
 

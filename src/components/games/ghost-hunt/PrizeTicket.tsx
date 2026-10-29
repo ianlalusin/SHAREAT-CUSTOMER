@@ -13,6 +13,7 @@ export type TicketData = {
   prizeId: string;
   prizeName: string;
   code: string;
+  storeId?: string;
   storeName: string;
   tableDisplayName: string;
   day: string;
