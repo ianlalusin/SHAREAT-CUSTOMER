@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { birthdayError } from "@/lib/server/signup-fields";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
+import { readCustomerPasswordHash, stageCustomerPasswordHash } from "@/lib/server/customer-secrets";
 import bcrypt from "bcryptjs";
 import { FieldValue } from "firebase-admin/firestore";
 import { resolveSessionCard } from "@/lib/server/session-link";
@@ -67,7 +68,7 @@ export async function POST(req: Request) {
   if (!customerSnap.exists) return bad("Customer not found.", 404);
 
   const customerData = customerSnap.data() as any;
-  const pwMatch = await bcrypt.compare(currentPassword, customerData.passwordHash || "");
+  const pwMatch = await bcrypt.compare(currentPassword, await readCustomerPasswordHash(db, phone, customerData));
   if (!pwMatch) return bad("Current password is incorrect.", 401);
 
   const patch: Record<string, any> = { updatedAt: FieldValue.serverTimestamp() };
@@ -91,14 +92,16 @@ export async function POST(req: Request) {
     patch.bday = body.bday.trim();
   }
 
-  // Optional password change
+  // Optional password change: secret doc and profile in one batch.
+  const profileBatch = db.batch();
   if (body.newPassword !== undefined && body.newPassword !== "") {
     const newPassword = String(body.newPassword);
     if (newPassword.length < 6) return bad("New password must be at least 6 characters.");
-    patch.passwordHash = await bcrypt.hash(newPassword, 10);
+    Object.assign(patch, stageCustomerPasswordHash(profileBatch, db, phone, await bcrypt.hash(newPassword, 10)));
   }
 
-  await customerRef.update(patch);
+  profileBatch.update(customerRef, patch);
+  await profileBatch.commit();
 
   // If name changed AND we're in a session, sync denormalized linkedCustomerName
   if (patch.name && storeId && sessionId) {

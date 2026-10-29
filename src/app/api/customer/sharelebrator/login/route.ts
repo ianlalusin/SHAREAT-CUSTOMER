@@ -3,6 +3,7 @@ import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { normalizePhone } from "@/lib/phone";
 import bcrypt from "bcryptjs";
 import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
+import { readCustomerPasswordHash } from "@/lib/server/customer-secrets";
 import {
   RATE_RULES,
   checkRateLimits,
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
   }
 
   const data = snap.data() as any;
-  const match = await bcrypt.compare(password, data.passwordHash || "");
+  const match = await bcrypt.compare(password, await readCustomerPasswordHash(db, phone, data));
   if (!match) {
     await recordRateLimitFailures(db, limits);
     await writeLoyaltyLog({

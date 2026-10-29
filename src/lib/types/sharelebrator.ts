@@ -2,7 +2,8 @@ import type { Timestamp } from "firebase/firestore";
 
 export type SharelebratorCustomer = {
   phone: string;
-  passwordHash: string;
+  /** Legacy copy; the hash lives in customers/{phone}/secrets/auth (customer-secrets.ts). */
+  passwordHash?: string;
   name: string;
   address: string;
   email?: string;

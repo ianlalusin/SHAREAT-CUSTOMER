@@ -4,6 +4,7 @@ import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { normalizePhone } from "@/lib/phone";
 import bcrypt from "bcryptjs";
 import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
+import { readCustomerPasswordHash } from "@/lib/server/customer-secrets";
 import { loadLoyaltyCard } from "@/lib/server/loyalty-card";
 import { CLEARED_LINKER_FIELDS, decideDinerLink } from "@/lib/server/session-link";
 import {
@@ -150,7 +151,7 @@ export async function POST(req: Request) {
       return bad("Incorrect phone or password.", 401, "bad_password");
     }
     const data = snap.data() as any;
-    const matchPw = await bcrypt.compare(password, data.passwordHash || "");
+    const matchPw = await bcrypt.compare(password, await readCustomerPasswordHash(db, phone, data));
     if (!matchPw) {
       await recordRateLimitFailures(db, limits);
       await writeLoyaltyLog({
