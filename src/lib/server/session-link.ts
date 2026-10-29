@@ -1,3 +1,5 @@
+import { checkLiveParticipant } from "@/lib/server/customer-gate";
+
 /**
  * Rules for who may hold / release a Sharelebrator card link on a session.
  *
@@ -62,15 +64,29 @@ export function decideDinerLink(
   return { ok: true };
 }
 
-/** A cashier link can only be removed by the cashier, never by a diner. */
+/**
+ * Who may unlink. A cashier link: only the cashier, never a diner. A diner
+ * link: only the participant who made it — the same rule `resolveSessionCard`
+ * uses to decide who the cardholder is. Nothing linked is a harmless no-op.
+ */
 export function canDinerUnlink(
-  current: Record<string, any> | null | undefined
+  current: Record<string, any> | null | undefined,
+  callerParticipantId: string
 ): { ok: true } | { ok: false; status: 403; error: string } {
   if (isCashierLinked(current)) {
     return {
       ok: false,
       status: 403,
       error: "This card was linked by the cashier. Ask the cashier to change it.",
+    };
+  }
+  const owner = String(current?.linkedByParticipantId || "");
+  if (current?.linkedCustomerPhone && owner && owner !== callerParticipantId) {
+    const name = String(current?.linkedCustomerName || "").trim();
+    return {
+      ok: false,
+      status: 403,
+      error: `This card was linked from ${name ? `${name}'s` : "another"} phone. Only they can unlink it, or ask the cashier.`,
     };
   }
   return { ok: true };
@@ -122,8 +138,12 @@ export async function resolveTokenCard(db: any, decoded: any): Promise<SessionCa
     const storeId = String(decoded.storeId || "");
     const sessionId = String(decoded.sessionId || "");
     if (!storeId || !sessionId) return none;
+    // A phone removed from the table, or a table whose customer access was
+    // switched off, must lose the card along with everything else.
     const snap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
     if (!snap.exists) return none;
+    const live = await checkLiveParticipant(db, decoded);
+    if (!live.ok) return { ok: false, reason: "other", message: live.error };
     return resolveSessionCard(snap.data(), String(decoded.participantId || ""));
   }
   if (decoded.loyaltyCustomer === true) {

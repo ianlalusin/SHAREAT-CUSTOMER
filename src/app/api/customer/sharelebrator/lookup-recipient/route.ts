@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { normalizePhone } from "@/lib/phone";
+import { RATE_RULES, consumeRateLimits, tooManyAttempts } from "@/lib/server/rate-limit";
+import { maskDisplayName } from "@/lib/server/mask-name";
 
 export const runtime = "nodejs";
 
@@ -29,12 +31,18 @@ export async function GET(req: Request) {
   if (!phone) return bad("Invalid phone number format.");
 
   const db = getAdminDb();
+  // Any signed-in account can ask about any phone, so each one gets a budget —
+  // enough to fix a typo or two, not enough to walk a list of numbers.
+  const gate = await consumeRateLimits(db, [[RATE_RULES.lookupCaller, String(decoded.uid || "")]]);
+  if (!gate.ok) return tooManyAttempts(gate.retryAfterMs);
+
   const snap = await db.doc(`customers/${phone}`).get();
   if (!snap.exists) return bad("No account found for this number.", 404);
 
   const data = snap.data() as any;
   return NextResponse.json({
     ok: true,
-    name: String(data.name || ""),
+    // Masked: the sender only needs to recognise who they meant.
+    name: maskDisplayName(String(data.name || "")),
   });
 }

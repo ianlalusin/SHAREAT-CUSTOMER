@@ -58,12 +58,16 @@ describe("decideDinerLink", () => {
 });
 
 describe("canDinerUnlink", () => {
-  it("refuses a cashier link with 403", () => {
-    expect(canDinerUnlink(cashierLink)).toMatchObject({ ok: false, status: 403 });
+  it("refuses a cashier link with 403, even to the diner whose card it is", () => {
+    expect(canDinerUnlink(cashierLink, "p1")).toMatchObject({ ok: false, status: 403 });
   });
-  it("allows a diner link or nothing", () => {
-    expect(canDinerUnlink(dinerLink)).toEqual({ ok: true });
-    expect(canDinerUnlink(null)).toEqual({ ok: true });
+  it("lets the diner who linked unlink, and is a no-op when nothing is linked", () => {
+    expect(canDinerUnlink(dinerLink, "p1")).toEqual({ ok: true });
+    expect(canDinerUnlink(null, "p2")).toEqual({ ok: true });
+  });
+  it("refuses another diner at the table (audit: B could drop A's card)", () => {
+    expect(canDinerUnlink(dinerLink, "p2")).toMatchObject({ ok: false, status: 403 });
+    expect(canDinerUnlink(dinerLink, "")).toMatchObject({ ok: false, status: 403 });
   });
 });
 
@@ -95,7 +99,22 @@ describe("resolveSessionCard", () => {
 });
 
 describe("resolveTokenCard", () => {
-  const dbWith = (data: any) => ({ doc: () => ({ get: async () => ({ exists: !!data, data: () => data }) }) });
+  // The session doc doubles as an open table (access on, not expired) and the
+  // participant doc as an active diner, so the live gate passes unless a test says otherwise.
+  const open = { customerAccessEnabled: true, customerAccessExpiresAtMs: Date.now() + 3_600_000 };
+  const dbWith = (data: any, participant: any = { status: "active" }) => ({
+    doc: (path: string) => ({
+      get: async () => {
+        const d = path.includes("customerParticipants") ? participant : data ? { ...open, ...data } : null;
+        return { exists: !!d, data: () => d };
+      },
+    }),
+  });
+
+  it("refuses the card to a phone removed from the table (audit SEC-04)", async () => {
+    expect(await resolveTokenCard(dbWith(dinerLink, { status: "revoked" }), sess("p1"))).toMatchObject({ ok: false });
+    expect(await resolveTokenCard(dbWith({ ...dinerLink, customerAccessEnabled: false }), sess("p1"))).toMatchObject({ ok: false });
+  });
   const sess = (participantId: string) => ({ customer: true, storeId: "s", sessionId: "x", participantId });
 
   it("applies the session rule to table tokens", async () => {

@@ -3,7 +3,7 @@ import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { normalizePhone } from "@/lib/phone";
 import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
-import { resolveSessionCard } from "@/lib/server/session-link";
+import { resolveTokenCard } from "@/lib/server/session-link";
 
 export const runtime = "nodejs";
 
@@ -68,11 +68,10 @@ export async function POST(req: Request) {
     const storeId = String(decoded.storeId || "");
     const sessionId = String(decoded.sessionId || "");
     if (!storeId || !sessionId) return bad("Session claims missing.", 403);
-    const activeSnap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
-    if (!activeSnap.exists) return bad("Session not found.", 404);
     // Only the participant that linked the card may spend it; a cashier link is
-    // earn-only (see resolveSessionCard).
-    const card = resolveSessionCard(activeSnap.data(), String(decoded.participantId || ""));
+    // earn-only. resolveTokenCard also refuses a phone removed from the table
+    // or a table closed to customers (audit SEC-04).
+    const card = await resolveTokenCard(db, decoded);
     if (!card.ok) return bad(card.message, card.reason === "none" ? 400 : 403);
     senderPhone = card.phone;
   } else if (decoded.loyaltyCustomer === true) {
@@ -120,14 +119,45 @@ export async function POST(req: Request) {
     const senderRef = db.doc(`customers/${senderPhone}`);
     const recipientRef = db.doc(`customers/${recipientPhone}`);
 
+    // Per-account, per-Manila-day counters, read and bumped INSIDE the
+    // transaction. The ledger totals above are read outside it, so two sends
+    // fired together both saw the same total and both passed (audit COR-02).
+    // A counter missing for today is seeded from that ledger total, so sends
+    // made earlier today, before counters existed, still count.
+    const day = new Date(startOfDay.toMillis() + 8 * 3600_000).toISOString().slice(0, 10); // Manila date
+    const sentRef = senderRef.collection("transferDays").doc(day);
+    const receivedRef = recipientRef.collection("transferDays").doc(day);
+
     const result = await db.runTransaction(async (tx: any) => {
-      const senderSnap = await tx.get(senderRef);
+      const [senderSnap, sentSnap, receivedSnap] = await Promise.all([
+        tx.get(senderRef),
+        tx.get(sentRef),
+        tx.get(receivedRef),
+      ]);
+      const sentSoFar = sentSnap.exists ? Number(sentSnap.data()?.sent || 0) : sentToday;
+      const receivedSoFar = receivedSnap.exists ? Number(receivedSnap.data()?.received || 0) : receivedToday;
+      if (sentSoFar + points > MAX_SEND_PER_DAY) {
+        const remaining = Math.max(0, MAX_SEND_PER_DAY - sentSoFar);
+        throw new Error(`Daily send limit reached. You can send up to ${remaining} more point${remaining === 1 ? "" : "s"} today.`);
+      }
+      if (receivedSoFar + points > MAX_RECEIVE_PER_DAY) {
+        throw new Error("Recipient has reached the daily receive limit of 100 points.");
+      }
       if (!senderSnap.exists) throw new Error("Sender account not found.");
       const senderData = senderSnap.data() as any;
       const senderBalance = Number(senderData.pointsBalance || 0);
+      // Points held by an unredeemed voucher are already promised: claiming a
+      // reward reserves them and POS spends them at payment. Sending them away
+      // first would leave that spend to drive the balance negative.
+      const senderReserved = Math.max(0, Number(senderData.pointsReserved || 0));
+      const spendable = senderBalance - senderReserved;
 
-      if (senderBalance < points) {
-        throw new Error("Insufficient points.");
+      if (spendable < points) {
+        throw new Error(
+          senderReserved > 0 && senderBalance >= points
+            ? `Insufficient points. ${senderReserved} of your points are held for a reward you claimed.`
+            : "Insufficient points."
+        );
       }
 
       const recipientSnap = await tx.get(recipientRef);
@@ -136,6 +166,9 @@ export async function POST(req: Request) {
 
       const senderName = String(senderData.name || "");
       const recipientName = String(recipientData.name || "");
+
+      tx.set(sentRef, { sent: sentSoFar + points, day, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      tx.set(receivedRef, { received: receivedSoFar + points, day, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
 
       // Debit sender
       tx.update(senderRef, {

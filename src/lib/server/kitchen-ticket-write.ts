@@ -46,19 +46,55 @@ export type KitchenTicketInput = {
    * refill, `pendingBillLine`/`billOnServe` for a self-ordered add-on.
    */
   extra?: Record<string, any>;
+  /**
+   * A deterministic id from deriveKitchenTicketId. When given, the write is
+   * create-only: a ticket already at this id (an earlier attempt of the same
+   * submission got this far) is left exactly as it is and its id returned, so
+   * a retry cannot put the line in front of the kitchen twice. Omitted, a
+   * fresh random id is used, as before.
+   */
+  ticketId?: string;
 };
+
+function ticketsCollection(db: Firestore, storeId: string, sessionId: string) {
+  return db.collection(`stores/${storeId}/sessions/${sessionId}/kitchentickets`);
+}
+
+/**
+ * Which of `ticketIds` already exist. Lets a route tell, before its gates run,
+ * which lines of a retried submission an earlier attempt already wrote.
+ */
+export async function existingKitchenTicketIds(
+  db: Firestore,
+  storeId: string,
+  sessionId: string,
+  ticketIds: string[]
+): Promise<Set<string>> {
+  if (!ticketIds.length) return new Set();
+  const col = ticketsCollection(db, storeId, sessionId);
+  const snaps = await db.getAll(...ticketIds.map((id) => col.doc(id)));
+  return new Set(snaps.filter((s) => s.exists).map((s) => s.id));
+}
 
 export async function writeKitchenTicket(db: Firestore, input: KitchenTicketInput): Promise<string> {
   const {
     storeId, sessionId, kitchenLocationId, kitchenLocationName,
-    type, itemId, itemName, qty, notes, session, actor, extra,
+    type, itemId, itemName, qty, notes, session, actor, extra, ticketId,
   } = input;
 
-  const ticketRef = db.collection(`stores/${storeId}/sessions/${sessionId}/kitchentickets`).doc();
+  const col = ticketsCollection(db, storeId, sessionId);
+  const ticketRef = ticketId ? col.doc(ticketId) : col.doc();
   const rtRef = db.doc(`stores/${storeId}/rtKdsTickets/${kitchenLocationId}`);
   const createdAtClientMs = Date.now();
 
   await db.runTransaction(async (tx: any) => {
+    // Read inside the transaction, so two concurrent attempts of the same
+    // submission cannot both see "missing" and both fan out to the KDS doc.
+    if (ticketId) {
+      const existing = await tx.get(ticketRef);
+      if (existing.exists) return;
+    }
+
     const rtSnap = await tx.get(rtRef);
     const rt = rtSnap.exists ? (rtSnap.data() as any) : {};
 
@@ -103,7 +139,8 @@ export async function writeKitchenTicket(db: Firestore, input: KitchenTicketInpu
       updatedAt: FieldValue.serverTimestamp(),
     };
 
-    tx.set(ticketRef, ticket, { merge: false });
+    if (ticketId) tx.create(ticketRef, ticket);
+    else tx.set(ticketRef, ticket, { merge: false });
 
     tickets[ticketRef.id] = ticket;
     if (!activeIds.includes(ticketRef.id)) activeIds.unshift(ticketRef.id);

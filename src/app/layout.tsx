@@ -37,8 +37,9 @@ export const viewport: Viewport = {
   themeColor: '#E00000',
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  // No maximumScale / userScalable: blocking pinch-zoom shuts out diners with
+  // low vision (audit OTH-01). Inputs are 16px on mobile, so iOS does not
+  // auto-zoom on focus without the lock.
 };
 
 export default function RootLayout({

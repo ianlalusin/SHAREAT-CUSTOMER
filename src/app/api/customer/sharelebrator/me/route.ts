@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkLiveParticipant } from "@/lib/server/customer-gate";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { loadLoyaltyCard } from "@/lib/server/loyalty-card";
 import { isCashierLinked } from "@/lib/server/session-link";
@@ -32,6 +33,11 @@ export async function GET(req: Request) {
     const storeId = String(decoded.storeId || "");
     const sessionId = String(decoded.sessionId || "");
     if (!storeId || !sessionId) return bad("Session claims missing storeId/sessionId.", 403);
+
+    // A phone removed from the table (or a table closed to customers) no
+    // longer gets the card. Answered as "not linked", not an error: the hub
+    // calls this on every load and has nothing useful to show for a failure.
+    if (!(await checkLiveParticipant(db, decoded)).ok) return NextResponse.json({ ok: true, linked: false });
 
     const activeSnap = await db.doc(`stores/${storeId}/activeSessions/${sessionId}`).get();
     if (!activeSnap.exists) return NextResponse.json({ ok: true, linked: false });

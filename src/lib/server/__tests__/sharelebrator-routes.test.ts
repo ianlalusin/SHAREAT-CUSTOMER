@@ -12,32 +12,73 @@ const h = vi.hoisted(() => ({
   store: new Map() as Store,
   claims: {} as Record<string, any>,
   onCompare: null as null | (() => void),
+  /** Participants the cashier has removed from the table. Everyone else is live. */
+  removed: new Set<string>(),
 }));
 
 function fakeDb() {
-  const ref = (path: string) => ({
+  let auto = 0;
+  const col = (path: string): any => ({
+    doc: (id?: string) => ref(`${path}/${id ?? `auto${++auto}`}`),
+    // Ledger reads only need "today's entries"; the fake returns every doc in the collection.
+    where: () => col(path),
+    get: async () => ({
+      docs: [...h.store.entries()]
+        .filter(([p]) => p.startsWith(`${path}/`) && !p.slice(path.length + 1).includes("/"))
+        .map(([, d]) => ({ data: () => d })),
+    }),
+  });
+  const ref = (path: string): any => ({
     path,
     get: async () => ({ exists: h.store.has(path), data: () => h.store.get(path) }),
-    update: async (d: any) => apply([[path, d]]),
+    update: async (d: any) => apply([[path, d, "update"]]),
+    collection: (name: string) => col(`${path}/${name}`),
   });
-  const apply = (writes: Array<[string, any]>) => {
-    for (const [path, patch] of writes) {
-      if (!h.store.has(path)) throw new Error(`NOT_FOUND: ${path}`);
-      h.store.set(path, { ...h.store.get(path), ...patch });
+  /** FieldValue.increment is applied, so balances stay plain numbers the tests can read. */
+  const merge = (cur: any, patch: any) => {
+    const out = { ...(cur || {}) };
+    for (const [k, v] of Object.entries(patch)) {
+      const inc = (v as any)?.operand ?? (v as any)?._operand;
+      out[k] = inc !== undefined && (v as any)?.constructor?.name?.includes("Increment") ? Number(out[k] || 0) + inc : v;
+    }
+    return out;
+  };
+  const apply = (writes: Array<[string, any, "update" | "set"]>) => {
+    for (const [path, patch, kind] of writes) {
+      if (kind === "update" && !h.store.has(path)) throw new Error(`NOT_FOUND: ${path}`);
+      h.store.set(path, merge(h.store.get(path), patch));
     }
   };
   return {
     doc: ref,
+    collection: col,
     batch: () => {
-      const w: Array<[string, any]> = [];
-      return { update: (r: any, d: any) => void w.push([r.path, d]), commit: async () => apply(w) };
+      const w: Array<[string, any, "update" | "set"]> = [];
+      return { update: (r: any, d: any) => void w.push([r.path, d, "update"]), commit: async () => apply(w) };
     },
+    // Optimistic like Firestore's: if a doc this transaction read changed
+    // before it commits, the whole function runs again on fresh data. Without
+    // that, two concurrent transactions here would both commit on stale reads
+    // and a race test could never pass.
     runTransaction: async (fn: any) => {
-      const w: Array<[string, any]> = [];
-      const tx = { get: (r: any) => r.get(), update: (r: any, d: any) => void w.push([r.path, d]) };
-      const out = await fn(tx);
-      apply(w);
-      return out;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const w: Array<[string, any, "update" | "set"]> = [];
+        const seen = new Map<string, string>();
+        const tx = {
+          get: async (r: any) => {
+            seen.set(r.path, JSON.stringify(h.store.get(r.path) ?? null));
+            return r.get();
+          },
+          update: (r: any, d: any) => void w.push([r.path, d, "update"]),
+          set: (r: any, d: any) => void w.push([r.path, d, "set"]),
+        };
+        const out = await fn(tx);
+        const stale = [...seen].some(([p, v]) => JSON.stringify(h.store.get(p) ?? null) !== v);
+        if (stale) continue;
+        apply(w);
+        return out;
+      }
+      throw new Error("ABORTED: too much contention");
     },
   };
 }
@@ -50,6 +91,14 @@ vi.mock("@/lib/firebase/admin", () => ({
       return h.claims[t];
     },
   }),
+}));
+// The live-participant gate is unit-tested on its own (session-link.test.ts);
+// here it is a switch, so these tests stay about the link rules themselves.
+vi.mock("@/lib/server/customer-gate", () => ({
+  checkLiveParticipant: async (_db: any, decoded: any) =>
+    h.removed.has(String(decoded?.participantId))
+      ? { ok: false, status: 403, error: "Participant access has been removed." }
+      : { ok: true },
 }));
 vi.mock("@/lib/server/loyaltyLog", () => ({ writeLoyaltyLog: async () => {} }));
 vi.mock("@/lib/server/loyalty-card", () => ({
@@ -112,6 +161,7 @@ beforeEach(() => {
   h.store.clear();
   h.claims = {};
   h.onCompare = null;
+  h.removed.clear();
   h.store.set(`customers/${ANA}`, { name: "Ana", passwordHash: "x", pointsBalance: 100 });
   h.store.set(`customers/${BEN}`, { name: "Ben", passwordHash: "x", pointsBalance: 100 });
   h.store.set("stores/s1", { name: "Store" });
@@ -237,6 +287,65 @@ describe("unlink-session", () => {
     seed({ ...cashierLink, linkedBy: null, linkedCustomerLockedAt: 1 });
     expect((await unlinkPOST(req(token("p1")))).status).toBe(409);
     expect(h.store.get(ACTIVE).linkedCustomerPhone).toBe(ANA);
+  });
+
+  it("403s another diner on someone else's diner link and changes nothing (audit SEC-03)", async () => {
+    const link = { ...cashierLink, linkedBy: null, linkedByUid: null, linkedAt: null, linkedByParticipantId: "p1" };
+    seed(link);
+    expect((await unlinkPOST(req(token("p2")))).status).toBe(403);
+    expect(h.store.get(ACTIVE)).toEqual(link);
+    expect(h.store.get(SESSION)).toEqual(link);
+  });
+});
+
+describe("transfer-points wallet rules", () => {
+  const dinerLink = { ...cashierLink, linkedBy: null, linkedByUid: null, linkedAt: null, linkedByParticipantId: "p1" };
+  const send = (points: number) => transferPOST(req(token("p1"), { recipientPhone: BEN, points }));
+
+  it("cannot send points held for a claimed voucher (audit COR-01)", async () => {
+    seed(dinerLink);
+    h.store.set(`customers/${ANA}`, { name: "Ana", pointsBalance: 100, pointsReserved: 90 });
+    const res = await send(50);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/held for a reward/);
+    expect(h.store.get(`customers/${ANA}`).pointsBalance).toBe(100);
+  });
+
+  it("sends from the unreserved part and counts it against today's limit", async () => {
+    seed(dinerLink);
+    h.store.set(`customers/${ANA}`, { name: "Ana", pointsBalance: 100, pointsReserved: 60 });
+    expect((await send(40)).status).toBe(200);
+    expect(h.store.get(`customers/${ANA}`).pointsBalance).toBe(60);
+    expect(h.store.get(`customers/${BEN}`).pointsBalance).toBe(140);
+  });
+
+  it("two sends fired together cannot beat the 50-a-day limit (audit COR-02)", async () => {
+    seed(dinerLink);
+    const results = await Promise.all([send(30), send(30)]);
+    expect(results.map((r) => r.status).sort()).toEqual([200, 400]);
+    expect(h.store.get(`customers/${ANA}`).pointsBalance).toBe(70);
+  });
+});
+
+describe("a phone removed from the table loses the card (audit SEC-04)", () => {
+  const dinerLink = { ...cashierLink, linkedBy: null, linkedByUid: null, linkedAt: null, linkedByParticipantId: "p1" };
+
+  it("cannot link, unlink, redeem or transfer", async () => {
+    seed(dinerLink);
+    h.removed.add("p1");
+    const t = token("p1");
+    expect((await linkPOST(req(t, login(ANA)))).status).toBe(403);
+    expect((await unlinkPOST(req(t))).status).toBe(403);
+    expect((await redeemPOST(req(t, { rewardId: "r1" }))).status).toBe(403);
+    expect((await transferPOST(req(t, { recipientPhone: BEN, points: 5 }))).status).toBe(403);
+    expect(h.store.get(ACTIVE)).toEqual(dinerLink);
+  });
+
+  it("sees no card", async () => {
+    seed(dinerLink);
+    h.removed.add("p1");
+    const res = await meGET(new Request("http://x", { headers: { authorization: `Bearer ${token("p1")}` } }));
+    expect(await res.json()).toMatchObject({ ok: true, linked: false });
   });
 });
 

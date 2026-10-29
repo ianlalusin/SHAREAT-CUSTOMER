@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkLiveParticipant } from "@/lib/server/customer-gate";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { canDinerUnlink, CLEARED_LINKER_FIELDS } from "@/lib/server/session-link";
 
@@ -24,8 +25,11 @@ export async function POST(req: Request) {
   const storeId = String(decoded.storeId || "");
   const sessionId = String(decoded.sessionId || "");
   if (!storeId || !sessionId) return bad("Session claims missing storeId/sessionId.", 403);
+  const participantId = String((decoded as any).participantId || "");
 
   const db = getAdminDb();
+  const live = await checkLiveParticipant(db, decoded);
+  if (!live.ok) return bad(live.error, live.status);
   const activeRef = db.doc(`stores/${storeId}/activeSessions/${sessionId}`);
   const sessionRef = db.doc(`stores/${storeId}/sessions/${sessionId}`);
 
@@ -47,8 +51,10 @@ export async function POST(req: Request) {
         return { error: "This session has been paid; link can no longer be changed.", status: 409 };
       }
       // A cashier link is earn-only and belongs to the cashier: no diner at the
-      // table may drop it (the caller is not the linker).
-      const verdict = canDinerUnlink(sData);
+      // table may drop it (the caller is not the linker). A diner link belongs
+      // to the diner who made it — another phone at the table must not be able
+      // to drop it and link their own card to collect this meal's points.
+      const verdict = canDinerUnlink(sData, participantId);
       if (!verdict.ok) return verdict;
     }
     if (activeSnap.exists) tx.update(activeRef, clear);
