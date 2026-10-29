@@ -124,6 +124,7 @@ export function CustomerFeedbackModal({ open, onOpenChange, customerName }: Prop
                   value={suggestion}
                   onChange={(e) => setSuggestion(e.target.value)}
                   placeholder="Any suggestion?"
+                  maxLength={1000}
                   className="min-h-[120px]"
                 />
               </div>

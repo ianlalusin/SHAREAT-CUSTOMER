@@ -3,6 +3,14 @@ import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { normalizePhone } from "@/lib/phone";
 import bcrypt from "bcryptjs";
 import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
+import {
+  RATE_RULES,
+  checkRateLimits,
+  clientIp,
+  recordRateLimitFailures,
+  tooManyAttempts,
+  type RateHit,
+} from "@/lib/server/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -25,8 +33,18 @@ export async function POST(req: Request) {
   if (!password) return bad("Password is required.");
 
   const db = getAdminDb();
+  // Budgets count failures only, so a diner who types it right never pays.
+  // Checked before bcrypt: a refused guess should cost us nothing.
+  const limits: RateHit[] = [
+    [RATE_RULES.loginPhone, phone],
+    [RATE_RULES.loginIp, clientIp(req)],
+  ];
+  const gate = await checkRateLimits(db, limits);
+  if (!gate.ok) return tooManyAttempts(gate.retryAfterMs);
+
   const snap = await db.doc(`customers/${phone}`).get();
   if (!snap.exists) {
+    await recordRateLimitFailures(db, limits);
     await writeLoyaltyLog({
       type: "login_failed",
       phone,
@@ -34,12 +52,15 @@ export async function POST(req: Request) {
       actorUid: phone,
       source: "standalone",
     });
-    return bad("Account not found.", 401);
+    // Same message as a wrong password: a distinct one tells anyone which
+    // phone numbers have accounts.
+    return bad("Incorrect phone or password.", 401);
   }
 
   const data = snap.data() as any;
   const match = await bcrypt.compare(password, data.passwordHash || "");
   if (!match) {
+    await recordRateLimitFailures(db, limits);
     await writeLoyaltyLog({
       type: "login_failed",
       phone,

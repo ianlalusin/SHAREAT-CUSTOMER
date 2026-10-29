@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { loadAndValidateSessionAccess } from "@/lib/server/customer-session-access";
 import { claimOrReuseParticipantSlot, hashDeviceId } from "@/lib/server/customer-participants";
+import { RATE_RULES, checkRateLimits, clientIp, recordRateLimitFailures, tooManyAttempts, type RateHit } from "@/lib/server/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -42,8 +43,24 @@ export async function POST(req: Request) {
   const db = getAdminDb();
   const auth = getAdminAuth();
 
+  // A correct PIN mints a real table token, so guessing has to be slow. Only
+  // WRONG PINs count: a whole restaurant joins tables from one shared WiFi
+  // address, and counting every join would lock out a busy dinner service.
+  // Keyed by caller IP and by the PIN itself, so spreading guesses at one code
+  // across many IPs does not get around the IP budget.
+  const hits: RateHit[] = [
+    [RATE_RULES.pinIp, clientIp(req)],
+    [RATE_RULES.pinValue, pinRaw],
+  ];
+  const gate = await checkRateLimits(db, hits);
+  if (!gate.ok) return tooManyAttempts(gate.retryAfterMs);
+  const wrongPin = async (msg: string, status: number) => {
+    await recordRateLimitFailures(db, hits);
+    return bad(msg, status);
+  };
+
   const pinSnap = await db.doc(`pinRegistry/${pinRaw}`).get();
-  if (!pinSnap.exists) return bad("Invalid PIN.", 404);
+  if (!pinSnap.exists) return wrongPin("Invalid PIN.", 404);
 
   const pinData = pinSnap.data() as any;
   const storeId = String(pinData.storeId || "");
@@ -51,9 +68,9 @@ export async function POST(req: Request) {
   const pinStatus = String(pinData.status || "");
   const expiresAtMs = Number(pinData.expiresAtMs || 0);
 
-  if (!storeId || !sessionId) return bad("Invalid or expired PIN.", 400);
-  if (pinStatus !== "active") return bad("Invalid or expired PIN.", 400);
-  if (!expiresAtMs || expiresAtMs <= Date.now()) return bad("Invalid or expired PIN.", 400);
+  if (!storeId || !sessionId) return wrongPin("Invalid or expired PIN.", 400);
+  if (pinStatus !== "active") return wrongPin("Invalid or expired PIN.", 400);
+  if (!expiresAtMs || expiresAtMs <= Date.now()) return wrongPin("Invalid or expired PIN.", 400);
 
   let sessionAccess;
   try {

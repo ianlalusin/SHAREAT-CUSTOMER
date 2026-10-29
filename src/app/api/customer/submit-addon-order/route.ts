@@ -4,6 +4,7 @@ import { validateActiveParticipant } from "@/lib/server/customer-participants";
 import { writeKitchenTicket } from "@/lib/server/kitchen-ticket-write";
 import { claimOrderRequest, releaseOrderRequest } from "@/lib/server/order-claim";
 import { orderTotal, resolveOrderLines } from "@/lib/catalog/order-validation";
+import { deriveKitchenTicketId, normalizeRequestId } from "@/lib/kitchen-ticket-id";
 
 /**
  * A diner orders add-ons from their own phone.
@@ -93,11 +94,29 @@ export async function POST(req: Request) {
     const guestCount =
       Number(active.guestCountFinal ?? active.guestCountCashierInitial ?? active.guestCount ?? 0) || 0;
 
+    // The client already holds one clientRequestId per basket across retries
+    // (see CustomerCatalog), so it doubles as the idempotency key: each line
+    // gets a ticket id derived from it, and a retry after a part-written order
+    // lands on the same ids — written lines are skipped, missing ones filled
+    // in. An id that does not look like one keeps the old random-id writes.
+    const requestKey = normalizeRequestId(clientRequestId);
+
     const createdTicketIds: string[] = [];
 
     try {
-      for (const line of resolved.lines) {
+      for (const [lineIndex, line] of resolved.lines.entries()) {
         const ticketId = await writeKitchenTicket(db, {
+          ticketId: requestKey
+            ? deriveKitchenTicketId({
+                kind: "addon",
+                storeId,
+                sessionId,
+                participantId,
+                requestId: requestKey,
+                lineIndex,
+                lineKey: JSON.stringify([line.itemId, line.qty, line.modifiersText ?? "", line.note ?? ""]),
+              })
+            : undefined,
           storeId,
           sessionId,
           kitchenLocationId: line.kitchenLocationId,
@@ -141,7 +160,9 @@ export async function POST(req: Request) {
       }
     } catch (e: any) {
       // Let the diner simply tap again rather than telling them a failed order
-      // "was already sent".
+      // "was already sent". Safe even when some lines did commit: the retry
+      // carries the same clientRequestId, so those lines resolve to tickets
+      // that already exist and are skipped rather than charged twice.
       await releaseOrderRequest(db, { storeId, sessionId, participantId, clientRequestId });
       throw e;
     }

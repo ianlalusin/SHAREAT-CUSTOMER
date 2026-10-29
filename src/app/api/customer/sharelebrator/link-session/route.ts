@@ -3,12 +3,24 @@ import { checkLiveParticipant } from "@/lib/server/customer-gate";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { normalizePhone } from "@/lib/phone";
 import bcrypt from "bcryptjs";
-import { FieldValue } from "firebase-admin/firestore";
 import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
 import { loadLoyaltyCard } from "@/lib/server/loyalty-card";
 import { CLEARED_LINKER_FIELDS, decideDinerLink } from "@/lib/server/session-link";
+import {
+  RATE_RULES,
+  checkRateLimits,
+  clientIp,
+  consumeRateLimits,
+  recordRateLimitFailures,
+  tooManyAttempts,
+  type RateHit,
+} from "@/lib/server/rate-limit";
+import { birthdayError } from "@/lib/server/signup-fields";
+import { createCustomerAccount } from "@/lib/server/create-customer";
 
 export const runtime = "nodejs";
+
+const SIGNUP_EXISTS = "Account with this phone already exists. Try Log In.";
 
 function bad(msg: string, status = 400, code?: string) {
   return NextResponse.json({ ok: false, error: msg, ...(code ? { code } : {}) }, { status });
@@ -111,8 +123,18 @@ export async function POST(req: Request) {
   } catch {}
 
   if (body.mode === "login") {
+    // Same failure budgets as standalone login — shared buckets, so alternating
+    // the two endpoints does not double an attacker's guesses.
+    const limits: RateHit[] = [
+      [RATE_RULES.loginPhone, phone],
+      [RATE_RULES.loginIp, clientIp(req)],
+    ];
+    const gate = await checkRateLimits(db, limits);
+    if (!gate.ok) return tooManyAttempts(gate.retryAfterMs);
+
     const snap = await customerRef.get();
     if (!snap.exists) {
+      await recordRateLimitFailures(db, limits);
       await writeLoyaltyLog({
         type: "login_failed",
         phone,
@@ -123,11 +145,14 @@ export async function POST(req: Request) {
         storeName,
         sessionId,
       });
-      return bad("Account not found.", 401);
+      // Identical to the wrong-password reply, code included, so the answer
+      // never says whether a phone has an account.
+      return bad("Incorrect phone or password.", 401, "bad_password");
     }
     const data = snap.data() as any;
     const matchPw = await bcrypt.compare(password, data.passwordHash || "");
     if (!matchPw) {
+      await recordRateLimitFailures(db, limits);
       await writeLoyaltyLog({
         type: "login_failed",
         phone,
@@ -152,33 +177,34 @@ export async function POST(req: Request) {
       sessionId,
     });
   } else if (body.mode === "signup") {
-    const existing = await customerRef.get();
-    if (existing.exists) return bad("Account with this phone already exists. Try Log In.", 409);
-
     const name = String(body.name || "").trim();
     if (!name) return bad("Name is required.");
     const address = String(body.address || "").trim();
     if (!address) return bad("Address is required.");
     const bday = String(body.bday || "").trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(bday)) return bad("Birthday must be YYYY-MM-DD.");
-    const bdayDate = new Date(bday + "T00:00:00");
-    if (isNaN(bdayDate.getTime()) || bdayDate.toISOString().slice(0, 10) !== bday) return bad("Invalid date.");
+    const bdayErr = birthdayError(bday);
+    if (bdayErr) return bad(bdayErr);
     const email = body.email ? String(body.email).trim() : undefined;
 
+    // Same per-IP signup budget as the standalone route.
+    const gate = await consumeRateLimits(db, [[RATE_RULES.signupIp, clientIp(req)]]);
+    if (!gate.ok) return tooManyAttempts(gate.retryAfterMs);
+
+    const existing = await customerRef.get();
+    if (existing.exists) return bad(SIGNUP_EXISTS, 409);
+
     const passwordHash = await bcrypt.hash(password, 10);
-    await customerRef.set({
+    // Create-only: a concurrent signup for this phone that won the race while
+    // bcrypt ran gets the same answer as the existence check above.
+    const created = await createCustomerAccount(db, customerRef, {
       phone,
       passwordHash,
       name,
       address,
       email: email ?? null,
       bday,
-      pointsBalance: 0,
-      visitCount: 0,
-      storeVisits: {},
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
     });
+    if (!created) return bad(SIGNUP_EXISTS, 409);
     // Audit log (individual + daily projection)
     await writeLoyaltyLog({
       type: "account_created",
@@ -191,14 +217,6 @@ export async function POST(req: Request) {
       sessionId,
     });
 
-    // Global aggregate projection
-    await db.doc("loyaltyStats/global").set(
-      {
-        totalAccounts: FieldValue.increment(1),
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
     customerName = name;
   } else {
     return bad("Unknown mode.");

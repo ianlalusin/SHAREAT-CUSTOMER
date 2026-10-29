@@ -2,10 +2,14 @@ import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { normalizePhone } from "@/lib/phone";
 import bcrypt from "bcryptjs";
-import { FieldValue } from "firebase-admin/firestore";
 import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
+import { RATE_RULES, clientIp, consumeRateLimits, tooManyAttempts } from "@/lib/server/rate-limit";
+import { birthdayError } from "@/lib/server/signup-fields";
+import { createCustomerAccount } from "@/lib/server/create-customer";
 
 export const runtime = "nodejs";
+
+const ALREADY_EXISTS = "A Sharelebrator account with this phone already exists.";
 
 function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
@@ -32,32 +36,34 @@ export async function POST(req: Request) {
   if (!address) return bad("Address is required.");
 
   const bday = String(body.bday || "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(bday)) return bad("Birthday must be YYYY-MM-DD.");
-  const bdayDate = new Date(bday + "T00:00:00");
-  if (isNaN(bdayDate.getTime()) || bdayDate.toISOString().slice(0, 10) !== bday) return bad("Invalid date.");
+  const bdayErr = birthdayError(bday);
+  if (bdayErr) return bad(bdayErr);
 
   const email = body.email ? String(body.email).trim() : undefined;
 
   const db = getAdminDb();
+  // Every attempt counts, not just failures: each one costs a bcrypt hash and,
+  // when it succeeds, a permanent account.
+  const gate = await consumeRateLimits(db, [[RATE_RULES.signupIp, clientIp(req)]]);
+  if (!gate.ok) return tooManyAttempts(gate.retryAfterMs);
+
   const ref = db.doc(`customers/${phone}`);
   const existing = await ref.get();
-  if (existing.exists) return bad("A Sharelebrator account with this phone already exists.", 409);
+  if (existing.exists) return bad(ALREADY_EXISTS, 409);
 
   const passwordHash = await bcrypt.hash(password, 10);
 
-  await ref.set({
+  // The read above is only an early exit — two signups for one phone can both
+  // pass it while bcrypt runs. The create is the real check.
+  const created = await createCustomerAccount(db, ref, {
     phone,
     passwordHash,
     name,
     address,
     email: email ?? null,
     bday,
-    pointsBalance: 0,
-    visitCount: 0,
-    storeVisits: {},
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
   });
+  if (!created) return bad(ALREADY_EXISTS, 409);
 
   // Audit log (individual + daily projection)
   await writeLoyaltyLog({
@@ -67,15 +73,6 @@ export async function POST(req: Request) {
     actorUid: phone, // self-serve signup
     source: "home_page",
   });
-
-  // Global aggregate projection
-  await db.doc("loyaltyStats/global").set(
-    {
-      totalAccounts: FieldValue.increment(1),
-      updatedAt: FieldValue.serverTimestamp(),
-    },
-    { merge: true }
-  );
 
   const token = await getAdminAuth().createCustomToken(phone, {
     loyaltyCustomer: true,

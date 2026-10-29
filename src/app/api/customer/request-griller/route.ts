@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
-import { FieldValue } from "firebase-admin/firestore";
 import { validateActiveParticipant } from "@/lib/server/customer-participants";
+import { createPendingCustomerRequest } from "@/lib/server/customer-request";
 
 export const runtime = "nodejs";
 
@@ -52,44 +52,25 @@ export async function POST(req: Request) {
       return bad(e.message, e.httpStatus || 403);
     }
 
-    const requestsRef = db.collection(`stores/${storeId}/customerRequests`);
-
-    // Dedupe: if this session already has a pending griller request, reuse it
-    // so staff don't get a duplicate alert.
-    const existing = await requestsRef
-      .where("sessionId", "==", sessionId)
-      .where("status", "==", "pending")
-      .limit(5)
-      .get();
-    const open = existing.docs.find((d) => (d.data() as any).type === "griller");
-    if (open) {
-      return NextResponse.json({ ok: true, requestId: open.id, deduped: true });
-    }
-
     const tableNumber = String(active.tableNumber || "");
     const tableDisplayName = String(active.tableDisplayName || (tableNumber ? `Table ${tableNumber}` : ""));
     const customerName = active.customerName ?? null;
 
-    const requestRef = requestsRef.doc();
-    const createdAtClientMs = Date.now();
-
-    await requestRef.set({
-      id: requestRef.id,
+    // Dedupe: if this session already has a pending griller request, reuse it so
+    // staff don't get a duplicate alert. Atomic — see createPendingCustomerRequest.
+    const { requestId, deduped } = await createPendingCustomerRequest(db, {
       storeId,
       sessionId,
       participantId,
+      createdByUid,
       type: "griller",
       text: "requested an additional griller",
       tableNumber,
       tableDisplayName,
       customerName,
-      status: "pending",
-      createdAt: FieldValue.serverTimestamp(),
-      createdAtClientMs,
-      createdByUid,
     });
 
-    return NextResponse.json({ ok: true, requestId: requestRef.id });
+    return NextResponse.json(deduped ? { ok: true, requestId, deduped: true } : { ok: true, requestId });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? "Unknown error" }, { status: 500 });
   }

@@ -1,5 +1,3 @@
 {
-  "firestore": {
-    "rules": "firestore.rules"
-  }
+  "//": "Firestore rules and indexes for this project live in the POS repo (POS/firestore.rules) and are deployed from there. This app keeps no copy: a stale second ruleset here would replace the live rules on deploy and break POS (audit SEC-07 / COR-04)."
 }

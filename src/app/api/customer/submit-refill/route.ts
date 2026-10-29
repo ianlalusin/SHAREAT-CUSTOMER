@@ -16,7 +16,8 @@ import {
 } from "@/lib/refill-cooldown";
 import { getRefillOptionsMenu, type RefillOptionsMenu } from "@/lib/server/refill-options-cache";
 import { validateRefillLine } from "@/lib/refill-validate";
-import { writeKitchenTicket } from "@/lib/server/kitchen-ticket-write";
+import { existingKitchenTicketIds, writeKitchenTicket } from "@/lib/server/kitchen-ticket-write";
+import { deriveKitchenTicketId, normalizeRequestId } from "@/lib/kitchen-ticket-id";
 import { refillTicketState } from "@/lib/server/refill-outstanding";
 
 export const runtime = "nodejs";
@@ -36,6 +37,8 @@ type NormalizedItem = {
   refillRequest: Record<string, number> | null;
   /** The refill types this line puts on cooldown. */
   cooldownIds: string[];
+  /** Deterministic ticket id when the request carried a requestId, else undefined. */
+  ticketId?: string;
 };
 
 export async function POST(req: Request) {
@@ -96,15 +99,62 @@ export async function POST(req: Request) {
     // validateRefillLine for why the request's own copies are not trusted.
     const normalized: NormalizedItem[] = [];
 
-    for (const it of items) {
+    // One id per "Send order" tap, reused if the guest retries the same cart.
+    // Absent (a client that predates it) means random ticket ids, as before.
+    const requestKey = normalizeRequestId(body?.requestId);
+
+    for (const [lineIndex, it] of items.entries()) {
       const check = validateRefillLine(it, menu);
       if (!check.ok) return bad(check.error, 400);
-      normalized.push({ ...check.line, notes: String(it?.notes || "").slice(0, 200) });
+      const line = { ...check.line, notes: String(it?.notes || "").slice(0, 200) };
+      normalized.push({
+        ...line,
+        ticketId: requestKey
+          ? deriveKitchenTicketId({
+              kind: "refill",
+              storeId,
+              sessionId,
+              participantId,
+              requestId: requestKey,
+              lineIndex,
+              lineKey: JSON.stringify([line.itemId, line.qty, line.cooldownIds, line.refillRequest, line.notes]),
+            })
+          : undefined,
+      });
+    }
+
+    // ---- lines an earlier attempt of this same request already wrote --------
+    // A retry after a part-written order must finish it, not be refused by
+    // its own first half: those tickets now sit "in the kitchen" and hold a
+    // claimed cooldown, so every gate below would block them. Only the lines
+    // still missing go through the gates, the claim and the write.
+    const alreadyWritten = requestKey
+      ? await existingKitchenTicketIds(
+          db,
+          storeId,
+          sessionId,
+          normalized.map((n) => n.ticketId as string)
+        )
+      : new Set<string>();
+    const pending = normalized.filter((n) => !n.ticketId || !alreadyWritten.has(n.ticketId));
+
+    // Everything landed on an earlier attempt and only the response was lost:
+    // answer as that attempt would have, without claiming anything again.
+    if (!pending.length) {
+      const cooldowns = mergeCooldownStamps(participantInfo.refillCooldowns, undefined);
+      return NextResponse.json({
+        ok: true,
+        ticketIds: normalized.map((n) => n.ticketId as string),
+        refillCooldowns: {
+          cooldownMs: REFILL_COOLDOWN_MS,
+          nextAllowedAt: toNextAllowedMap(cooldowns, Date.now()),
+        },
+      });
     }
 
     // ---- claim the per-meat cooldowns (atomic, all-or-nothing) -------------
     const labels: Record<string, string> = {};
-    for (const n of normalized) {
+    for (const n of pending) {
       for (const id of n.cooldownIds) {
         // "Other Refills" is one line covering several sides, so its itemName is
         // the bundle label. Without the menu lookup the guest gets told "OTHER
@@ -118,7 +168,7 @@ export async function POST(req: Request) {
     // item validation moved out of the write loop — a refusal must not leave
     // half an order already with the kitchen. The claim below stays the race
     // guard for double taps.
-    const requestedIds = normalized.flatMap((n) => n.cooldownIds);
+    const requestedIds = pending.flatMap((n) => n.cooldownIds);
     const { outstanding, servedAt, firstServingPending } = await refillTicketState(
       db,
       storeId,
@@ -200,9 +250,11 @@ export async function POST(req: Request) {
     const guestCount = Number(active.guestCountFinal ?? active.guestCountCashierInitial ?? active.guestCount ?? 0) || 0;
 
     const createdTicketIds: string[] = [];
+    /** Refill types whose ticket did reach the kitchen on this attempt. */
+    const writtenCooldownIds = new Set<string>();
 
     try {
-      for (const item of normalized) {
+      for (const item of pending) {
         const flavorNote = item.flavorIds.map((id) => flavorNameById.get(id) || id).join(", ");
 
         const ticketId = await writeKitchenTicket(db, {
@@ -211,6 +263,7 @@ export async function POST(req: Request) {
           kitchenLocationId: item.kitchenLocationId,
           kitchenLocationName: item.kitchenLocationName,
           type: "refill",
+          ticketId: item.ticketId,
           itemId: item.itemId,
           itemName: item.itemName,
           qty: item.qty,
@@ -234,10 +287,18 @@ export async function POST(req: Request) {
         });
 
         createdTicketIds.push(ticketId);
+        for (const id of item.cooldownIds) writtenCooldownIds.add(id);
       }
     } catch (e: any) {
-      // Hand the cooldown back — a failed order must not cost the guest their next one.
-      await releaseRefillCooldowns(db, { storeId, sessionId, participantId, claimed });
+      // Hand the cooldown back — a failed order must not cost the guest their
+      // next one. Only for the lines that failed, though: a refill whose ticket
+      // did reach the kitchen was really ordered, so its stamp stays.
+      await releaseRefillCooldowns(db, {
+        storeId,
+        sessionId,
+        participantId,
+        claimed: { ...claimed, refillIds: claimed.refillIds.filter((id) => !writtenCooldownIds.has(id)) },
+      });
       throw e;
     }
 
@@ -249,7 +310,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      ticketIds: createdTicketIds,
+      // With a requestId, the whole order's ids — including lines an earlier
+      // attempt wrote — so a retry reports the same order the first try would.
+      ticketIds: requestKey ? normalized.map((n) => n.ticketId as string) : createdTicketIds,
       refillCooldowns: {
         cooldownMs: REFILL_COOLDOWN_MS,
         nextAllowedAt: toNextAllowedMap(updatedCooldowns, Date.now()),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
@@ -173,6 +173,13 @@ function CustomerRefillContent({
   const [cart, setCart] = useState<Map<string, CartItem>>(new Map());
   const [activeRefillId, setActiveRefillId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  /**
+   * One request id per cart, held until the kitchen has it, so a retry after a
+   * failed or timed-out send finishes that same order instead of placing it
+   * twice. Re-minted when the cart's contents change — an edited cart is a new
+   * order.
+   */
+  const requestRef = useRef<{ id: string; sig: string } | null>(null);
   const [alertState, setAlertState] = useState<{ open: boolean; title: string; message: string }>({
     open: false,
     title: "",
@@ -564,13 +571,19 @@ function CustomerRefillContent({
         return;
       }
 
+      const sig = JSON.stringify(items);
+      if (!requestRef.current || requestRef.current.sig !== sig) {
+        requestRef.current = { id: crypto.randomUUID(), sig };
+      }
+      const requestId = requestRef.current.id;
+
       const res = await fetch("/api/customer/submit-refill", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({ items, requestId }),
       });
 
       const json = (await res.json().catch(() => ({}))) as any;
@@ -628,6 +641,7 @@ function CustomerRefillContent({
         );
       }
 
+      requestRef.current = null;
       toast({ title: `Sent ${items.length} refill(s).`, description: "Status: Preparing" });
       setCart(new Map());
       setActiveRefillId(null);

@@ -1,10 +1,12 @@
 import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // A type error now fails the build instead of shipping (audit BLD-02).
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
+  // ESLint has no config in this repo yet, so a lint pass would mean nothing;
+  // `npm run typecheck` and the vitest suite are the gates until it does.
   eslint: {
     ignoreDuringBuilds: true,
   },
