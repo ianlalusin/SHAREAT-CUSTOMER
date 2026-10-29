@@ -100,10 +100,19 @@ export function GhostHuntGame() {
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("intro");
   const [ticket, setTicket] = useState<TicketData | null>(null);
+  /**
+   * Whether THIS table session already won. Not the same as having a ticket:
+   * the phone keeps an earlier visit's ticket so it can still be shown at the
+   * counter, and treating that as "this table won" blocked every later visit
+   * from the same phone. The server's answer (status.ticket) is per session;
+   * a catch made on this screen counts too until the next reload.
+   */
+  const [wonThisVisit, setWonThisVisit] = useState(false);
   const [photos, setPhotos] = useState<SavedPhoto[]>([]);
   const [viewing, setViewing] = useState<SavedPhoto | null>(null);
 
   const pack = packFor(status?.theme || "halloween");
+  const tableHasWon = !!status?.ticket || wonThisVisit;
 
   const refreshPhotos = useCallback(() => {
     listPhotos().then(setPhotos);
@@ -214,6 +223,7 @@ export function GhostHuntGame() {
         status={status}
         pack={pack}
         ticket={ticket}
+        tableHasWon={tableHasWon}
         onStart={start}
         onTicket={() => setPhase("ticket")}
       />
@@ -225,13 +235,14 @@ export function GhostHuntGame() {
         <Hunt
           status={status}
           pack={pack}
-          tableHasWon={!!ticket}
+          tableHasWon={tableHasWon}
           onClose={() => {
             setPhase("intro");
             load();
           }}
           onWon={(t) => {
             setTicket(t);
+            setWonThisVisit(true);
             try {
               localStorage.setItem(TICKET_KEY, t.catchId);
             } catch {}
@@ -254,12 +265,14 @@ function Intro({
   status,
   pack,
   ticket,
+  tableHasWon,
   onStart,
   onTicket,
 }: {
   status: Status;
   pack: Pack;
   ticket: TicketData | null;
+  tableHasWon: boolean;
   onStart: () => void;
   onTicket: () => void;
 }) {
@@ -304,11 +317,11 @@ function Intro({
           <Button
             onClick={onStart}
             className={`mt-3 h-14 w-full rounded-2xl text-lg font-black ${
-              ticket ? "bg-white/15 text-white hover:bg-white/25" : "bg-white text-violet-900 hover:bg-violet-50"
+              tableHasWon ? "bg-white/15 text-white hover:bg-white/25" : "bg-white text-violet-900 hover:bg-violet-50"
             }`}
           >
             <Camera className="mr-2 h-5 w-5" />
-            {ticket ? "Keep hunting for fun" : "Open camera & hunt"}
+            {tableHasWon ? "Keep hunting for fun" : "Open camera & hunt"}
           </Button>
         )}
       </div>
