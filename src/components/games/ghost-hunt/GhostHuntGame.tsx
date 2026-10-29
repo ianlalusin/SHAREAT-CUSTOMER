@@ -22,6 +22,7 @@ import { DEFAULT_ASPECT, packFor, pick, prizeCharacter, svgUrl, type Character, 
 import { flightPose, randomFlight, type Flight } from "./flights";
 import { PrizeTicket, type TicketData } from "./PrizeTicket";
 import { listPhotos, savePhoto, type SavedPhoto } from "./photoStore";
+import { fitCaption } from "@/lib/games/ghost-hunt/caption";
 
 const GAME_ID = "ghost-hunt";
 const TICKET_KEY = "shareat_ghost_ticket";
@@ -640,21 +641,32 @@ function Hunt({
         ctx.shadowBlur = 0;
       }
 
-      const band = Math.round(vh * 0.13);
+      // The caption shrinks and wraps to fit (lib/games/ghost-hunt/caption.ts):
+      // a long prize name used to run off the edge, hiding the prize itself.
+      const unit = Math.round(vh * 0.13);
+      const pad = unit * 0.35;
+      const maxW = vw - pad * 2;
+      const headline = prizeLine || (s ? `I spotted ${s.character.name} at SharEat!` : "Ghost hunting at SharEat!");
+      const measure = (text: string, px: number) => {
+        ctx.font = `900 ${px}px Arial, sans-serif`;
+        return ctx.measureText(text).width;
+      };
+      const sizes = [0.3, 0.27, 0.24, 0.21, 0.18].map((k) => Math.round(unit * k));
+      const fit = fitCaption(measure, headline, maxW, sizes);
+      const lineH = fit.px * 1.15;
+      const tagPx = Math.round(unit * 0.2);
+      const band = Math.round(pad * 0.8 + fit.lines.length * lineH + tagPx * 1.4 + pad * 0.6);
+
       ctx.fillStyle = "rgba(20,10,40,.78)";
       ctx.fillRect(0, vh - band, vw, band);
+      ctx.textBaseline = "top";
       ctx.fillStyle = "#fff";
-      ctx.textBaseline = "middle";
-      const f1 = Math.round(band * 0.3);
-      ctx.font = `900 ${f1}px Arial, sans-serif`;
-      ctx.fillText(
-        prizeLine || (s ? `I spotted ${s.character.name} at SharEat!` : "Ghost hunting at SharEat!"),
-        band * 0.35,
-        vh - band * 0.64
-      );
-      ctx.font = `700 ${Math.round(band * 0.22)}px Arial, sans-serif`;
+      ctx.font = `900 ${fit.px}px Arial, sans-serif`;
+      fit.lines.forEach((line, i) => ctx.fillText(line, pad, vh - band + pad * 0.8 + i * lineH));
+      ctx.font = `700 ${tagPx}px Arial, sans-serif`;
       ctx.fillStyle = "#d8c8ff";
-      ctx.fillText(`${status.hashtag}  ${status.tagHandle}`, band * 0.35, vh - band * 0.27);
+      const tags = `${status.hashtag}  ${status.tagHandle}`;
+      ctx.fillText(tags, pad, vh - band + pad * 0.8 + fit.lines.length * lineH + tagPx * 0.3, maxW);
 
       return new Promise((resolve) => c.toBlob((b) => resolve(b), "image/jpeg", 0.9));
     },
