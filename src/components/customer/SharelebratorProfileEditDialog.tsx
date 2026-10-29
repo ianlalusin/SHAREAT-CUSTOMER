@@ -156,8 +156,8 @@ export function SharelebratorProfileEditDialog({ open, onOpenChange, initial, on
             <Input value={name} onChange={(e) => setName(e.target.value)} required disabled={submitting} />
           </div>
           <div className="space-y-1">
-            <Label>Address</Label>
-            <Input value={address} onChange={(e) => setAddress(e.target.value)} required disabled={submitting} />
+            <Label>Address (optional)</Label>
+            <Input value={address} onChange={(e) => setAddress(e.target.value)} disabled={submitting} />
           </div>
           <div className="space-y-1">
             <Label>Email</Label>

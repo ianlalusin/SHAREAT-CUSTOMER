@@ -54,7 +54,20 @@ function fakeDb() {
     collection: col,
     batch: () => {
       const w: Array<[string, any, "update" | "set"]> = [];
-      return { update: (r: any, d: any) => void w.push([r.path, d, "update"]), commit: async () => apply(w) };
+      const creates: string[] = [];
+      return {
+        update: (r: any, d: any) => void w.push([r.path, d, "update"]),
+        set: (r: any, d: any) => void w.push([r.path, d, "set"]),
+        create: (r: any, d: any) => {
+          creates.push(r.path);
+          w.push([r.path, d, "set"]);
+        },
+        commit: async () => {
+          // create() fails the whole batch when the doc exists, like Firestore's ALREADY_EXISTS.
+          if (creates.some((p) => h.store.has(p))) throw Object.assign(new Error("already exists"), { code: 6 });
+          apply(w);
+        },
+      };
     },
     // Optimistic like Firestore's: if a doc this transaction read changed
     // before it commits, the whole function runs again on fresh data. Without
@@ -114,6 +127,7 @@ vi.mock("bcryptjs", () => ({
   },
 }));
 
+import { PRIVACY_NOTICE_VERSION } from "@/lib/privacy";
 import { POST as linkPOST } from "@/app/api/customer/sharelebrator/link-session/route";
 import { POST as unlinkPOST } from "@/app/api/customer/sharelebrator/unlink-session/route";
 import { POST as redeemPOST } from "@/app/api/customer/sharelebrator/redeem/route";
@@ -295,6 +309,39 @@ describe("unlink-session", () => {
     expect((await unlinkPOST(req(token("p2")))).status).toBe(403);
     expect(h.store.get(ACTIVE)).toEqual(link);
     expect(h.store.get(SESSION)).toEqual(link);
+  });
+});
+
+describe("in-session signup and the privacy notice", () => {
+  const NEW = "+639170000009";
+  const signup = (extra: any = {}) => ({
+    mode: "signup",
+    phone: NEW,
+    password: "secret1",
+    name: "Cara",
+    bday: "1995-04-02",
+    ...extra,
+  });
+
+  it("refuses a signup that did not agree to the privacy notice, and creates nothing", async () => {
+    h.store.set(ACTIVE, {});
+    h.store.set(SESSION, {});
+    const res = await linkPOST(req(token("p1"), signup()));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/Privacy Notice/);
+    expect(h.store.has(`customers/${NEW}`)).toBe(false);
+  });
+
+  it("creates the card without an address, stamped with the notice version agreed to", async () => {
+    h.store.set(ACTIVE, {});
+    h.store.set(SESSION, {});
+    const res = await linkPOST(req(token("p1"), signup({ acceptPrivacy: true })));
+    expect(res.status).toBe(200);
+    expect(h.store.get(`customers/${NEW}`)).toMatchObject({
+      name: "Cara",
+      address: "",
+      privacyNoticeVersion: PRIVACY_NOTICE_VERSION,
+    });
   });
 });
 

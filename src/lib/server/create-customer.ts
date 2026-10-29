@@ -1,4 +1,5 @@
 import { FieldValue, type DocumentReference, type Firestore } from "firebase-admin/firestore";
+import { PRIVACY_NOTICE_VERSION } from "@/lib/privacy";
 
 export type NewCustomerFields = {
   phone: string;
@@ -34,6 +35,10 @@ export async function createCustomerAccount(
   const batch = db.batch();
   batch.create(ref, {
     ...fields,
+    // Which privacy notice the owner agreed to, and when. Both signup routes
+    // refuse to get here without that agreement.
+    privacyNoticeVersion: PRIVACY_NOTICE_VERSION,
+    privacyAcceptedAt: FieldValue.serverTimestamp(),
     pointsBalance: 0,
     visitCount: 0,
     storeVisits: {},

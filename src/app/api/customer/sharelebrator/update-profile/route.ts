@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { birthdayError } from "@/lib/server/signup-fields";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import bcrypt from "bcryptjs";
 import { FieldValue } from "firebase-admin/firestore";
@@ -75,17 +76,18 @@ export async function POST(req: Request) {
   if (typeof body.name === "string" && body.name.trim()) {
     patch.name = body.name.trim();
   }
-  if (typeof body.address === "string" && body.address.trim()) {
-    patch.address = body.address.trim();
+  // Address is optional, so an empty value clears it — a diner can take it off
+  // their card, as the privacy notice says they can.
+  if (typeof body.address === "string") {
+    patch.address = body.address.trim().slice(0, 200);
   }
   if (body.email !== undefined) {
     const email = typeof body.email === "string" ? body.email.trim() : "";
     patch.email = email || null;
   }
   if (typeof body.bday === "string" && body.bday.trim()) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(body.bday.trim())) {
-      return bad("Birthday must be YYYY-MM-DD.");
-    }
+    const bdayErr = birthdayError(body.bday.trim());
+    if (bdayErr) return bad(bdayErr);
     patch.bday = body.bday.trim();
   }
 
