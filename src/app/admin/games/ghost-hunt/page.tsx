@@ -23,22 +23,37 @@ function fromLocalInput(v: string): number {
 
 const pct = (n: number) => Math.round(n * 100);
 
+type BranchRow = {
+  storeId: string;
+  name: string;
+  enabled: boolean;
+  runningNow: boolean;
+  status: string;
+  theme: GhostTheme;
+  startsAtMs: number;
+  endsAtMs: number;
+  prizesPerDay: number;
+};
+
+const fmtDay = (ms: number) =>
+  new Date(ms).toLocaleDateString("en-PH", { month: "short", day: "numeric", timeZone: "Asia/Manila" });
+
 /**
- * Ghost Hunt event settings — chain-wide, admin only.
+ * Ghost Hunt settings — PER BRANCH ONLY, admin only.
  *
- * To rerun it for Christmas: switch the theme, set new dates and prizes, save.
- * A branch can carry its own prizes, hours and socials (the second card);
- * its manager sets the cashier PIN under Manager → Ghost Hunt.
+ * There are no chain-wide settings: every branch has its own on/off, theme,
+ * dates, hours, prizes, odds and socials (lib/games/ghost-hunt/branches.ts).
+ * To rerun it for Christmas, set each branch's theme, dates and prizes.
+ * Each branch's manager sets its cashier PIN under Manager → Ghost Hunt.
  */
 export default function AdminGhostHuntPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const [rows, setRows] = useState<BranchRow[] | null>(null);
+  const [storeId, setStoreId] = useState("");
+  const [enabled, setEnabled] = useState(false);
   const [s, setS] = useState<GhostHuntSettings | null>(null);
-  const [isActive, setIsActive] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [stores, setStores] = useState<{ storeId: string; name: string }[]>([]);
-  /** Empty = every branch. */
-  const [onlyAt, setOnlyAt] = useState<string[]>([]);
 
   const authed = useCallback(async () => {
     const user = getAuth().currentUser;
@@ -46,224 +61,25 @@ export default function AdminGhostHuntPage() {
     return { Authorization: `Bearer ${await user.getIdToken()}`, "Content-Type": "application/json" };
   }, []);
 
+  const loadRows = useCallback(async () => {
+    const res = await fetch("/api/admin/games/ghost-hunt", { headers: await authed(), cache: "no-store" });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not load.");
+    setRows(json.branches || []);
+  }, [authed]);
+
   useEffect(() => {
-    const unsub = onAuthStateChanged(getAuth(), async (user) => {
+    const unsub = onAuthStateChanged(getAuth(), (user) => {
       if (!user) return router.push("/admin/login");
-      try {
-        const res = await fetch("/api/admin/games/ghost-hunt", { headers: await authed(), cache: "no-store" });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not load.");
-        setS(json.settings);
-        setIsActive(!!json.isActive);
-        setOnlyAt(json.applicableStoreIds || []);
-        const st = await fetch("/api/admin/my-stores", { headers: await authed(), cache: "no-store" });
-        const sj = await st.json().catch(() => ({}));
-        if (st.ok && sj?.ok) setStores(sj.stores || []);
-      } catch (e: any) {
-        toast({ variant: "destructive", title: "Couldn't load", description: e?.message });
-      }
+      loadRows().catch((e: any) => toast({ variant: "destructive", title: "Couldn't load", description: e?.message }));
     });
     return () => unsub();
-  }, [router, authed, toast]);
-
-  const save = async () => {
-    if (!s) return;
-    setSaving(true);
-    try {
-      const res = await fetch("/api/admin/games/ghost-hunt", {
-        method: "PUT",
-        headers: await authed(),
-        body: JSON.stringify({ isActive, settings: s, applicableStoreIds: onlyAt }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not save.");
-      setS(json.settings);
-      toast({ title: "Saved", description: isActive ? "The hunt runs inside its dates and hours." : "The hunt is off." });
-    } catch (e: any) {
-      toast({ variant: "destructive", title: "Couldn't save", description: e?.message });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (!s) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  const set = (patch: Partial<GhostHuntSettings>) => setS({ ...s, ...patch });
-
-  return (
-    <main className="min-h-screen bg-zinc-50 p-4 sm:p-6">
-      <div className="mx-auto max-w-2xl space-y-6">
-        <Button variant="ghost" onClick={() => router.push("/admin/games")} className="-ml-2 gap-2">
-          <ArrowLeft className="h-4 w-4" /> Back
-        </Button>
-
-        <Card className="rounded-[2rem] border-none bg-white shadow-xl">
-          <CardHeader>
-            <CardTitle className="text-xl font-black">Spot a Ghost</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Turns itself off after the end date, even if the switch stays on.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="flex items-center justify-between rounded-2xl border p-4">
-              <div>
-                <p className="font-bold">Running</p>
-                <p className="text-xs text-muted-foreground">Every branch, unless a manager switches it off there.</p>
-              </div>
-              <Switch checked={isActive} onCheckedChange={setIsActive} />
-            </div>
-
-            <div className="space-y-2 rounded-2xl border p-4">
-              <p className="font-bold">Branches</p>
-              <p className="text-xs text-muted-foreground">
-                {onlyAt.length === 0
-                  ? "Every branch. Tick branches to run it only there — handy for a test run first."
-                  : `Only at ${onlyAt.length} branch${onlyAt.length > 1 ? "es" : ""}. Untick all for every branch.`}
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                {stores.map((st) => {
-                  const on = onlyAt.includes(st.storeId);
-                  return (
-                    <label key={st.storeId} className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        onChange={() =>
-                          setOnlyAt(on ? onlyAt.filter((x) => x !== st.storeId) : [...onlyAt, st.storeId])
-                        }
-                      />
-                      {st.name}
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Theme</Label>
-              <div className="grid grid-cols-2 gap-2">
-                {(["halloween", "christmas"] as GhostTheme[]).map((t) => (
-                  <Button
-                    key={t}
-                    type="button"
-                    variant={s.theme === t ? "default" : "outline"}
-                    className="rounded-2xl capitalize"
-                    onClick={() => set({ theme: t })}
-                  >
-                    {t === "halloween" ? "👻 Halloween" : "🎅 Christmas"}
-                  </Button>
-                ))}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label>Starts (Manila)</Label>
-                <Input
-                  type="datetime-local"
-                  value={toLocalInput(s.startsAtMs)}
-                  onChange={(e) => e.target.value && set({ startsAtMs: fromLocalInput(e.target.value) })}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label>Ends (Manila)</Label>
-                <Input
-                  type="datetime-local"
-                  value={toLocalInput(s.endsAtMs)}
-                  onChange={(e) => e.target.value && set({ endsAtMs: fromLocalInput(e.target.value) })}
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Hours ghosts come out (every day)</Label>
-              <HoursEditor value={s.windows} onChange={(windows) => set({ windows })} />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Prizes — how many each branch gives away per day (unless the branch sets its own)</Label>
-              <PrizesEditor value={s.prizes} onChange={(prizes) => set({ prizes })} />
-            </div>
-
-            <div className="space-y-3 rounded-2xl bg-zinc-50 p-4">
-              <p className="text-sm font-bold">How often things appear</p>
-              <Odds
-                label="A scan finds something"
-                hint="A phone scans about every 10–14 seconds while the camera is open."
-                value={s.appearChance}
-                onChange={(v) => set({ appearChance: v })}
-              />
-              <Odds
-                label="…and it is a prize ghost"
-                hint="Only while today's prizes last."
-                value={s.prizeShare}
-                onChange={(v) => set({ prizeShare: v })}
-              />
-              <Odds
-                label="Otherwise it says hi (the rest fly by)"
-                value={s.helloShare}
-                onChange={(v) => set({ helloShare: v })}
-              />
-              <p className="text-xs text-muted-foreground">
-                About 1 prize ghost every {Math.max(1, Math.round(12 / Math.max(0.001, s.appearChance * s.prizeShare) / 60))}{" "}
-                minutes of hunting, per phone.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label>Hashtag</Label>
-                <Input value={s.hashtag} onChange={(e) => set({ hashtag: e.target.value })} />
-              </div>
-              <div className="space-y-1">
-                <Label>Tag this account</Label>
-                <Input value={s.tagHandle} onChange={(e) => set({ tagHandle: e.target.value })} />
-              </div>
-            </div>
-
-            <Button onClick={save} disabled={saving} className="h-12 w-full rounded-2xl font-black">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
-            </Button>
-          </CardContent>
-        </Card>
-
-        <BranchSettings stores={stores} chain={s} authed={authed} />
-      </div>
-    </main>
-  );
-}
-
-type Overrides = Partial<Pick<GhostHuntSettings, "prizes" | "windows" | "hashtag" | "tagHandle">>;
-
-/**
- * One branch's own prizes, hours and socials. Each part has its own switch:
- * off means the branch follows the chain settings above, so a later change
- * there still reaches it.
- */
-function BranchSettings({
-  stores,
-  chain,
-  authed,
-}: {
-  stores: { storeId: string; name: string }[];
-  chain: GhostHuntSettings;
-  authed: () => Promise<Record<string, string>>;
-}) {
-  const { toast } = useToast();
-  const [storeId, setStoreId] = useState("");
-  const [o, setO] = useState<Overrides | null>(null);
-  const [saving, setSaving] = useState(false);
+  }, [router, loadRows, toast]);
 
   useEffect(() => {
-    if (!storeId) return setO(null);
+    if (!storeId) return setS(null);
     let cancelled = false;
-    setO(null);
+    setS(null);
     (async () => {
       try {
         const res = await fetch(`/api/admin/games/ghost-hunt/branch?storeId=${encodeURIComponent(storeId)}`, {
@@ -272,7 +88,9 @@ function BranchSettings({
         });
         const json = await res.json().catch(() => ({}));
         if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not load.");
-        if (!cancelled) setO(json.overrides || {});
+        if (cancelled) return;
+        setEnabled(!!json.enabled);
+        setS(json.settings);
       } catch (e: any) {
         toast({ variant: "destructive", title: "Couldn't load branch", description: e?.message });
       }
@@ -283,17 +101,21 @@ function BranchSettings({
   }, [storeId, authed, toast]);
 
   const save = async () => {
+    if (!s) return;
     setSaving(true);
     try {
       const res = await fetch("/api/admin/games/ghost-hunt/branch", {
         method: "PUT",
         headers: await authed(),
-        body: JSON.stringify({ storeId, overrides: o }),
+        body: JSON.stringify({ storeId, enabled, settings: s }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not save.");
-      setO(json.overrides);
-      toast({ title: "Branch saved", description: stores.find((x) => x.storeId === storeId)?.name });
+      setS(json.settings);
+      setEnabled(!!json.enabled);
+      await loadRows();
+      const name = rows?.find((r) => r.storeId === storeId)?.name ?? "Branch";
+      toast({ title: `${name} saved`, description: json.enabled ? "On, inside its own dates and hours." : "Off at this branch." });
     } catch (e: any) {
       toast({ variant: "destructive", title: "Couldn't save", description: e?.message });
     } finally {
@@ -301,90 +123,174 @@ function BranchSettings({
     }
   };
 
-  /** Switch a part between "own" (copy the chain's value to start from) and "follow chain". */
-  const toggle = <K extends keyof Overrides>(key: K, own: boolean) => {
-    if (!o) return;
-    const next = { ...o };
-    if (own) next[key] = chain[key] as Overrides[K];
-    else delete next[key];
-    setO(next);
-  };
+  const set = (patch: Partial<GhostHuntSettings>) => s && setS({ ...s, ...patch });
+  const current = rows?.find((r) => r.storeId === storeId);
 
   return (
-    <Card className="rounded-[2rem] border-none bg-white shadow-xl">
-      <CardHeader>
-        <CardTitle className="text-xl font-black">Per-branch settings</CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Give a branch its own prizes, hours, hashtag or tagged account. Anything left on &quot;Same as above&quot;
-          follows the settings above.
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-5">
-        <select
-          value={storeId}
-          onChange={(e) => setStoreId(e.target.value)}
-          className="h-11 w-full rounded-2xl border bg-white px-3 text-sm"
-        >
-          <option value="">Pick a branch…</option>
-          {stores.map((st) => (
-            <option key={st.storeId} value={st.storeId}>
-              {st.name}
-            </option>
-          ))}
-        </select>
+    <main className="min-h-screen bg-zinc-50 p-4 sm:p-6">
+      <div className="mx-auto max-w-2xl space-y-6">
+        <Button variant="ghost" onClick={() => router.push("/admin/games")} className="-ml-2 gap-2">
+          <ArrowLeft className="h-4 w-4" /> Back
+        </Button>
 
-        {storeId && !o && (
+        <Card className="rounded-[2rem] border-none bg-white shadow-xl">
+          <CardHeader>
+            <CardTitle className="text-xl font-black">Spot a Ghost — branches</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Every branch has its own settings. Tap a branch to change it. A branch turns itself off after its end
+              date, even if it is switched on.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {rows === null ? (
+              <div className="flex justify-center py-6">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              </div>
+            ) : (
+              rows.map((r) => (
+                <button
+                  key={r.storeId}
+                  type="button"
+                  onClick={() => setStoreId(r.storeId)}
+                  className={`flex w-full items-center justify-between gap-3 rounded-2xl border p-3 text-left transition ${
+                    storeId === r.storeId ? "border-primary bg-primary/5" : "hover:bg-zinc-50"
+                  }`}
+                >
+                  <div className="min-w-0">
+                    <p className="font-bold">{r.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {r.enabled
+                        ? `${r.theme === "christmas" ? "🎅" : "👻"} ${fmtDay(r.startsAtMs)} – ${fmtDay(r.endsAtMs)} · ${r.prizesPerDay} prizes/day`
+                        : "Off"}
+                    </p>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
+                      r.runningNow
+                        ? "bg-emerald-100 text-emerald-800"
+                        : r.enabled
+                          ? "bg-amber-100 text-amber-800"
+                          : "bg-zinc-100 text-zinc-600"
+                    }`}
+                  >
+                    {r.runningNow ? "Running now" : r.enabled ? "On" : "Off"}
+                  </span>
+                </button>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        {storeId && !s && (
           <div className="flex justify-center py-6">
             <Loader2 className="h-6 w-6 animate-spin text-primary" />
           </div>
         )}
 
-        {o && (
-          <>
-            <OwnPart label="Prizes and daily counts" own={!!o.prizes} onToggle={(v) => toggle("prizes", v)}>
-              <PrizesEditor value={o.prizes ?? []} onChange={(prizes) => setO({ ...o, prizes })} />
-            </OwnPart>
-            <OwnPart label="Hours" own={!!o.windows} onToggle={(v) => toggle("windows", v)}>
-              <HoursEditor value={o.windows ?? []} onChange={(windows) => setO({ ...o, windows })} />
-            </OwnPart>
-            <OwnPart label="Hashtag" own={o.hashtag !== undefined} onToggle={(v) => toggle("hashtag", v)}>
-              <Input value={o.hashtag ?? ""} onChange={(e) => setO({ ...o, hashtag: e.target.value })} />
-            </OwnPart>
-            <OwnPart label="Tagged account" own={o.tagHandle !== undefined} onToggle={(v) => toggle("tagHandle", v)}>
-              <Input value={o.tagHandle ?? ""} onChange={(e) => setO({ ...o, tagHandle: e.target.value })} />
-            </OwnPart>
-            <Button onClick={save} disabled={saving} className="h-12 w-full rounded-2xl font-black">
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save branch"}
-            </Button>
-          </>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
+        {s && (
+          <Card className="rounded-[2rem] border-none bg-white shadow-xl">
+            <CardHeader>
+              <CardTitle className="text-xl font-black">{current?.name ?? "Branch"}</CardTitle>
+              {current && current.enabled && !current.runningNow && (
+                <p className="text-sm text-amber-700">{current.status}</p>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="flex items-center justify-between rounded-2xl border p-4">
+                <div>
+                  <p className="font-bold">Running at this branch</p>
+                  <p className="text-xs text-muted-foreground">Inside the dates and hours below.</p>
+                </div>
+                <Switch checked={enabled} onCheckedChange={setEnabled} />
+              </div>
 
-function OwnPart({
-  label,
-  own,
-  onToggle,
-  children,
-}: {
-  label: string;
-  own: boolean;
-  onToggle: (own: boolean) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-2 rounded-2xl border p-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="font-bold">{label}</p>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {own ? "Own for this branch" : "Same as above"}
-          <Switch checked={own} onCheckedChange={onToggle} />
-        </div>
+              <div className="space-y-2">
+                <Label>Theme</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["halloween", "christmas"] as GhostTheme[]).map((t) => (
+                    <Button
+                      key={t}
+                      type="button"
+                      variant={s.theme === t ? "default" : "outline"}
+                      className="rounded-2xl"
+                      onClick={() => set({ theme: t })}
+                    >
+                      {t === "halloween" ? "👻 Halloween" : "🎅 Christmas"}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label>Starts (Manila)</Label>
+                  <Input
+                    type="datetime-local"
+                    value={toLocalInput(s.startsAtMs)}
+                    onChange={(e) => e.target.value && set({ startsAtMs: fromLocalInput(e.target.value) })}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Ends (Manila)</Label>
+                  <Input
+                    type="datetime-local"
+                    value={toLocalInput(s.endsAtMs)}
+                    onChange={(e) => e.target.value && set({ endsAtMs: fromLocalInput(e.target.value) })}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Hours ghosts come out (every day)</Label>
+                <HoursEditor value={s.windows} onChange={(windows) => set({ windows })} />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Prizes — how many this branch gives away per day</Label>
+                <PrizesEditor value={s.prizes} onChange={(prizes) => set({ prizes })} />
+              </div>
+
+              <div className="space-y-3 rounded-2xl bg-zinc-50 p-4">
+                <p className="text-sm font-bold">How often things appear</p>
+                <Odds
+                  label="A scan finds something"
+                  hint="A phone scans about every 10–14 seconds while the camera is open."
+                  value={s.appearChance}
+                  onChange={(v) => set({ appearChance: v })}
+                />
+                <Odds
+                  label="…and it is a prize ghost"
+                  hint="Only while today's prizes last."
+                  value={s.prizeShare}
+                  onChange={(v) => set({ prizeShare: v })}
+                />
+                <Odds label="Otherwise it says hi (the rest fly by)" value={s.helloShare} onChange={(v) => set({ helloShare: v })} />
+                <p className="text-xs text-muted-foreground">
+                  About 1 prize ghost every{" "}
+                  {Math.max(1, Math.round(12 / Math.max(0.001, s.appearChance * s.prizeShare) / 60))} minutes of hunting,
+                  per phone.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label>Hashtag</Label>
+                  <Input value={s.hashtag} onChange={(e) => set({ hashtag: e.target.value })} />
+                </div>
+                <div className="space-y-1">
+                  <Label>Tag this account</Label>
+                  <Input value={s.tagHandle} onChange={(e) => set({ tagHandle: e.target.value })} />
+                </div>
+              </div>
+
+              <Button onClick={save} disabled={saving} className="h-12 w-full rounded-2xl font-black">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : `Save ${current?.name ?? "branch"}`}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
-      {own && children}
-    </div>
+    </main>
   );
 }
 

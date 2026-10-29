@@ -199,11 +199,16 @@ export default function AdminGamesPage() {
                         onClick={() => router.push("/admin/games/ghost-hunt")}
                         className="mt-1 text-xs font-bold text-primary underline"
                       >
-                        Dates, hours, prizes & theme
+                        Settings per branch
                       </button>
                     )}
                   </div>
-                  <Switch checked={g.isActive} onCheckedChange={(v) => toggleGame(g.id, v)} />
+                  {/* Ghost Hunt is switched on and off per branch, on its own settings page. */}
+                  {g.id === "ghost-hunt" ? (
+                    <span className="shrink-0 text-xs font-bold text-muted-foreground">Per branch</span>
+                  ) : (
+                    <Switch checked={g.isActive} onCheckedChange={(v) => toggleGame(g.id, v)} />
+                  )}
                 </div>
               ))
             )}

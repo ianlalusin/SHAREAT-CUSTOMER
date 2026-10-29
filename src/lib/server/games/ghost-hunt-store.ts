@@ -5,20 +5,25 @@ import {
   MAX_PIN_FAILS,
   MIN_SCAN_GAP_MS,
   PRIZE_GHOST_TTL_MS,
+  DEFAULT_SETTINGS,
   dayProgress,
   eventState,
   genClaimCode,
   manilaDayKey,
-  normalizeOverrides,
   normalizeSettings,
   prizesRemaining,
   rollSpawn,
-  settingsForBranch,
-  type BranchOverrides,
   type GhostHuntSettings,
   type SpawnKind,
 } from "@/lib/games/ghost-hunt/rules";
-import { isGameConfigured, isGameEnabledForStore } from "@/lib/games/gameScope";
+import { isGameConfigured } from "@/lib/games/gameScope";
+import {
+  legacyBranchConfig,
+  resolveBranchConfig,
+  summarizeBranches,
+  summaryLive,
+  type BranchConfig,
+} from "@/lib/games/ghost-hunt/branches";
 import type { PlayerContext } from "@/lib/server/games/auth";
 
 /**
@@ -91,40 +96,95 @@ export function toTicket(c: CatchDoc): PublicTicket {
 
 export type GhostHuntConfig = {
   configured: boolean;
-  /** The raw doc's scope fields, for the per-branch switch. */
+  /** The shelf summary doc (`miniGames/ghost-hunt`): on/off, branches, dates. */
   scope: Record<string, any> | null;
+  /** This branch's own settings (defaults when read without a branch). */
   settings: GhostHuntSettings;
+  /** This branch has the hunt switched on in its own settings. */
+  branchEnabled: boolean;
 };
 
+const summaryRef = (db: Firestore) => db.doc(`miniGames/${GAME_ID}`);
+const branchRef = (db: Firestore, storeId: string) => db.doc(`ghostHuntBranches/${storeId}`);
+
 /**
- * The hunt's config. With a `storeId`, `settings` are that branch's — the
- * chain-wide settings with its own prizes, hours and socials laid over them.
- * Every decision about a diner goes through the branch version.
+ * The hunt's config for one branch — its own settings and nothing else (see
+ * lib/games/ghost-hunt/branches.ts). Without a branch (someone browsing away
+ * from a table) there are no settings to show, only whether the hunt is on
+ * anywhere; `settings` is then the defaults and must not be shown as anyone's.
  */
 export async function readGhostHuntConfig(db: Firestore, storeId: string | null = null): Promise<GhostHuntConfig> {
   const [snap, branch] = await Promise.all([
-    db.doc(`miniGames/${GAME_ID}`).get(),
-    storeId ? db.doc(`ghostHuntBranches/${storeId}`).get() : Promise.resolve(null),
+    summaryRef(db).get(),
+    storeId ? branchRef(db, storeId).get() : Promise.resolve(null),
   ]);
   const data = snap.exists ? (snap.data() as Record<string, any>) : null;
-  const base = normalizeSettings(data?.event);
-  const settings = branch ? settingsForBranch(base, branch.data()?.overrides) : base;
-  return { configured: isGameConfigured(data), scope: data, settings };
+  if (!storeId) return { configured: isGameConfigured(data), scope: data, settings: DEFAULT_SETTINGS, branchEnabled: false };
+  const cfg = resolveBranchConfig(data, branch?.data(), storeId);
+  return { configured: isGameConfigured(data), scope: data, settings: cfg.settings, branchEnabled: cfg.enabled };
 }
 
-/** A branch's own overrides, as stored. Empty when it runs on the chain's settings. */
-export async function readBranchOverrides(db: Firestore, storeId: string): Promise<BranchOverrides> {
-  return normalizeOverrides((await db.doc(`ghostHuntBranches/${storeId}`).get()).data()?.overrides);
+/** One branch's settings, for the admin form. */
+export async function readBranchConfig(db: Firestore, storeId: string): Promise<BranchConfig> {
+  const [snap, branch] = await Promise.all([summaryRef(db).get(), branchRef(db, storeId).get()]);
+  return resolveBranchConfig(snap.data(), branch.data(), storeId);
 }
 
-export async function writeBranchOverrides(db: Firestore, storeId: string, raw: unknown, uid: string) {
-  const overrides = normalizeOverrides(raw);
-  // Whole-field replace, not merge: dropping a field must put that branch back on the chain's value.
-  await db.doc(`ghostHuntBranches/${storeId}`).set(
-    { overrides, overridesUpdatedAtMs: Date.now(), overridesUpdatedByUid: uid },
-    { mergeFields: ["overrides", "overridesUpdatedAtMs", "overridesUpdatedByUid"] }
+/**
+ * The first per-branch save: give every branch its own copy of what it runs
+ * on today, so switching models changes nothing for diners. Idempotent — a
+ * branch that already has its own settings is left alone.
+ */
+async function switchOverIfNeeded(db: Firestore, uid: string) {
+  const summary = (await summaryRef(db).get()).data();
+  if (summary?.perStore === true) return;
+  const stores = await db.collection("stores").select().get();
+  for (const s of stores.docs) {
+    const ref = branchRef(db, s.id);
+    const cur = (await ref.get()).data();
+    if (cur?.settings) continue;
+    const legacy = legacyBranchConfig(summary, cur?.overrides, s.id);
+    await ref.set(
+      { enabled: legacy.enabled, settings: legacy.settings, settingsUpdatedAtMs: Date.now(), settingsUpdatedByUid: uid, migratedFromChain: true },
+      { merge: true }
+    );
+  }
+}
+
+/** Rebuild the shelf summary from every branch's own settings. */
+async function refreshSummary(db: Firestore, uid: string) {
+  const snap = await db.collection("ghostHuntBranches").get();
+  const branches = snap.docs
+    .filter((d) => d.get("settings"))
+    .map((d) => ({ storeId: d.id, ...resolveBranchConfig({ perStore: true }, d.data(), d.id) }));
+  const sum = summarizeBranches(branches);
+  await summaryRef(db).set(
+    {
+      ...sum,
+      perStore: true,
+      // The old chain-wide settings are gone for good: nothing reads them once
+      // every branch has its own, and keeping them would invite exactly the
+      // "which one applies?" confusion this replaces.
+      event: FieldValue.delete(),
+      updatedAtMs: Date.now(),
+      updatedByUid: uid,
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
   );
-  return overrides;
+  return sum;
+}
+
+/** Save one branch's settings and on/off, then refresh the shelf summary. */
+export async function writeBranchConfig(db: Firestore, storeId: string, enabled: boolean, raw: unknown, uid: string) {
+  await switchOverIfNeeded(db, uid);
+  const settings = normalizeSettings(raw);
+  await branchRef(db, storeId).set(
+    { enabled, settings, settingsUpdatedAtMs: Date.now(), settingsUpdatedByUid: uid, overrides: FieldValue.delete() },
+    { merge: true }
+  );
+  const summary = await refreshSummary(db, uid);
+  return { enabled, settings, summary };
 }
 
 /** What is still out there today at a branch. Caught counts as gone, claimed or not. */
@@ -143,7 +203,14 @@ export function huntStatus(cfg: GhostHuntConfig, storeId: string | null, nowMs: 
   if (!cfg.configured || cfg.scope?.isActive === false) {
     return { live: false, message: "The ghost hunt is not running right now.", settings };
   }
-  if (storeId && !isGameEnabledForStore(cfg.scope, storeId, nowMs)) {
+  if (!storeId) {
+    return summaryLive(cfg.scope, nowMs)
+      ? { live: true, settings }
+      : { live: false, message: "The ghost hunt is not running right now.", settings };
+  }
+  // The branch's own switch, and the manager's per-branch off switch (Manager → Games).
+  const managerOff = Array.isArray(cfg.scope?.disabledStoreIds) && cfg.scope!.disabledStoreIds.includes(storeId);
+  if (!cfg.branchEnabled || managerOff) {
     return { live: false, message: "The ghost hunt is not running at this branch.", settings };
   }
   const ev = eventState(settings, nowMs);

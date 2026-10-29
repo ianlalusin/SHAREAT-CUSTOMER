@@ -46,6 +46,12 @@ export async function PUT(req: Request) {
   const gameId = String((body as any)?.gameId || "");
   const isActive = (body as any)?.isActive === true;
 
+  // Ghost Hunt's on/off is per branch (Admin → Games → Spot a Ghost); its
+  // summary doc is recomputed from the branches, so a chain-wide flip here
+  // would be silently undone on the next branch save.
+  if (gameId === "ghost-hunt") {
+    return NextResponse.json({ ok: false, error: "Spot a Ghost is switched on or off per branch." }, { status: 400 });
+  }
   if (!GAMES.some((g) => g.id === gameId)) {
     return NextResponse.json({ ok: false, error: "Unknown game." }, { status: 400 });
   }

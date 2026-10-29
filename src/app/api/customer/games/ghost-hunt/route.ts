@@ -34,14 +34,17 @@ export async function GET(req: Request) {
       }
     }
 
+    // Settings are per branch. Away from a table there is no branch, so no
+    // prizes or hours to show — only that the hunt is on somewhere, until when.
+    const atBranch = !!storeId;
     return NextResponse.json({
       ok: true,
       live: status.live,
       message: status.live ? null : status.message,
       theme: s.theme,
-      hours: describeWindows(s.windows),
-      endsAtMs: s.endsAtMs,
-      prizes: s.prizes.filter((p) => p.perDay > 0).map((p) => ({ id: p.id, name: p.name })),
+      hours: atBranch ? describeWindows(s.windows) : "at participating branches",
+      endsAtMs: atBranch ? s.endsAtMs : Number(cfg.scope?.endsAtMs) || s.endsAtMs,
+      prizes: atBranch ? s.prizes.filter((p) => p.perDay > 0).map((p) => ({ id: p.id, name: p.name })) : [],
       // Null away from a table: "left" only means something at a branch.
       remaining,
       hashtag: s.hashtag,
