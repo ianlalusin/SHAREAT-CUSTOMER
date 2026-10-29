@@ -242,7 +242,7 @@ export default function AdminGhostHuntPage() {
 
               <div className="space-y-2">
                 <Label>Hours ghosts come out (every day)</Label>
-                <HoursEditor value={s.windows} onChange={(windows) => set({ windows })} />
+                <HoursEditor value={s.windows} onChange={(windows) => set({ windows })} defaultPrizeShare={s.prizeShare} />
               </div>
 
               <div className="space-y-2">
@@ -295,23 +295,87 @@ export default function AdminGhostHuntPage() {
   );
 }
 
-function HoursEditor({ value, onChange }: { value: GhostWindow[]; onChange: (v: GhostWindow[]) => void }) {
+/**
+ * The daily time slots, each with two optional dials (blank = default):
+ *   - share of prizes: how much of the day's prizes this slot unlocks, so a
+ *     branch can save most for the dinner rush;
+ *   - prize ghost %: this slot's own prize chance, so winning can be easier
+ *     at the busiest hours.
+ */
+function HoursEditor({
+  value,
+  onChange,
+  defaultPrizeShare,
+}: {
+  value: GhostWindow[];
+  onChange: (v: GhostWindow[]) => void;
+  defaultPrizeShare: number;
+}) {
+  const patch = (i: number, p: Partial<GhostWindow>) => onChange(value.map((x, j) => (j === i ? { ...x, ...p } : x)));
+  /** A 0–100 box ↔ a 0–1 field; empty means "not set". */
+  const pctField = (v: number | undefined) => (typeof v === "number" ? String(Math.round(v * 100)) : "");
+  const fromPct = (s: string) => (s.trim() === "" ? undefined : Math.min(100, Math.max(0, Number(s) || 0)) / 100);
+  const sharesSet = value.filter((w) => typeof w.share === "number");
+  const shareTotal = Math.round(sharesSet.reduce((s, w) => s + (w.share as number), 0) * 100);
+
   return (
     <div className="space-y-2">
       {value.map((w, i) => (
-        <div key={i} className="flex items-center gap-2">
-          <Input type="time" value={w.start} onChange={(e) => onChange(value.map((x, j) => (j === i ? { ...x, start: e.target.value } : x)))} />
-          <span className="text-sm text-muted-foreground">to</span>
-          <Input type="time" value={w.end} onChange={(e) => onChange(value.map((x, j) => (j === i ? { ...x, end: e.target.value } : x)))} />
-          <Button variant="ghost" size="icon" onClick={() => onChange(value.filter((_, j) => j !== i))}>
-            <Trash2 className="h-4 w-4" />
-          </Button>
+        <div key={i} className="space-y-2 rounded-2xl border p-3">
+          <div className="flex items-center gap-2">
+            <Input type="time" value={w.start} onChange={(e) => patch(i, { start: e.target.value })} />
+            <span className="text-sm text-muted-foreground">to</span>
+            <Input type="time" value={w.end} onChange={(e) => patch(i, { end: e.target.value })} />
+            <Button variant="ghost" size="icon" onClick={() => onChange(value.filter((_, j) => j !== i))}>
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="space-y-1 text-xs text-muted-foreground">
+              Share of prizes
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  placeholder="auto"
+                  className="h-9"
+                  value={pctField(w.share)}
+                  onChange={(e) => patch(i, { share: fromPct(e.target.value) })}
+                />
+                <span>%</span>
+              </div>
+            </label>
+            <label className="space-y-1 text-xs text-muted-foreground">
+              Prize ghost %
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  placeholder={String(Math.round(defaultPrizeShare * 100))}
+                  className="h-9"
+                  value={pctField(w.prizeShare)}
+                  onChange={(e) => patch(i, { prizeShare: fromPct(e.target.value) })}
+                />
+                <span>%</span>
+              </div>
+            </label>
+          </div>
         </div>
       ))}
       <Button variant="outline" size="sm" className="rounded-xl" onClick={() => onChange([...value, { start: "17:00", end: "21:00" }])}>
         <Plus className="mr-1 h-4 w-4" /> Add hours
       </Button>
       {value.length === 0 && <p className="text-xs text-amber-700">No hours set: ghosts appear all day.</p>}
+      <p className="text-xs text-muted-foreground">
+        Blank share = prizes spread evenly by the clock. Blank prize ghost % = the branch&apos;s prize ghost % below.
+      </p>
+      {sharesSet.length > 0 && sharesSet.length === value.length && shareTotal !== 100 && (
+        <p className="text-xs text-amber-700">
+          Shares add up to {shareTotal}%. They are used in proportion, so this still works — but 100% is easiest to read.
+        </p>
+      )}
     </div>
   );
 }

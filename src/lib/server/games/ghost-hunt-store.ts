@@ -6,6 +6,7 @@ import {
   MIN_SCAN_GAP_MS,
   PRIZE_GHOST_TTL_MS,
   DEFAULT_SETTINGS,
+  activePrizeShare,
   dayProgress,
   eventState,
   genClaimCode,
@@ -263,7 +264,14 @@ export async function scanForGhost(
 
     const issued = (daySnap.data()?.issued || {}) as Record<string, number>;
     const tableHasWon = !!tableSnap.data()?.wonCatchId;
-    const roll = rollSpawn({ settings, issued, tableHasWon, rand, progress: dayProgress(settings.windows, nowMs) });
+    const roll = rollSpawn({
+      settings,
+      issued,
+      tableHasWon,
+      rand,
+      progress: dayProgress(settings.windows, nowMs),
+      prizeShare: activePrizeShare(settings, nowMs),
+    });
 
     if (roll.kind !== "prize" || !roll.prize) {
       return { ok: true as const, kind: roll.kind, retryInMs: MIN_SCAN_GAP_MS };
