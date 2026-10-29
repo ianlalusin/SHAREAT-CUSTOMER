@@ -25,8 +25,17 @@ export type Pack = {
   theme: GhostTheme;
   label: string;
   noun: string;
-  /** Prize characters keyed by prize id; anything else falls back by position. */
+  /** Prize characters keyed by prize id. */
   prizeById: Record<string, Character>;
+  /**
+   * Words that pick a prizeById character from any prize id: prize ids are
+   * slugs of whatever name the admin typed ("1-serving-ramyeon"), so an exact
+   * id match alone would miss most of them.
+   */
+  prizeKeywords?: Record<string, string[]>;
+  /** Drawn for a prize with no character of its own, so no prize ever shows another prize's food. */
+  unknownPrize?: Character;
+  /** Packs whose characters are not tied to a food (Christmas) cycle through these. */
   prizeFallback: Character[];
   hello: Character[];
   flyby: Character[];
@@ -97,6 +106,29 @@ const ENOKI = ghost(
    <path d="M146 150h32" stroke="#7c2d12" stroke-width="3"/>`
 );
 
+/** Holding a red bowl of noodles, chopsticks lifting a strand, steam rising. */
+const NOODLES = ghost(
+  "#fff1db",
+  `<g fill="none" stroke="#cbd5e1" stroke-width="4" stroke-linecap="round" opacity=".9">
+     <path d="M150 92q-6-10 0-20t0-20"/><path d="M166 90q-6-10 0-20t0-20"/>
+   </g>
+   <path d="M138 128h56q0 34-28 38q-28-4-28-38z" fill="#dc2626" stroke="#2a1a45" stroke-width="4" stroke-linejoin="round"/>
+   <path d="M144 136h44" stroke="#fde68a" stroke-width="3"/>
+   <path d="M142 128q8-8 16 0t16 0t16 0" stroke="#facc15" stroke-width="5" fill="none" stroke-linecap="round"/>
+   <path d="M170 128q4-26 0-40" stroke="#facc15" stroke-width="4" fill="none" stroke-linecap="round"/>
+   <path d="M160 70l26 50M170 66l22 52" stroke="#92400e" stroke-width="4" stroke-linecap="round"/>`
+);
+
+/** Carrying a wrapped gift with a question mark — for any prize without its own ghost. */
+const GIFT = ghost(
+  "#f1e8ff",
+  `<rect x="138" y="112" width="52" height="50" rx="6" fill="#7c3aed" stroke="#2a1a45" stroke-width="4"/>
+   <rect x="134" y="102" width="60" height="16" rx="4" fill="#8b5cf6" stroke="#2a1a45" stroke-width="4"/>
+   <path d="M164 102v60" stroke="#facc15" stroke-width="7"/>
+   <path d="M164 102q-18-20-24-6q0 8 24 6zM164 102q18-20 24-6q0 8-24 6z" fill="#facc15" stroke="#2a1a45" stroke-width="3"/>
+   <text x="151" y="152" font-family="Arial Black,Arial" font-size="26" font-weight="900" fill="#fff" text-anchor="middle">?</text>`
+);
+
 const BOO = ghost(
   "#f8f7ff",
   `<path d="M34 120q-22-6-26-30" stroke="#2a1a45" stroke-width="5" fill="none" stroke-linecap="round"/>
@@ -128,11 +160,17 @@ const HALLOWEEN: Pack = {
     coke: { id: "coke", name: "Coca-Boo", lines: ["Fizz! A 1.5L Coke for your table!"], svg: COKE },
     kimbap: { id: "kimbap", name: "Kimbaboo", lines: ["Rolled up and caught! Kimbap on me."], svg: KIMBAP },
     enoki: { id: "enoki", name: "Enoki Wisp", lines: ["Spooky and crispy! Enoki rolls for you."], svg: ENOKI },
+    noodles: { id: "noodles", name: "Noodle Multo", lines: ["Slurp! Huli mo ako — noodles para sa'yo!"], svg: NOODLES },
   },
-  prizeFallback: [
-    { id: "p1", name: "Melona Multo", lines: ["You caught me!"], svg: MELONA },
-    { id: "p2", name: "Coca-Boo", lines: ["You caught me!"], svg: COKE },
-  ],
+  prizeKeywords: {
+    melona: ["melona"],
+    coke: ["coke", "cola"],
+    kimbap: ["kimbap", "gimbap"],
+    enoki: ["enoki"],
+    noodles: ["noodle", "ramyeon", "ramen", "ramyun", "pancit", "mami"],
+  },
+  unknownPrize: { id: "gift", name: "Surprise Boo", lines: ["You caught me! May prize ka!"], svg: GIFT },
+  prizeFallback: [{ id: "gift", name: "Surprise Boo", lines: ["You caught me!"], svg: GIFT }],
   hello: [
     {
       id: "boo",
@@ -284,8 +322,20 @@ export function packFor(theme: string): Pack {
   return PACKS[theme as GhostTheme] ?? HALLOWEEN;
 }
 
+/**
+ * Which character carries a prize: an exact id, then a keyword anywhere in the
+ * id ("1-serving-ramyeon" → noodles), then the pack's gift ghost. Only packs
+ * whose characters hold no particular food (Christmas) cycle by position — so a
+ * Halloween prize is never drawn holding another prize's food.
+ */
 export function prizeCharacter(pack: Pack, prizeId: string, prizeIndex: number): Character {
-  return pack.prizeById[prizeId] ?? pack.prizeFallback[Math.max(0, prizeIndex) % pack.prizeFallback.length];
+  const id = String(prizeId || "").toLowerCase();
+  if (pack.prizeById[id]) return pack.prizeById[id];
+  for (const [key, words] of Object.entries(pack.prizeKeywords ?? {})) {
+    if (words.some((w) => id.includes(w)) && pack.prizeById[key]) return pack.prizeById[key];
+  }
+  if (pack.unknownPrize) return pack.unknownPrize;
+  return pack.prizeFallback[Math.max(0, prizeIndex) % pack.prizeFallback.length];
 }
 
 export function pick<T>(xs: T[]): T {
