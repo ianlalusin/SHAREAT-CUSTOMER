@@ -35,6 +35,9 @@ export default function AdminGhostHuntPage() {
   const [s, setS] = useState<GhostHuntSettings | null>(null);
   const [isActive, setIsActive] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [stores, setStores] = useState<{ storeId: string; name: string }[]>([]);
+  /** Empty = every branch. */
+  const [onlyAt, setOnlyAt] = useState<string[]>([]);
 
   const authed = useCallback(async () => {
     const user = getAuth().currentUser;
@@ -51,6 +54,10 @@ export default function AdminGhostHuntPage() {
         if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not load.");
         setS(json.settings);
         setIsActive(!!json.isActive);
+        setOnlyAt(json.applicableStoreIds || []);
+        const st = await fetch("/api/admin/my-stores", { headers: await authed(), cache: "no-store" });
+        const sj = await st.json().catch(() => ({}));
+        if (st.ok && sj?.ok) setStores(sj.stores || []);
       } catch (e: any) {
         toast({ variant: "destructive", title: "Couldn't load", description: e?.message });
       }
@@ -65,7 +72,7 @@ export default function AdminGhostHuntPage() {
       const res = await fetch("/api/admin/games/ghost-hunt", {
         method: "PUT",
         headers: await authed(),
-        body: JSON.stringify({ isActive, settings: s }),
+        body: JSON.stringify({ isActive, settings: s, applicableStoreIds: onlyAt }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not save.");
@@ -109,6 +116,32 @@ export default function AdminGhostHuntPage() {
                 <p className="text-xs text-muted-foreground">Every branch, unless a manager switches it off there.</p>
               </div>
               <Switch checked={isActive} onCheckedChange={setIsActive} />
+            </div>
+
+            <div className="space-y-2 rounded-2xl border p-4">
+              <p className="font-bold">Branches</p>
+              <p className="text-xs text-muted-foreground">
+                {onlyAt.length === 0
+                  ? "Every branch. Tick branches to run it only there — handy for a test run first."
+                  : `Only at ${onlyAt.length} branch${onlyAt.length > 1 ? "es" : ""}. Untick all for every branch.`}
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {stores.map((st) => {
+                  const on = onlyAt.includes(st.storeId);
+                  return (
+                    <label key={st.storeId} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={() =>
+                          setOnlyAt(on ? onlyAt.filter((x) => x !== st.storeId) : [...onlyAt, st.storeId])
+                        }
+                      />
+                      {st.name}
+                    </label>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="space-y-2">

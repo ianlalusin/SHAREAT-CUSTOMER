@@ -17,6 +17,7 @@ export async function GET(req: Request) {
     ok: true,
     configured: cfg.configured,
     isActive: cfg.configured && cfg.scope?.isActive !== false,
+    applicableStoreIds: Array.isArray(cfg.scope?.applicableStoreIds) ? cfg.scope!.applicableStoreIds : [],
     settings: cfg.settings,
   });
 }
@@ -36,9 +37,16 @@ export async function PUT(req: Request) {
     return NextResponse.json({ ok: false, error: "The end date must be after the start date." }, { status: 400 });
   }
 
+  // Empty means every branch. A short list is how a launch is tried at one
+  // test branch before the rest see it.
+  const applicableStoreIds = Array.isArray(body?.applicableStoreIds)
+    ? Array.from(new Set(body.applicableStoreIds.map((x: unknown) => String(x)).filter(Boolean))).slice(0, 200)
+    : [];
+
   await getAdminDb().doc(`miniGames/${GAME_ID}`).set(
     {
       isActive: body?.isActive === true,
+      applicableStoreIds,
       startsAtMs: settings.startsAtMs,
       endsAtMs: settings.endsAtMs,
       event: settings,
