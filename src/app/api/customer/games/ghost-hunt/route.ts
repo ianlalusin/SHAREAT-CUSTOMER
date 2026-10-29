@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requirePlayer, resolveGameCaller, callerStoreId } from "@/lib/server/games/auth";
-import { huntStatus, readGhostHuntConfig, readRemaining, readTableTicket } from "@/lib/server/games/ghost-hunt-store";
-import { describeWindows } from "@/lib/games/ghost-hunt/rules";
+import { huntStatus, readGhostHuntConfig, readRemaining, readTableTicket, readTicket } from "@/lib/server/games/ghost-hunt-store";
+import { describeWindows, savedTicketStillValid } from "@/lib/games/ghost-hunt/rules";
 
 export const runtime = "nodejs";
 
@@ -22,7 +22,7 @@ export async function GET(req: Request) {
     const status = huntStatus(cfg, storeId, now);
     const s = status.settings;
 
-    let ticket = null;
+    let ticket: Awaited<ReturnType<typeof readTableTicket>> = null;
     let remaining = null;
     if (caller.tier === "player") {
       const gate = await requirePlayer(req);
@@ -32,6 +32,20 @@ export async function GET(req: Request) {
           readRemaining(db, gate.player.storeId, s, now),
         ]);
       }
+    }
+
+    // A ticket this phone saved on an earlier visit: shown only while it can
+    // still be claimed here (savedTicketStillValid); otherwise the phone is
+    // told to forget it, so last week's or another branch's prize stops
+    // showing up.
+    const savedId = String(new URL(req.url).searchParams.get("saved") || "");
+    // Kept apart from `ticket`, which means "THIS table won" and gates catching.
+    let savedTicket: Awaited<ReturnType<typeof readTicket>> = null;
+    let savedStale = false;
+    if (!ticket && savedId) {
+      const saved = await readTicket(db, savedId);
+      if (saved && savedTicketStillValid(saved, storeId, now)) savedTicket = saved;
+      else savedStale = true;
     }
 
     // Settings are per branch. Away from a table there is no branch, so no
@@ -51,6 +65,8 @@ export async function GET(req: Request) {
       tagHandle: s.tagHandle,
       canPlay: caller.tier === "player",
       ticket,
+      savedTicket,
+      savedStale,
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "Could not load the hunt." }, { status: 500 });

@@ -122,31 +122,25 @@ export function GhostHuntGame() {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/customer/games/ghost-hunt", { headers: await authHeaders(), cache: "no-store" });
+      let saved: string | null = null;
+      try {
+        saved = localStorage.getItem(TICKET_KEY);
+      } catch {}
+      // The server decides whether the phone's saved ticket still counts —
+      // unclaimed, today, this branch (savedTicketStillValid).
+      const qs = saved ? `?saved=${encodeURIComponent(saved)}` : "";
+      const res = await fetch(`/api/customer/games/ghost-hunt${qs}`, { headers: await authHeaders(), cache: "no-store" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not load the hunt.");
       setStatus(json as Status);
 
-      // The table's prize from the server wins; otherwise a ticket this phone
-      // saved earlier (the session may already be closed at the counter).
-      if (json.ticket) {
-        setTicket(json.ticket);
-        try {
-          localStorage.setItem(TICKET_KEY, json.ticket.catchId);
-        } catch {}
-      } else {
-        let saved: string | null = null;
-        try {
-          saved = localStorage.getItem(TICKET_KEY);
-        } catch {}
-        if (saved) {
-          const r = await fetch(`/api/customer/games/ghost-hunt/claim?id=${encodeURIComponent(saved)}`, {
-            cache: "no-store",
-          });
-          const j = await r.json().catch(() => ({}));
-          if (r.ok && j?.ok) setTicket(j.ticket);
-        }
-      }
+      // This table's prize wins; otherwise a still-claimable ticket from an
+      // earlier visit (the session may already be closed at the counter).
+      setTicket(json.ticket ?? json.savedTicket ?? null);
+      try {
+        if (json.ticket) localStorage.setItem(TICKET_KEY, json.ticket.catchId);
+        else if (json.savedStale) localStorage.removeItem(TICKET_KEY);
+      } catch {}
     } catch (e: any) {
       setError(e?.message || "Could not load the hunt.");
     }
