@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, CheckCircle2, Loader2, Lock } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2, Lock, Share2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,7 @@ export function PrizeTicket({
   tagHandle,
   onChange,
   onBack,
+  onSharePhoto,
 }: {
   ticket: TicketData;
   pack: Pack;
@@ -46,6 +47,8 @@ export function PrizeTicket({
   tagHandle: string;
   onChange: (t: TicketData) => void;
   onBack: () => void;
+  /** Opens the prize photo saved on this phone, or null when there is none. */
+  onSharePhoto: (() => void) | null;
 }) {
   const [now, setNow] = useState(() => Date.now());
   const [pin, setPin] = useState("");
@@ -130,6 +133,11 @@ export function PrizeTicket({
               Post your photo on Facebook, Instagram or TikTok. Tag <b>{tagHandle}</b> and add <b>{hashtag}</b>. Show the
               post and this ticket to the cashier.
             </p>
+            {onSharePhoto && (
+              <Button onClick={onSharePhoto} variant="secondary" className="mt-3 h-11 w-full rounded-2xl font-bold">
+                <Share2 className="mr-2 h-4 w-4" /> Share my prize photo
+              </Button>
+            )}
           </div>
 
           <div className="rounded-3xl border-2 border-dashed border-zinc-300 bg-white p-5">

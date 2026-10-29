@@ -29,7 +29,7 @@ export async function GET(req: Request) {
   const day = /^\d{4}-\d{2}-\d{2}$/.test(dayParam) ? dayParam : manilaDayKey(Date.now());
 
   const [cfg, list, hasPin] = await Promise.all([
-    readGhostHuntConfig(db),
+    readGhostHuntConfig(db, storeId),
     listBranchDay(db, storeId, day),
     branchHasPin(db, storeId),
   ]);

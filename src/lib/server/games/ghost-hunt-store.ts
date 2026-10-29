@@ -9,8 +9,12 @@ import {
   eventState,
   genClaimCode,
   manilaDayKey,
+  normalizeOverrides,
   normalizeSettings,
+  prizesRemaining,
   rollSpawn,
+  settingsForBranch,
+  type BranchOverrides,
   type GhostHuntSettings,
   type SpawnKind,
 } from "@/lib/games/ghost-hunt/rules";
@@ -92,10 +96,41 @@ export type GhostHuntConfig = {
   settings: GhostHuntSettings;
 };
 
-export async function readGhostHuntConfig(db: Firestore): Promise<GhostHuntConfig> {
-  const snap = await db.doc(`miniGames/${GAME_ID}`).get();
+/**
+ * The hunt's config. With a `storeId`, `settings` are that branch's — the
+ * chain-wide settings with its own prizes, hours and socials laid over them.
+ * Every decision about a diner goes through the branch version.
+ */
+export async function readGhostHuntConfig(db: Firestore, storeId: string | null = null): Promise<GhostHuntConfig> {
+  const [snap, branch] = await Promise.all([
+    db.doc(`miniGames/${GAME_ID}`).get(),
+    storeId ? db.doc(`ghostHuntBranches/${storeId}`).get() : Promise.resolve(null),
+  ]);
   const data = snap.exists ? (snap.data() as Record<string, any>) : null;
-  return { configured: isGameConfigured(data), scope: data, settings: normalizeSettings(data?.event) };
+  const base = normalizeSettings(data?.event);
+  const settings = branch ? settingsForBranch(base, branch.data()?.overrides) : base;
+  return { configured: isGameConfigured(data), scope: data, settings };
+}
+
+/** A branch's own overrides, as stored. Empty when it runs on the chain's settings. */
+export async function readBranchOverrides(db: Firestore, storeId: string): Promise<BranchOverrides> {
+  return normalizeOverrides((await db.doc(`ghostHuntBranches/${storeId}`).get()).data()?.overrides);
+}
+
+export async function writeBranchOverrides(db: Firestore, storeId: string, raw: unknown, uid: string) {
+  const overrides = normalizeOverrides(raw);
+  // Whole-field replace, not merge: dropping a field must put that branch back on the chain's value.
+  await db.doc(`ghostHuntBranches/${storeId}`).set(
+    { overrides, overridesUpdatedAtMs: Date.now(), overridesUpdatedByUid: uid },
+    { mergeFields: ["overrides", "overridesUpdatedAtMs", "overridesUpdatedByUid"] }
+  );
+  return overrides;
+}
+
+/** What is still out there today at a branch. Caught counts as gone, claimed or not. */
+export async function readRemaining(db: Firestore, storeId: string, settings: GhostHuntSettings, nowMs: number) {
+  const day = await dayRef(db, storeId, manilaDayKey(nowMs)).get();
+  return prizesRemaining(settings.prizes, (day.data()?.issued || {}) as Record<string, number>);
 }
 
 export type HuntStatus =
@@ -137,7 +172,7 @@ export async function scanForGhost(
   nowMs: number,
   rand: () => number = Math.random
 ): Promise<ScanResult> {
-  const cfg = await readGhostHuntConfig(db);
+  const cfg = await readGhostHuntConfig(db, player.storeId);
   const status = huntStatus(cfg, player.storeId, nowMs);
   if (!status.live) return { ok: false, status: 409, error: status.message };
   const settings = status.settings;
@@ -210,7 +245,7 @@ export async function catchGhost(
   spawnId: string,
   nowMs: number
 ): Promise<CatchResult> {
-  const cfg = await readGhostHuntConfig(db);
+  const cfg = await readGhostHuntConfig(db, player.storeId);
   const settings = cfg.settings;
   const catchRef = db.doc(`ghostHuntCatches/${spawnId}`);
 

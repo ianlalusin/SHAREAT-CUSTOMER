@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 import {
   Camera,
@@ -21,6 +21,7 @@ import { markView, signalUse } from "@/lib/games/trackGame";
 import { DEFAULT_ASPECT, packFor, pick, prizeCharacter, svgUrl, type Character, type Pack } from "./packs";
 import { flightPose, randomFlight, type Flight } from "./flights";
 import { PrizeTicket, type TicketData } from "./PrizeTicket";
+import { listPhotos, savePhoto, type SavedPhoto } from "./photoStore";
 
 const GAME_ID = "ghost-hunt";
 const TICKET_KEY = "shareat_ghost_ticket";
@@ -32,6 +33,8 @@ type Status = {
   hours: string;
   endsAtMs: number;
   prizes: { id: string; name: string }[];
+  /** What is still uncaught today at this branch. Null away from a table. */
+  remaining: { id: string; name: string; left: number }[] | null;
   hashtag: string;
   tagHandle: string;
   canPlay: boolean;
@@ -97,8 +100,15 @@ export function GhostHuntGame() {
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("intro");
   const [ticket, setTicket] = useState<TicketData | null>(null);
+  const [photos, setPhotos] = useState<SavedPhoto[]>([]);
+  const [viewing, setViewing] = useState<SavedPhoto | null>(null);
 
   const pack = packFor(status?.theme || "halloween");
+
+  const refreshPhotos = useCallback(() => {
+    listPhotos().then(setPhotos);
+  }, []);
+  useEffect(refreshPhotos, [refreshPhotos]);
 
   const load = useCallback(async () => {
     try {
@@ -147,16 +157,41 @@ export function GhostHuntGame() {
     );
   }
 
-  if (phase === "ticket" && ticket) {
-    return (
-      <PrizeTicket
-        ticket={ticket}
-        pack={pack}
-        hashtag={status.hashtag}
+  // A saved photo opened from the hunt screen or the ticket, outside the camera.
+  const viewer = viewing && (
+    <div className="fixed inset-0 z-[100]">
+      <PhotoSheet
+        photo={viewing}
         tagHandle={status.tagHandle}
-        onChange={setTicket}
-        onBack={() => setPhase("intro")}
+        closeLabel="Close"
+        onClose={() => setViewing(null)}
+        onShowTicket={
+          ticket
+            ? () => {
+                setViewing(null);
+                setPhase("ticket");
+              }
+            : undefined
+        }
       />
+    </div>
+  );
+
+  if (phase === "ticket" && ticket) {
+    const prizePhoto = photos.find((p) => p.catchId === ticket.catchId) ?? photos.find((p) => p.prizeName) ?? null;
+    return (
+      <>
+        <PrizeTicket
+          ticket={ticket}
+          pack={pack}
+          hashtag={status.hashtag}
+          tagHandle={status.tagHandle}
+          onChange={setTicket}
+          onBack={() => setPhase("intro")}
+          onSharePhoto={prizePhoto ? () => setViewing(prizePhoto) : null}
+        />
+        {viewer}
+      </>
     );
   }
 
@@ -182,6 +217,10 @@ export function GhostHuntGame() {
         onStart={start}
         onTicket={() => setPhase("ticket")}
       />
+      <div className="mt-4">
+        <PhotoStrip photos={photos} onOpen={setViewing} />
+      </div>
+      {viewer}
       {(phase === "hunting" || phase === "photo") && (
         <Hunt
           status={status}
@@ -202,6 +241,7 @@ export function GhostHuntGame() {
             setStatus((s) => (s ? { ...s, live: false, message: msg } : s));
             setPhase("intro");
           }}
+          onPhotoSaved={refreshPhotos}
         />
       )}
     </>
@@ -224,6 +264,8 @@ function Intro({
   onTicket: () => void;
 }) {
   const hero = pack.prizeFallback[0];
+  // Caught counts as gone, claimed or not — so this flips the moment the last one is caught.
+  const allCaught = !!status.remaining && status.remaining.length > 0 && status.remaining.every((r) => r.left === 0);
   const endDate = new Date(status.endsAtMs).toLocaleDateString("en-PH", {
     month: "short",
     day: "numeric",
@@ -290,16 +332,27 @@ function Intro({
 
       {status.prizes.length > 0 && (
         <div className="rounded-3xl bg-white p-5 shadow-sm">
-          <p className="font-black">Prizes</p>
+          <p className="font-black">{status.remaining ? "Prizes left today" : "Prizes"}</p>
+          {allCaught && (
+            <p className="mt-2 rounded-2xl bg-violet-50 px-3 py-2 text-sm font-semibold text-violet-900">
+              All of today&apos;s prizes have been caught. The {pack.noun}s still say hi — try again tomorrow!
+            </p>
+          )}
           <div className="mt-3 grid grid-cols-2 gap-3">
             {status.prizes.map((p, i) => {
               const c = prizeCharacter(pack, p.id, i);
+              const left = status.remaining?.find((r) => r.id === p.id)?.left;
               return (
-                <div key={p.id} className="flex items-center gap-2 rounded-2xl bg-zinc-50 p-2">
+                <div
+                  key={p.id}
+                  className={`flex items-center gap-2 rounded-2xl bg-zinc-50 p-2 ${left === 0 ? "opacity-50 grayscale" : ""}`}
+                >
                   <img src={svgUrl(c.svg)} alt="" className="h-12 w-12 shrink-0" />
                   <div className="min-w-0">
                     <p className="text-sm font-bold leading-tight">{p.name}</p>
-                    <p className="text-[11px] text-muted-foreground">from {c.name}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {left === undefined ? `from ${c.name}` : left === 0 ? "All caught" : `${left} left · ${c.name}`}
+                    </p>
                   </div>
                 </div>
               );
@@ -329,6 +382,7 @@ function Hunt({
   onWon,
   onShowTicket,
   onEnded,
+  onPhotoSaved,
 }: {
   status: Status;
   pack: Pack;
@@ -337,6 +391,7 @@ function Hunt({
   onWon: (t: TicketData) => void;
   onShowTicket: () => void;
   onEnded: (message: string) => void;
+  onPhotoSaved: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const ghostRef = useRef<HTMLButtonElement>(null);
@@ -351,7 +406,7 @@ function Hunt({
   const [bubble, setBubble] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [catching, setCatching] = useState(false);
-  const [photo, setPhoto] = useState<{ url: string; blob: Blob; won: TicketData | null; name: string } | null>(null);
+  const [photo, setPhoto] = useState<SavedPhoto | null>(null);
 
   const showToast = useCallback((m: string) => {
     setToast(m);
@@ -598,9 +653,22 @@ function Hunt({
       const s = spawnRef.current;
       const blob = await capture(s, won ? `I caught ${s?.character.name ?? "a ghost"} and won ${won.prizeName}!` : null);
       if (!blob) return showToast("Camera not ready yet.");
-      setPhoto({ url: URL.createObjectURL(blob), blob, won, name: s?.character.name ?? "" });
+      const name = s?.character.name ?? "";
+      const saved: SavedPhoto = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        blob,
+        caption: photoCaption(pack, name, won?.prizeName ?? null, status.hashtag, status.tagHandle),
+        catchId: won?.catchId ?? null,
+        prizeName: won?.prizeName ?? null,
+        name,
+        atMs: Date.now(),
+      };
+      // Saved before it is shown: a share that fails must not cost them the photo.
+      await savePhoto(saved);
+      onPhotoSaved();
+      setPhoto(saved);
     },
-    [capture, showToast]
+    [capture, showToast, pack, status.hashtag, status.tagHandle, onPhotoSaved]
   );
 
   const tapGhost = useCallback(async () => {
@@ -727,13 +795,9 @@ function Hunt({
       {photo && (
         <PhotoSheet
           photo={photo}
-          pack={pack}
-          hashtag={status.hashtag}
           tagHandle={status.tagHandle}
-          onRetake={() => {
-            URL.revokeObjectURL(photo.url);
-            setPhoto(null);
-          }}
+          closeLabel="Keep hunting"
+          onClose={() => setPhoto(null)}
           onShowTicket={onShowTicket}
         />
       )}
@@ -743,77 +807,118 @@ function Hunt({
 
 /* ---------------------------------------------------------------- photo */
 
+function photoCaption(pack: Pack, name: string, prizeName: string | null, hashtag: string, tagHandle: string) {
+  return prizeName
+    ? `I caught ${name || `a ${pack.noun}`} at SharEat and won ${prizeName}! 👻 ${hashtag} ${tagHandle}`
+    : `${pack.noun === "ghost" ? "Ghost" : "Holiday"} hunting at SharEat! 👻 ${hashtag} ${tagHandle}`;
+}
+
+/**
+ * One photo, ready to post. It is already saved on the phone by the time this
+ * opens, so closing it — or a share sheet that fails — loses nothing: it is
+ * waiting under "Your photos" and on the prize ticket.
+ */
 function PhotoSheet({
   photo,
-  pack,
-  hashtag,
   tagHandle,
-  onRetake,
+  closeLabel,
+  onClose,
   onShowTicket,
 }: {
-  photo: { url: string; blob: Blob; won: TicketData | null; name: string };
-  pack: Pack;
-  hashtag: string;
+  photo: SavedPhoto;
   tagHandle: string;
-  onRetake: () => void;
-  onShowTicket: () => void;
+  closeLabel: string;
+  onClose: () => void;
+  onShowTicket?: () => void;
 }) {
-  const caption = photo.won
-    ? `I caught ${photo.name} at SharEat and won ${photo.won.prizeName}! 👻 ${hashtag} ${tagHandle}`
-    : `${pack.noun === "ghost" ? "Ghost" : "Holiday"} hunting at SharEat! 👻 ${hashtag} ${tagHandle}`;
   const [copied, setCopied] = useState(false);
-  const file = new File([photo.blob], "shareat-ghost-hunt.jpg", { type: "image/jpeg" });
+  const [shareFailed, setShareFailed] = useState(false);
+  const url = useMemo(() => URL.createObjectURL(photo.blob), [photo.blob]);
+  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+
+  const file = useMemo(() => new File([photo.blob], "shareat-ghost-hunt.jpg", { type: "image/jpeg" }), [photo.blob]);
   const canShareFile = typeof navigator !== "undefined" && !!navigator.canShare?.({ files: [file] });
 
   const share = async () => {
+    setShareFailed(false);
+    await navigator.clipboard?.writeText(photo.caption).catch(() => {});
     try {
-      await navigator.clipboard?.writeText(caption).catch(() => {});
-      await navigator.share({ files: [file], text: caption });
-    } catch {}
+      await navigator.share({ files: [file], text: photo.caption });
+    } catch (e: any) {
+      // Dismissing the sheet is not a failure worth a message; anything else is.
+      if (e?.name !== "AbortError") setShareFailed(true);
+    }
   };
 
   return (
-    <div className="absolute inset-0 flex flex-col bg-zinc-950/95 p-4 pt-[max(1rem,env(safe-area-inset-top))]">
-      {photo.won && (
+    <div className="absolute inset-0 flex flex-col bg-zinc-950/95 p-4 pt-[max(1rem,env(safe-area-inset-top))] text-white">
+      {photo.prizeName && (
         <div className="mb-3 rounded-2xl bg-amber-400 px-4 py-3 text-zinc-900">
-          <p className="flex items-center gap-2 text-lg font-black"><Gift className="h-5 w-5" /> You won {photo.won.prizeName}!</p>
+          <p className="flex items-center gap-2 text-lg font-black"><Gift className="h-5 w-5" /> You won {photo.prizeName}!</p>
           <p className="text-xs font-semibold">Post this photo, tag {tagHandle}, then show the cashier.</p>
         </div>
       )}
-      <img src={photo.url} alt="Your ghost photo" className="min-h-0 flex-1 rounded-2xl object-contain" />
-      <p className="mt-3 rounded-xl bg-white/10 px-3 py-2 text-xs text-white/80">{caption}</p>
+      <img src={url} alt="Your ghost photo" className="min-h-0 flex-1 rounded-2xl object-contain" />
+      <p className="mt-3 rounded-xl bg-white/10 px-3 py-2 text-xs text-white/80">{photo.caption}</p>
+      {shareFailed && (
+        <p className="mt-2 text-xs font-semibold text-amber-300">
+          Sharing didn&apos;t work. Save the photo, then post it from your gallery — the caption is copied.
+        </p>
+      )}
       <div className="mt-3 grid grid-cols-2 gap-2">
         {canShareFile ? (
           <Button onClick={share} className="h-12 rounded-2xl bg-white font-black text-zinc-900 hover:bg-zinc-100">
             <Share2 className="mr-2 h-4 w-4" /> Share
           </Button>
-        ) : (
-          <Button asChild className="h-12 rounded-2xl bg-white font-black text-zinc-900 hover:bg-zinc-100">
-            <a href={photo.url} download="shareat-ghost-hunt.jpg">
-              <Download className="mr-2 h-4 w-4" /> Save photo
-            </a>
-          </Button>
-        )}
+        ) : null}
+        <Button asChild variant={canShareFile ? "secondary" : "default"} className="h-12 rounded-2xl font-bold">
+          <a href={url} download="shareat-ghost-hunt.jpg">
+            <Download className="mr-2 h-4 w-4" /> Save photo
+          </a>
+        </Button>
         <Button
           variant="secondary"
-          className="h-12 rounded-2xl font-bold"
+          className={`h-12 rounded-2xl font-bold ${canShareFile ? "col-span-2" : ""}`}
           onClick={async () => {
-            await navigator.clipboard?.writeText(caption).catch(() => {});
+            await navigator.clipboard?.writeText(photo.caption).catch(() => {});
             setCopied(true);
           }}
         >
-          <Copy className="mr-2 h-4 w-4" /> {copied ? "Copied!" : "Copy caption"}
+          <Copy className="mr-2 h-4 w-4" /> {copied ? "Caption copied!" : "Copy caption"}
         </Button>
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
-        <Button variant="ghost" onClick={onRetake} className="h-11 rounded-2xl text-white hover:bg-white/10">
-          <Ghost className="mr-2 h-4 w-4" /> Keep hunting
+        <Button variant="ghost" onClick={onClose} className="h-11 rounded-2xl text-white hover:bg-white/10">
+          <Ghost className="mr-2 h-4 w-4" /> {closeLabel}
         </Button>
-        {photo.won && (
+        {photo.catchId && onShowTicket && (
           <Button onClick={onShowTicket} className="h-11 rounded-2xl bg-amber-400 font-black text-zinc-900 hover:bg-amber-300">
             <Ticket className="mr-2 h-4 w-4" /> Prize ticket
           </Button>
         )}
+      </div>
+    </div>
+  );
+}
+
+/** Thumbnails of the photos saved on this phone. Tap to share again. */
+function PhotoStrip({ photos, onOpen }: { photos: SavedPhoto[]; onOpen: (p: SavedPhoto) => void }) {
+  const urls = useMemo(() => photos.map((p) => URL.createObjectURL(p.blob)), [photos]);
+  useEffect(() => () => urls.forEach((u) => URL.revokeObjectURL(u)), [urls]);
+  if (!photos.length) return null;
+  return (
+    <div className="rounded-3xl bg-white p-5 shadow-sm">
+      <p className="font-black">Your photos</p>
+      <p className="text-xs text-muted-foreground">Saved on this phone. Tap one to share it again.</p>
+      <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+        {photos.map((p, i) => (
+          <button key={p.id} type="button" onClick={() => onOpen(p)} className="relative shrink-0">
+            <img src={urls[i]} alt="" className="h-24 w-24 rounded-2xl object-cover" />
+            {p.prizeName && (
+              <span className="absolute bottom-1 left-1 rounded-lg bg-amber-400 px-1.5 text-[10px] font-black text-zinc-900">PRIZE</span>
+            )}
+          </button>
+        ))}
       </div>
     </div>
   );

@@ -291,3 +291,6 @@ export function prizeCharacter(pack: Pack, prizeId: string, prizeIndex: number):
 export function pick<T>(xs: T[]): T {
   return xs[Math.floor(Math.random() * xs.length)];
 }
+
+/** Santa's sleigh team as a ready-to-use image URL — also flies across the app as Christmas decoration. */
+export const SLEIGH_TEAM_URL = svgUrl(SLEIGH_TEAM);

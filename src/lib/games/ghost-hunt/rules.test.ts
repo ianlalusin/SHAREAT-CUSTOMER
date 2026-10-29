@@ -10,6 +10,8 @@ import {
   manilaMidnightMs,
   normalizeSettings,
   prizesLeft,
+  prizesRemaining,
+  settingsForBranch,
   rollSpawn,
   type GhostHuntSettings,
 } from "./rules";
@@ -113,6 +115,31 @@ describe("rollSpawn", () => {
 
   it("flies by when the hello roll misses", () => {
     expect(rollSpawn({ settings: s, issued: {}, tableHasWon: false, rand: seq(0.1, 0.9, 0.9) }).kind).toBe("flyby");
+  });
+});
+
+describe("per-branch settings", () => {
+  it("overrides only what the branch set", () => {
+    const lipa = settingsForBranch(DEFAULT_SETTINGS, {
+      prizes: [{ id: "melona", name: "2 Melona ice cream", perDay: 5 }],
+      hashtag: "#SharEatLipa",
+    });
+    expect(lipa.prizes).toEqual([{ id: "melona", name: "2 Melona ice cream", perDay: 5 }]);
+    expect(lipa.hashtag).toBe("#SharEatLipa");
+    expect(lipa.tagHandle).toBe(DEFAULT_SETTINGS.tagHandle);
+    expect(lipa.windows).toEqual(DEFAULT_SETTINGS.windows);
+    expect(lipa.startsAtMs).toBe(DEFAULT_SETTINGS.startsAtMs);
+  });
+
+  it("ignores junk and blank fields", () => {
+    expect(settingsForBranch(DEFAULT_SETTINGS, { hashtag: "  ", foo: 1 })).toEqual(DEFAULT_SETTINGS);
+    expect(settingsForBranch(DEFAULT_SETTINGS, null)).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it("counts a caught prize as gone even before it is claimed", () => {
+    const left = prizesRemaining(DEFAULT_SETTINGS.prizes, { melona: 3, coke: 1 });
+    expect(left.find((p) => p.id === "melona")?.left).toBe(0);
+    expect(left.find((p) => p.id === "coke")?.left).toBe(1);
   });
 });
 
