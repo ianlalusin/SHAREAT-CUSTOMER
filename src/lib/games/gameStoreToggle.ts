@@ -1,4 +1,4 @@
-import type { GameStoreScope } from "./gameScope";
+import { isWithinRunDates, type GameStoreScope } from "./gameScope";
 
 /**
  * A manager switching a game on or off AT THEIR OWN BRANCH.
@@ -50,6 +50,14 @@ export function managerGameState(
       configured: true,
       runningHere: false,
       lockedReason: "Switched off for every branch by head office.",
+    };
+  }
+
+  if (!isWithinRunDates(cfg, Date.now())) {
+    return {
+      configured: true,
+      runningHere: false,
+      lockedReason: "Outside the event dates set by head office.",
     };
   }
 

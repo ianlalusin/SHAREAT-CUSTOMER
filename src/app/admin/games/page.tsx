@@ -191,6 +191,15 @@ export default function AdminGamesPage() {
                     {!g.configured && (
                       <p className="mt-1 text-xs text-amber-700">Never switched on — diners cannot see it.</p>
                     )}
+                    {g.id === "ghost-hunt" && (
+                      <button
+                        type="button"
+                        onClick={() => router.push("/admin/games/ghost-hunt")}
+                        className="mt-1 text-xs font-bold text-primary underline"
+                      >
+                        Dates, hours, prizes & theme
+                      </button>
+                    )}
                   </div>
                   <Switch checked={g.isActive} onCheckedChange={(v) => toggleGame(g.id, v)} />
                 </div>

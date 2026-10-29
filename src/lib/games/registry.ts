@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Flame, Utensils } from "lucide-react";
+import { Flame, Ghost, Utensils } from "lucide-react";
 import type { GameMetricDefinitions } from "@/lib/games/metrics";
 
 /**
@@ -14,7 +14,7 @@ import type { GameMetricDefinitions } from "@/lib/games/metrics";
  * A game listed here is NOT live until its config doc exists and says so. There
  * is no "default on".
  */
-export type GameAccent = "flame" | "berry" | "ocean" | "ember";
+export type GameAccent = "flame" | "berry" | "ocean" | "ember" | "night";
 
 export type GameDefinition = {
   /** Stable. Doubles as the `miniGames/{id}` key — never rename a shipped id. */
@@ -79,6 +79,22 @@ export const GAMES: GameDefinition[] = [
       // A finished ROUND, not a press. Counting presses would make a five-press
       // game look five times more popular than a one-press one.
       use: { label: "Finished a round", signal: "flip", threshold: 5 },
+    },
+  },
+  {
+    id: "ghost-hunt",
+    // Seasonal. The same game reruns for other occasions by switching the
+    // event's `theme` in /admin/games/ghost-hunt — the title stays generic.
+    title: "Spot a Ghost",
+    tagline: "Point your camera around. Catch the right ghost, win a treat.",
+    icon: Ghost,
+    accent: "night",
+    href: "/play/ghost-hunt",
+    // The server decides who wins and checks the table; a prize needs a seat.
+    requiresSession: true,
+    metrics: {
+      view: { label: "Opened the hunt" },
+      use: { label: "Opened the camera", signal: "camera", threshold: 1 },
     },
   },
 ];
