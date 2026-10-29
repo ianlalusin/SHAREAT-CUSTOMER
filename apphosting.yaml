@@ -12,3 +12,10 @@ env:
     secret: CUSTOMER_JOIN_TOKEN_SECRET
     availability:
       - RUNTIME
+  # POS audit B05 (2026-10-29): password hashes live only in
+  # customers/{phone}/secrets/auth; the legacy profile field was removed.
+  # "off" stops signup and password changes from writing it back.
+  - variable: CUSTOMER_SECRETS_LEGACY_FIELD
+    value: "off"
+    availability:
+      - RUNTIME
