@@ -14,7 +14,8 @@ import {
   toNextAllowedMap,
   type CooldownMap,
 } from "@/lib/refill-cooldown";
-import { getRefillOptionsMenu } from "@/lib/server/refill-options-cache";
+import { getRefillOptionsMenu, type RefillOptionsMenu } from "@/lib/server/refill-options-cache";
+import { validateRefillLine } from "@/lib/refill-validate";
 import { writeKitchenTicket } from "@/lib/server/kitchen-ticket-write";
 import { refillTicketState } from "@/lib/server/refill-outstanding";
 
@@ -57,6 +58,7 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const items = Array.isArray(body?.items) ? body.items : [];
     if (!items.length) return bad("No refill items.", 400);
+    if (items.length > 30) return bad("Too many refill lines in one order.", 400);
 
     const db = getAdminDb();
 
@@ -75,58 +77,29 @@ export async function POST(req: Request) {
       return bad(e.message, e.httpStatus || 403);
     }
 
+    // ---- the branch's refill menu: the source of truth for every line -----
+    // Required, not best-effort: without it there is nothing to check a line
+    // against, and an unchecked line is a free item the kitchen will cook.
+    let menu: RefillOptionsMenu;
+    try {
+      menu = await getRefillOptionsMenu(db, storeId);
+    } catch {
+      return bad("Could not load the refill menu. Please try again.", 503);
+    }
+    const flavorNameById = new Map(menu.storeFlavors.map((f) => [f.flavorId, f.flavorName] as const));
+    const refillNameById = new Map(menu.storeRefills.map((r) => [r.refillId, r.refillName] as const));
+
     // ---- validate every item BEFORE writing any ticket ---------------------
     // Validation used to live inside the write loop, so a bad item halfway
-    // through left the earlier tickets already sitting in the kitchen.
+    // through left the earlier tickets already sitting in the kitchen. Item,
+    // name, station and quantity all come from the menu now — see
+    // validateRefillLine for why the request's own copies are not trusted.
     const normalized: NormalizedItem[] = [];
 
     for (const it of items) {
-      const itemId = String(it?.itemId || it?.refillId || "");
-      const itemName = String(it?.itemName || it?.refillName || "");
-      const kitchenLocationId = String(it?.kitchenLocationId || "");
-      const kitchenLocationName = String(it?.kitchenLocationName || "Kitchen");
-      const qty = Number(it?.qty || 1);
-      const notes = String(it?.notes || "");
-      const flavorIds = Array.isArray(it?.flavorIds) ? it.flavorIds.map(String).filter(Boolean) : [];
-
-      if (!itemId || !itemName) return bad("Invalid item payload.", 400);
-      if (!kitchenLocationId) return bad("Missing kitchenLocationId.", 400);
-      if (flavorIds.length > 1) {
-        return bad(`Only 1 flavor per meat is allowed — "${itemName}" has ${flavorIds.length}.`, 400);
-      }
-
-      // "Other Refills" arrive as one combined line per station; each side item
-      // inside it gets its own cooldown, under the same per-type rule.
-      const bundledIds = Array.isArray(it?.refillIds) ? it.refillIds.map(String).filter(Boolean) : [];
-
-      normalized.push({
-        itemId,
-        itemName,
-        kitchenLocationId,
-        kitchenLocationName,
-        qty,
-        notes,
-        flavorIds,
-        refillRequest:
-          it && typeof it === "object" && (it as any).refillRequest ? (it as any).refillRequest : null,
-        cooldownIds: bundledIds.length ? bundledIds : [itemId],
-      });
-    }
-
-    // ---- resolve flavor names so the ticket carries a real flavorNote ------
-    // The KDS card renders `flavorNote`; only the POS staff path used to set it,
-    // so customer-chosen flavors showed up under a different heading.
-    // One cached-doc read covers both the flavor names for the ticket note and
-    // the per-refill names for cooldown messages. Names come from the menu, not
-    // from the client, so a guest cannot spoof what the kitchen sees.
-    const flavorNameById = new Map<string, string>();
-    const refillNameById = new Map<string, string>();
-    try {
-      const menu = await getRefillOptionsMenu(db, storeId);
-      for (const f of menu.storeFlavors) flavorNameById.set(f.flavorId, f.flavorName);
-      for (const r of menu.storeRefills) refillNameById.set(r.refillId, r.refillName);
-    } catch {
-      // Non-fatal: fall back to raw ids/client names rather than failing the order.
+      const check = validateRefillLine(it, menu);
+      if (!check.ok) return bad(check.error, 400);
+      normalized.push({ ...check.line, notes: String(it?.notes || "").slice(0, 200) });
     }
 
     // ---- claim the per-meat cooldowns (atomic, all-or-nothing) -------------

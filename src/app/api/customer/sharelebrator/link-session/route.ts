@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkLiveParticipant } from "@/lib/server/customer-gate";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { normalizePhone } from "@/lib/phone";
 import bcrypt from "bcryptjs";
@@ -77,6 +78,9 @@ export async function POST(req: Request) {
   if (password.length < 6) return bad("Password must be at least 6 characters.");
 
   const db = getAdminDb();
+  // Linking a card to a table needs a diner who is still at it.
+  const live = await checkLiveParticipant(db, decoded);
+  if (!live.ok) return bad(live.error, live.status);
   const customerRef = db.doc(`customers/${phone}`);
 
   // First-come lock: if this session is already linked to a different phone,

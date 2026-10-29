@@ -125,9 +125,18 @@ export async function POST(req: Request) {
       if (!senderSnap.exists) throw new Error("Sender account not found.");
       const senderData = senderSnap.data() as any;
       const senderBalance = Number(senderData.pointsBalance || 0);
+      // Points held by an unredeemed voucher are already promised: claiming a
+      // reward reserves them and POS spends them at payment. Sending them away
+      // first would leave that spend to drive the balance negative.
+      const senderReserved = Math.max(0, Number(senderData.pointsReserved || 0));
+      const spendable = senderBalance - senderReserved;
 
-      if (senderBalance < points) {
-        throw new Error("Insufficient points.");
+      if (spendable < points) {
+        throw new Error(
+          senderReserved > 0 && senderBalance >= points
+            ? `Insufficient points. ${senderReserved} of your points are held for a reward you claimed.`
+            : "Insufficient points."
+        );
       }
 
       const recipientSnap = await tx.get(recipientRef);

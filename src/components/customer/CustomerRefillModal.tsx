@@ -23,6 +23,7 @@ import { ParolStar } from "@/components/christmas/ParolStar";
 import { GarlandStrip } from "@/components/christmas/GarlandStrip";
 import { PineSprigCorner } from "@/components/christmas/PineSprigCorner";
 import { HangingOrnaments } from "@/components/christmas/HangingOrnaments";
+import { MAX_SIDE_QTY } from "@/lib/refill-validate";
 
 export type RefillCooldowns = {
   cooldownMs: number;
@@ -822,7 +823,8 @@ function CustomerRefillContent({
                             onClick={() =>
                               setOtherQty((prev) => ({
                                 ...prev,
-                                [r.refillId]: Number(prev[r.refillId] || 0) + 1,
+                                // Same cap the server enforces, so the stepper never builds an order it refuses.
+                                [r.refillId]: Math.min(MAX_SIDE_QTY, Number(prev[r.refillId] || 0) + 1),
                               }))
                             }
                           >

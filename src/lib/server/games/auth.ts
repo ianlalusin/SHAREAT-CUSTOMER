@@ -1,5 +1,6 @@
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { loadAndValidateSessionAccess } from "@/lib/server/customer-session-access";
+import { validateActiveParticipant } from "@/lib/server/customer-participants";
 import { gameIdentityKey } from "@/lib/games/identity";
 
 /**
@@ -97,6 +98,9 @@ export async function requirePlayer(
   const db = getAdminDb();
   try {
     const session = await loadAndValidateSessionAccess(db, caller.storeId, caller.sessionId);
+    // The session being open is not enough: a phone the cashier removed from
+    // the table keeps a valid token until it expires. Same gate as ordering.
+    await validateActiveParticipant(db, caller.storeId, caller.sessionId, caller.participantId);
     const storeSnap = await db.doc(`stores/${caller.storeId}`).get();
     const storeName = String(storeSnap.data()?.name || storeSnap.data()?.storeName || "SharEat");
 
