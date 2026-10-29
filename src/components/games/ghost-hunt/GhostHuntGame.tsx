@@ -22,6 +22,7 @@ import { DEFAULT_ASPECT, packFor, pick, prizeCharacter, svgUrl, type Character, 
 import { flightPose, randomFlight, type Flight } from "./flights";
 import { PrizeTicket, type TicketData } from "./PrizeTicket";
 import { listPhotos, savePhoto, type SavedPhoto } from "./photoStore";
+import { fitCaption } from "@/lib/games/ghost-hunt/caption";
 
 const GAME_ID = "ghost-hunt";
 const TICKET_KEY = "shareat_ghost_ticket";
@@ -100,10 +101,19 @@ export function GhostHuntGame() {
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>("intro");
   const [ticket, setTicket] = useState<TicketData | null>(null);
+  /**
+   * Whether THIS table session already won. Not the same as having a ticket:
+   * the phone keeps an earlier visit's ticket so it can still be shown at the
+   * counter, and treating that as "this table won" blocked every later visit
+   * from the same phone. The server's answer (status.ticket) is per session;
+   * a catch made on this screen counts too until the next reload.
+   */
+  const [wonThisVisit, setWonThisVisit] = useState(false);
   const [photos, setPhotos] = useState<SavedPhoto[]>([]);
   const [viewing, setViewing] = useState<SavedPhoto | null>(null);
 
   const pack = packFor(status?.theme || "halloween");
+  const tableHasWon = !!status?.ticket || wonThisVisit;
 
   const refreshPhotos = useCallback(() => {
     listPhotos().then(setPhotos);
@@ -214,6 +224,7 @@ export function GhostHuntGame() {
         status={status}
         pack={pack}
         ticket={ticket}
+        tableHasWon={tableHasWon}
         onStart={start}
         onTicket={() => setPhase("ticket")}
       />
@@ -225,13 +236,14 @@ export function GhostHuntGame() {
         <Hunt
           status={status}
           pack={pack}
-          tableHasWon={!!ticket}
+          tableHasWon={tableHasWon}
           onClose={() => {
             setPhase("intro");
             load();
           }}
           onWon={(t) => {
             setTicket(t);
+            setWonThisVisit(true);
             try {
               localStorage.setItem(TICKET_KEY, t.catchId);
             } catch {}
@@ -254,12 +266,14 @@ function Intro({
   status,
   pack,
   ticket,
+  tableHasWon,
   onStart,
   onTicket,
 }: {
   status: Status;
   pack: Pack;
   ticket: TicketData | null;
+  tableHasWon: boolean;
   onStart: () => void;
   onTicket: () => void;
 }) {
@@ -304,11 +318,11 @@ function Intro({
           <Button
             onClick={onStart}
             className={`mt-3 h-14 w-full rounded-2xl text-lg font-black ${
-              ticket ? "bg-white/15 text-white hover:bg-white/25" : "bg-white text-violet-900 hover:bg-violet-50"
+              tableHasWon ? "bg-white/15 text-white hover:bg-white/25" : "bg-white text-violet-900 hover:bg-violet-50"
             }`}
           >
             <Camera className="mr-2 h-5 w-5" />
-            {ticket ? "Keep hunting for fun" : "Open camera & hunt"}
+            {tableHasWon ? "Keep hunting for fun" : "Open camera & hunt"}
           </Button>
         )}
       </div>
@@ -627,21 +641,32 @@ function Hunt({
         ctx.shadowBlur = 0;
       }
 
-      const band = Math.round(vh * 0.13);
+      // The caption shrinks and wraps to fit (lib/games/ghost-hunt/caption.ts):
+      // a long prize name used to run off the edge, hiding the prize itself.
+      const unit = Math.round(vh * 0.13);
+      const pad = unit * 0.35;
+      const maxW = vw - pad * 2;
+      const headline = prizeLine || (s ? `I spotted ${s.character.name} at SharEat!` : "Ghost hunting at SharEat!");
+      const measure = (text: string, px: number) => {
+        ctx.font = `900 ${px}px Arial, sans-serif`;
+        return ctx.measureText(text).width;
+      };
+      const sizes = [0.3, 0.27, 0.24, 0.21, 0.18].map((k) => Math.round(unit * k));
+      const fit = fitCaption(measure, headline, maxW, sizes);
+      const lineH = fit.px * 1.15;
+      const tagPx = Math.round(unit * 0.2);
+      const band = Math.round(pad * 0.8 + fit.lines.length * lineH + tagPx * 1.4 + pad * 0.6);
+
       ctx.fillStyle = "rgba(20,10,40,.78)";
       ctx.fillRect(0, vh - band, vw, band);
+      ctx.textBaseline = "top";
       ctx.fillStyle = "#fff";
-      ctx.textBaseline = "middle";
-      const f1 = Math.round(band * 0.3);
-      ctx.font = `900 ${f1}px Arial, sans-serif`;
-      ctx.fillText(
-        prizeLine || (s ? `I spotted ${s.character.name} at SharEat!` : "Ghost hunting at SharEat!"),
-        band * 0.35,
-        vh - band * 0.64
-      );
-      ctx.font = `700 ${Math.round(band * 0.22)}px Arial, sans-serif`;
+      ctx.font = `900 ${fit.px}px Arial, sans-serif`;
+      fit.lines.forEach((line, i) => ctx.fillText(line, pad, vh - band + pad * 0.8 + i * lineH));
+      ctx.font = `700 ${tagPx}px Arial, sans-serif`;
       ctx.fillStyle = "#d8c8ff";
-      ctx.fillText(`${status.hashtag}  ${status.tagHandle}`, band * 0.35, vh - band * 0.27);
+      const tags = `${status.hashtag}  ${status.tagHandle}`;
+      ctx.fillText(tags, pad, vh - band + pad * 0.8 + fit.lines.length * lineH + tagPx * 0.3, maxW);
 
       return new Promise((resolve) => c.toBlob((b) => resolve(b), "image/jpeg", 0.9));
     },
