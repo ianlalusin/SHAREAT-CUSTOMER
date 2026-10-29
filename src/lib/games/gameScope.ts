@@ -27,7 +27,23 @@ export type GameStoreScope = {
   applicableStoreIds?: string[] | null;
   /** Per-store opt-out, applied on top of the allow-list. */
   disabledStoreIds?: string[] | null;
+  /**
+   * Optional run dates, for seasonal games. Outside them the game is off even
+   * with `isActive` true — so an event nobody remembers to switch off still
+   * ends on its last day. Absent means no limit on that side.
+   */
+  startsAtMs?: number | null;
+  endsAtMs?: number | null;
 };
+
+/** Whether `nowMs` falls inside the config's run dates (inclusive). */
+export function isWithinRunDates(cfg: GameStoreScope | null | undefined, nowMs: number): boolean {
+  const start = Number(cfg?.startsAtMs);
+  const end = Number(cfg?.endsAtMs);
+  if (Number.isFinite(start) && start > 0 && nowMs < start) return false;
+  if (Number.isFinite(end) && end > 0 && nowMs > end) return false;
+  return true;
+}
 
 /**
  * Whether a game with THIS config doc runs at `storeId`.
@@ -38,10 +54,12 @@ export type GameStoreScope = {
  */
 export function isGameEnabledForStore(
   cfg: GameStoreScope | null | undefined,
-  storeId: string | null
+  storeId: string | null,
+  nowMs: number = Date.now()
 ): boolean {
   if (!cfg) return false;
   if (cfg.isActive === false) return false;
+  if (!isWithinRunDates(cfg, nowMs)) return false;
 
   const allowed = Array.isArray(cfg.applicableStoreIds) ? cfg.applicableStoreIds : null;
   const scoped = !!(allowed && allowed.length > 0);

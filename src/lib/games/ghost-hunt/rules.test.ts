@@ -1,0 +1,142 @@
+import { describe, it, expect } from "vitest";
+import {
+  DEFAULT_SETTINGS,
+  dayProgress,
+  releasedSoFar,
+  describeWindows,
+  eventState,
+  isInsideWindow,
+  manilaDayKey,
+  manilaMidnightMs,
+  normalizeSettings,
+  prizesLeft,
+  rollSpawn,
+  type GhostHuntSettings,
+} from "./rules";
+import { isGameEnabledForStore } from "@/lib/games/gameScope";
+
+/** A Manila wall-clock instant. */
+const at = (y: number, mo: number, d: number, h = 0, mi = 0) => manilaMidnightMs(y, mo, d) + (h * 60 + mi) * 60_000;
+
+/** A rand() that returns these values in order. */
+const seq = (...xs: number[]) => {
+  let i = 0;
+  return () => xs[i++ % xs.length];
+};
+
+describe("dates and hours", () => {
+  it("keys the day in Manila, not UTC", () => {
+    // 7 AM Oct 30 Manila is still Oct 29 in UTC.
+    expect(manilaDayKey(at(2026, 10, 30, 7))).toBe("2026-10-30");
+    expect(manilaDayKey(at(2026, 10, 30, 23, 59))).toBe("2026-10-30");
+  });
+
+  it("runs Oct 30 through the end of Nov 15, then switches itself off", () => {
+    const s = { ...DEFAULT_SETTINGS, windows: [] };
+    expect(eventState(s, at(2026, 10, 29, 23, 59)).live).toBe(false);
+    expect(eventState(s, at(2026, 10, 30, 0, 0)).live).toBe(true);
+    expect(eventState(s, at(2026, 11, 15, 23, 59)).live).toBe(true);
+    const after = eventState(s, at(2026, 11, 16, 0, 0));
+    expect(after.live).toBe(false);
+    expect(!after.live && after.reason).toBe("ended");
+  });
+
+  it("only spawns inside the windows, and handles a window past midnight", () => {
+    const w = [{ start: "17:00", end: "22:00" }];
+    expect(isInsideWindow(w, at(2026, 11, 1, 16, 59))).toBe(false);
+    expect(isInsideWindow(w, at(2026, 11, 1, 17, 0))).toBe(true);
+    expect(isInsideWindow(w, at(2026, 11, 1, 22, 0))).toBe(false);
+
+    const late = [{ start: "20:00", end: "01:00" }];
+    expect(isInsideWindow(late, at(2026, 11, 1, 23, 30))).toBe(true);
+    expect(isInsideWindow(late, at(2026, 11, 2, 0, 30))).toBe(true);
+    expect(isInsideWindow(late, at(2026, 11, 2, 2, 0))).toBe(false);
+  });
+
+  it("says the hours in plain words", () => {
+    expect(describeWindows(DEFAULT_SETTINGS.windows)).toBe("from 11 AM to 2 PM and 5 PM to 10 PM");
+    expect(describeWindows([])).toBe("all day");
+  });
+
+  it("feeds the hub's generic run dates, so the tile disappears on its own", () => {
+    const cfg = { isActive: true, startsAtMs: DEFAULT_SETTINGS.startsAtMs, endsAtMs: DEFAULT_SETTINGS.endsAtMs };
+    expect(isGameEnabledForStore(cfg, "s1", at(2026, 11, 10, 12))).toBe(true);
+    expect(isGameEnabledForStore(cfg, "s1", at(2026, 11, 16, 12))).toBe(false);
+  });
+});
+
+describe("rollSpawn", () => {
+  const s: GhostHuntSettings = { ...DEFAULT_SETTINGS, appearChance: 0.5, prizeShare: 0.2, helloShare: 0.5 };
+
+  it("finds nothing when the first roll misses", () => {
+    expect(rollSpawn({ settings: s, issued: {}, tableHasWon: false, rand: seq(0.9) }).kind).toBe("none");
+  });
+
+  it("spawns a prize ghost when stock is left", () => {
+    const r = rollSpawn({ settings: s, issued: {}, tableHasWon: false, rand: seq(0.1, 0.1, 0) });
+    expect(r.kind).toBe("prize");
+    expect(r.prize?.id).toBe("melona");
+  });
+
+  it("never spawns a prize for a table that already won this visit", () => {
+    const r = rollSpawn({ settings: s, issued: {}, tableHasWon: true, rand: seq(0.1, 0.1, 0.1) });
+    expect(r.kind).not.toBe("prize");
+  });
+
+  it("falls through to free ghosts when every prize is gone for the day", () => {
+    const issued = { melona: 3, coke: 2, kimbap: 2, enoki: 2 };
+    const r = rollSpawn({ settings: s, issued, tableHasWon: false, rand: seq(0.1, 0.1, 0.1) });
+    expect(r.kind).toBe("hello");
+  });
+
+  it("only picks prizes still in stock", () => {
+    const issued = { melona: 3, coke: 2, kimbap: 2 };
+    expect(prizesLeft(s.prizes, issued).map((p) => p.id)).toEqual(["enoki"]);
+    const r = rollSpawn({ settings: s, issued, tableHasWon: false, rand: seq(0.1, 0.1, 0.99) });
+    expect(r.prize?.id).toBe("enoki");
+  });
+
+  it("paces prizes across the day so lunch cannot take dinner's", () => {
+    const w = [{ start: "11:00", end: "14:00" }, { start: "17:00", end: "22:00" }];
+    expect(dayProgress(w, at(2026, 11, 1, 10, 0))).toBe(0);
+    expect(dayProgress(w, at(2026, 11, 1, 14, 0))).toBeCloseTo(3 / 8);
+    expect(dayProgress(w, at(2026, 11, 1, 23, 0))).toBe(1);
+    // 3 Melona a day: one at opening, all three by the end.
+    expect(releasedSoFar(3, 0)).toBe(1);
+    expect(releasedSoFar(3, 0.5)).toBe(2);
+    expect(releasedSoFar(3, 1)).toBe(3);
+    // One Melona already gone at 11:05 — the next is not out yet.
+    const early = prizesLeft(s.prizes, { melona: 1 }, 0.02).map((p) => p.id);
+    expect(early).not.toContain("melona");
+    expect(early).toContain("coke");
+  });
+
+  it("flies by when the hello roll misses", () => {
+    expect(rollSpawn({ settings: s, issued: {}, tableHasWon: false, rand: seq(0.1, 0.9, 0.9) }).kind).toBe("flyby");
+  });
+});
+
+describe("normalizeSettings", () => {
+  it("falls back to the defaults for an empty doc", () => {
+    expect(normalizeSettings(undefined)).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it("drops broken windows and prizes, clamps odds, keeps the rest", () => {
+    const n = normalizeSettings({
+      theme: "christmas",
+      windows: [{ start: "18:00", end: "21:00" }, { start: "nope", end: "21:00" }],
+      prizes: [{ name: "Free Coke", perDay: 4 }, { name: "" }, { name: "Free Coke", perDay: 1 }],
+      appearChance: 7,
+      prizeShare: -1,
+    });
+    expect(n.theme).toBe("christmas");
+    expect(n.windows).toEqual([{ start: "18:00", end: "21:00" }]);
+    expect(n.prizes).toEqual([{ id: "free-coke", name: "Free Coke", perDay: 4 }]);
+    expect(n.appearChance).toBe(1);
+    expect(n.prizeShare).toBe(0);
+  });
+
+  it("rejects an unknown theme", () => {
+    expect(normalizeSettings({ theme: "easter" }).theme).toBe("halloween");
+  });
+});
