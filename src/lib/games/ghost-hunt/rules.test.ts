@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   DEFAULT_SETTINGS,
+  activePrizeShare,
   dayProgress,
+  windowWeights,
   releasedSoFar,
   describeWindows,
   eventState,
@@ -140,6 +142,46 @@ describe("per-branch settings", () => {
     const left = prizesRemaining(DEFAULT_SETTINGS.prizes, { melona: 3, coke: 1 });
     expect(left.find((p) => p.id === "melona")?.left).toBe(0);
     expect(left.find((p) => p.id === "coke")?.left).toBe(1);
+  });
+});
+
+describe("per-time-slot pacing and odds", () => {
+  const lunch = { start: "11:00", end: "14:00" };
+  const dinner = { start: "17:00", end: "22:00" };
+
+  it("with no shares set, unlocks evenly by the clock exactly as before", () => {
+    expect(dayProgress([lunch, dinner], at(2026, 11, 1, 14, 0))).toBeCloseTo(3 / 8);
+  });
+
+  it("saves most prizes for dinner when dinner has the bigger share", () => {
+    const w = [{ ...lunch, share: 0.3 }, { ...dinner, share: 0.7 }];
+    expect(dayProgress(w, at(2026, 11, 1, 14, 0))).toBeCloseTo(0.3);
+    expect(dayProgress(w, at(2026, 11, 1, 19, 30))).toBeCloseTo(0.3 + 0.7 * 0.5);
+    // 10 prizes: 3 by the end of lunch, all 10 by close.
+    expect(releasedSoFar(10, dayProgress(w, at(2026, 11, 1, 14, 0)))).toBe(3);
+    expect(releasedSoFar(10, dayProgress(w, at(2026, 11, 1, 22, 0)))).toBe(10);
+  });
+
+  it("lets unset slots split whatever share is left", () => {
+    expect(windowWeights([{ ...lunch, share: 0.2 }, dinner])).toEqual([0.2, 0.8]);
+  });
+
+  it("uses the current slot's own prize chance, else the branch's", () => {
+    const s = { ...DEFAULT_SETTINGS, prizeShare: 0.05, windows: [lunch, { ...dinner, prizeShare: 0.12 }] };
+    expect(activePrizeShare(s, at(2026, 11, 1, 12, 0))).toBe(0.05);
+    expect(activePrizeShare(s, at(2026, 11, 1, 19, 0))).toBe(0.12);
+  });
+
+  it("feeds that chance into the roll", () => {
+    const s = { ...DEFAULT_SETTINGS, appearChance: 1, prizeShare: 0.05 };
+    // 0.1 misses a 5% prize chance but hits a 12% one.
+    expect(rollSpawn({ settings: s, issued: {}, tableHasWon: false, rand: seq(0, 0.1, 0) }).kind).not.toBe("prize");
+    expect(rollSpawn({ settings: s, issued: {}, tableHasWon: false, rand: seq(0, 0.1, 0), prizeShare: 0.12 }).kind).toBe("prize");
+  });
+
+  it("keeps blank slot fields unset and clamps numbers", () => {
+    const n = normalizeSettings({ windows: [{ ...lunch, share: "", prizeShare: null }, { ...dinner, share: 0.7, prizeShare: 3 }] });
+    expect(n.windows).toEqual([lunch, { ...dinner, share: 0.7, prizeShare: 1 }]);
   });
 });
 

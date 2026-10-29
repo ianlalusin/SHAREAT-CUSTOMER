@@ -15,7 +15,18 @@ export type GhostTheme = "halloween" | "christmas";
 export const GHOST_THEMES: GhostTheme[] = ["halloween", "christmas"];
 
 /** A daily appearance window, Manila wall-clock, "HH:MM". */
-export type GhostWindow = { start: string; end: string };
+export type GhostWindow = {
+  start: string;
+  end: string;
+  /**
+   * Share of the day's prizes this time slot unlocks (0–1). Lets a branch save
+   * most prizes for the dinner rush. Unset on every slot = spread by the clock,
+   * as before; unset on some = those split whatever share is left, by length.
+   */
+  share?: number;
+  /** This slot's own prize-ghost chance (0–1), overriding the branch's `prizeShare`. */
+  prizeShare?: number;
+};
 
 export type GhostPrize = {
   /** Stable key; the character pack draws a matching ghost for it. */
@@ -116,28 +127,59 @@ export function describeWindows(windows: GhostWindow[]): string {
   return parts.length ? `from ${parts.join(" and ")}` : "all day";
 }
 
+/** A window's minutes as spans within one day (one past midnight splits in two). */
+function windowSpans(w: GhostWindow): [number, number][] {
+  const a = parseHHMM(w.start);
+  const b = parseHHMM(w.end);
+  if (a === null || b === null) return [];
+  return a <= b ? [[a, b]] : [[a, 1440], [0, b]];
+}
+
 /**
- * How far through today's ghost hours we are, 0–1. Drives prize pacing.
+ * Each window's weight in prize pacing. With no shares set it is the window's
+ * length — prizes unlock evenly by the clock, as before. Set shares are used as
+ * given; windows without one split whatever share is left, by length.
+ */
+export function windowWeights(windows: GhostWindow[]): number[] {
+  const mins = windows.map((w) => windowSpans(w).reduce((s, [a, b]) => s + (b - a), 0));
+  const set = windows.map((w) => (typeof w.share === "number" ? Math.max(0, w.share) : null));
+  if (set.every((x) => x === null)) return mins;
+  const given = set.reduce<number>((s, x) => s + (x ?? 0), 0);
+  const left = Math.max(0, 1 - given);
+  const unsetMins = mins.reduce((s, m, i) => s + (set[i] === null ? m : 0), 0);
+  return set.map((x, i) => (x !== null ? x : unsetMins > 0 ? (left * mins[i]) / unsetMins : 0));
+}
+
+/**
+ * How much of today's prize release has happened, 0–1. Drives prize pacing.
+ * Within a window prizes unlock evenly; across windows, by each window's
+ * weight — so a branch can save most of its prizes for the dinner rush.
  * No windows means the whole day counts.
  */
 export function dayProgress(windows: GhostWindow[], nowMs: number): number {
   const t = manilaMinuteOfDay(nowMs);
-  const spans: [number, number][] = [];
-  for (const w of windows) {
-    const a = parseHHMM(w.start);
-    const b = parseHHMM(w.end);
-    if (a === null || b === null) continue;
-    if (a <= b) spans.push([a, b]);
-    else spans.push([a, 1440], [0, b]);
-  }
-  if (!spans.length) return t / 1440;
-  let total = 0;
+  const valid = windows.filter((w) => windowSpans(w).length);
+  if (!valid.length) return t / 1440;
+  const weights = windowWeights(valid);
+  const total = weights.reduce((s, w) => s + w, 0);
+  if (total <= 0) return 1;
   let done = 0;
-  for (const [a, b] of spans) {
-    total += b - a;
-    done += Math.max(0, Math.min(t, b) - a);
-  }
-  return total > 0 ? Math.min(1, done / total) : 1;
+  valid.forEach((w, i) => {
+    const spans = windowSpans(w);
+    const len = spans.reduce((s, [a, b]) => s + (b - a), 0);
+    const elapsed = spans.reduce((s, [a, b]) => s + Math.max(0, Math.min(t, b) - a), 0);
+    if (len > 0) done += weights[i] * (elapsed / len);
+  });
+  return Math.min(1, done / total);
+}
+
+/** The prize-ghost chance right now: the current window's own, else the branch's. */
+export function activePrizeShare(settings: GhostHuntSettings, nowMs: number): number {
+  const t = manilaMinuteOfDay(nowMs);
+  const w = settings.windows.find(
+    (x) => typeof x.prizeShare === "number" && windowSpans(x).some(([a, b]) => t >= a && t < b)
+  );
+  return w ? (w.prizeShare as number) : settings.prizeShare;
 }
 
 /**
@@ -171,12 +213,14 @@ export function rollSpawn(args: {
   rand: () => number;
   /** From `dayProgress`. Defaults to the end of the day, i.e. unpaced. */
   progress?: number;
+  /** From `activePrizeShare` — the current time slot's chance. Defaults to the branch's. */
+  prizeShare?: number;
 }): { kind: SpawnKind; prize?: GhostPrize } {
-  const { settings, issued, tableHasWon, rand, progress = 1 } = args;
+  const { settings, issued, tableHasWon, rand, progress = 1, prizeShare = settings.prizeShare } = args;
   if (rand() >= settings.appearChance) return { kind: "none" };
 
   const stock = tableHasWon ? [] : prizesLeft(settings.prizes, issued, progress);
-  if (stock.length && rand() < settings.prizeShare) {
+  if (stock.length && rand() < prizeShare) {
     // Weight by what is left, so a prize with more stock turns up more often
     // and the day does not run out of one while another sits untouched.
     const weights = stock.map((p) => p.perDay - (Number(issued[p.id]) || 0));
@@ -233,7 +277,16 @@ export function normalizeSettings(raw: unknown): GhostHuntSettings {
 
   const windows = Array.isArray(r.windows)
     ? r.windows
-        .map((w: any) => ({ start: String(w?.start ?? "").trim(), end: String(w?.end ?? "").trim() }))
+        .map((w: any) => {
+          const win: GhostWindow = { start: String(w?.start ?? "").trim(), end: String(w?.end ?? "").trim() };
+          // Blank (null/undefined/"") means "not set" — the slot follows the defaults.
+          const opt = (v: unknown) => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? null : clamp01(v, 0));
+          const share = opt(w?.share);
+          const prizeShare = opt(w?.prizeShare);
+          if (share !== null) win.share = share;
+          if (prizeShare !== null) win.prizeShare = prizeShare;
+          return win;
+        })
         .filter((w: GhostWindow) => parseHHMM(w.start) !== null && parseHHMM(w.end) !== null)
         .slice(0, 6)
     : d.windows;
