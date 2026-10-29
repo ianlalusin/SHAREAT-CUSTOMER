@@ -108,18 +108,19 @@
    flying rather than sliding on rails. */
 .santa-sleigh-track {
   position: fixed;
-  top: 64px;
-  left: 0;
-  width: 100%;
-  height: 90px;
+  inset: 0;
   pointer-events: none;
   overflow: hidden;
   z-index: 25;
 }
+/* The path (straight, diagonal, loop…) is driven from JS in SantaSleigh.tsx;
+   CSS only adds the bob, so it reads as flying rather than sliding on rails. */
 .santa-sleigh-bob {
-  width: 260px;
-  height: 90px;
-  animation: santa-sleigh-glide 75s linear infinite;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 230px;
+  height: 110px;
   will-change: transform;
 }
 .santa-sleigh-scene {
@@ -127,11 +128,7 @@
   height: 100%;
   animation: santa-sleigh-bob 2.4s ease-in-out infinite;
   will-change: transform;
-}
-@keyframes santa-sleigh-glide {
-  0%   { transform: translateX(-320px); }
-  16%  { transform: translateX(calc(100vw + 40px)); }
-  100% { transform: translateX(calc(100vw + 40px)); }
+  filter: drop-shadow(0 0 10px rgba(253, 230, 138, 0.55));
 }
 @keyframes santa-sleigh-bob {
   0%, 100% { transform: translateY(0); }

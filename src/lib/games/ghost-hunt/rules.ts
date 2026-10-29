@@ -267,6 +267,44 @@ export function normalizeSettings(raw: unknown): GhostHuntSettings {
   };
 }
 
+/**
+ * What one branch may set differently from the chain-wide settings. Each field
+ * is optional: absent means "use the chain's". Dates, theme and odds stay
+ * chain-wide — it is one event, run with local prizes and local socials.
+ */
+export type BranchOverrides = {
+  prizes?: GhostPrize[];
+  windows?: GhostWindow[];
+  hashtag?: string;
+  tagHandle?: string;
+};
+
+export const OVERRIDE_FIELDS = ["prizes", "windows", "hashtag", "tagHandle"] as const;
+
+/** Keep only well-formed override fields, normalised the same way as the chain settings. */
+export function normalizeOverrides(raw: unknown): BranchOverrides {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const n = normalizeSettings({ ...r });
+  const out: BranchOverrides = {};
+  if (Array.isArray(r.prizes)) out.prizes = n.prizes;
+  if (Array.isArray(r.windows)) out.windows = n.windows;
+  if (typeof r.hashtag === "string" && r.hashtag.trim()) out.hashtag = n.hashtag;
+  if (typeof r.tagHandle === "string" && r.tagHandle.trim()) out.tagHandle = n.tagHandle;
+  return out;
+}
+
+/** The settings a branch actually runs on. */
+export function settingsForBranch(base: GhostHuntSettings, overrides: unknown): GhostHuntSettings {
+  return { ...base, ...normalizeOverrides(overrides) };
+}
+
+/** Total of each prize not yet caught today — caught counts, claimed or not. */
+export function prizesRemaining(prizes: GhostPrize[], issued: Record<string, number>) {
+  return prizes
+    .filter((p) => p.perDay > 0)
+    .map((p) => ({ id: p.id, name: p.name, left: Math.max(0, p.perDay - (Number(issued[p.id]) || 0)) }));
+}
+
 /** Minimum gap between two scans from one diner. Stops a script hammering the roll. */
 export const MIN_SCAN_GAP_MS = 8_000;
 /** How long a prize ghost stays catchable after it appears. */
