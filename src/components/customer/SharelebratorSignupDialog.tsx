@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
+import { BUSINESS_NAME } from "@/lib/privacy";
 
 interface Props {
   open: boolean;
@@ -25,6 +26,7 @@ export function SharelebratorSignupDialog({ open, onOpenChange, onLinked, linkTo
   const [address, setAddress] = useState("");
   const [email, setEmail] = useState("");
   const [bday, setBday] = useState("");
+  const [acceptPrivacy, setAcceptPrivacy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,6 +51,7 @@ export function SharelebratorSignupDialog({ open, onOpenChange, onLinked, linkTo
           address,
           email: email || undefined,
           bday,
+          acceptPrivacy,
         }),
       });
       const json = await res.json();
@@ -84,20 +87,42 @@ export function SharelebratorSignupDialog({ open, onOpenChange, onLinked, linkTo
             <Input value={name} onChange={(e) => setName(e.target.value)} required disabled={submitting} />
           </div>
           <div className="space-y-1">
-            <Label>Address *</Label>
-            <Input value={address} onChange={(e) => setAddress(e.target.value)} required disabled={submitting} />
+            <Label>Address (optional, for your receipt)</Label>
+            <Input value={address} onChange={(e) => setAddress(e.target.value)} disabled={submitting} />
           </div>
           <div className="space-y-1">
             <Label>Email (optional)</Label>
             <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={submitting} />
           </div>
           <div className="space-y-1">
-            <Label>Birthday *</Label>
+            <Label>Birthday * (for birthday treats)</Label>
             <Input type="date" value={bday} onChange={(e) => setBday(e.target.value)} required disabled={submitting} />
           </div>
+          {/*
+            Consent is asked before anything is collected, in plain words, with
+            the full notice one tap away. The server refuses a signup without it
+            and stamps the notice version on the new account.
+          */}
+          <label className="flex items-start gap-2 rounded-lg bg-zinc-50 p-3 text-xs leading-snug text-zinc-700">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 shrink-0"
+              checked={acceptPrivacy}
+              onChange={(e) => setAcceptPrivacy(e.target.checked)}
+              disabled={submitting}
+              required
+            />
+            <span>
+              I agree that {BUSINESS_NAME} keeps my details to run my Sharelebrator card, as explained in the{" "}
+              <a href="/privacy" target="_blank" rel="noopener" className="font-semibold text-primary underline">
+                Privacy Notice
+              </a>
+              . I can ask to see, fix or delete them anytime.
+            </span>
+          </label>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>
-            <Button type="submit" disabled={submitting} className="w-full">
+            <Button type="submit" disabled={submitting || !acceptPrivacy} className="w-full">
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Create Card & Link
             </Button>

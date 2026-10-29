@@ -399,6 +399,11 @@ export default function SharelebratorCardPage() {
             />
           </>
         )}
+        <p className="pb-6 pt-2 text-center text-xs text-muted-foreground">
+          <a href="/privacy" className="underline">
+            Privacy Notice
+          </a>
+        </p>
       </div>
     </main>
   );

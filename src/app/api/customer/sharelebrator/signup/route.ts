@@ -32,8 +32,13 @@ export async function POST(req: Request) {
   const name = String(body.name || "").trim();
   if (!name) return bad("Name is required.");
 
-  const address = String(body.address || "").trim();
-  if (!address) return bad("Address is required.");
+  // Optional: only printed on official receipts (privacy notice, data minimisation).
+  const address = String(body.address || "").trim().slice(0, 200);
+  // Consent to the privacy notice comes before any account exists; the notice
+  // version is stamped on the account by createCustomerAccount.
+  if ((body as any).acceptPrivacy !== true) {
+    return bad("Please agree to the Privacy Notice to create a card. If you do not see it, refresh the page.");
+  }
 
   const bday = String(body.bday || "").trim();
   const bdayErr = birthdayError(bday);
