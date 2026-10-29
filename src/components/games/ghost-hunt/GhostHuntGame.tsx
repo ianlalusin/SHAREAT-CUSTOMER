@@ -18,7 +18,8 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { markView, signalUse } from "@/lib/games/trackGame";
-import { packFor, pick, prizeCharacter, svgUrl, type Character, type Pack } from "./packs";
+import { DEFAULT_ASPECT, packFor, pick, prizeCharacter, svgUrl, type Character, type Pack } from "./packs";
+import { flightPose, randomFlight, type Flight } from "./flights";
 import { PrizeTicket, type TicketData } from "./PrizeTicket";
 
 const GAME_ID = "ghost-hunt";
@@ -48,7 +49,19 @@ type Spawn = {
   yaw: number | null;
   bornAt: number;
   ttlMs: number;
+  /** Fly-bys only: which path, and from which side. */
+  flight?: Flight;
+  /** On-screen sprite size, from the art's shape. */
+  w: number;
+  h: number;
 };
+
+/** Sprite size for a character: ghosts are upright, a sleigh team is wide. */
+function spriteSize(c: Character): { w: number; h: number } {
+  const aspect = c.aspect ?? DEFAULT_ASPECT;
+  const h = aspect > 1.5 ? 120 : aspect > 1 ? 150 : GHOST_PX * 1.1;
+  return { w: h * aspect, h };
+}
 
 type Phase = "intro" | "hunting" | "photo" | "ticket";
 
@@ -441,10 +454,14 @@ function Hunt({
         offset = (8 + Math.random() * 30) * (Math.random() < 0.5 ? -1 : 1);
       } else {
         character = pick(pack.flyby);
-        ttlMs = 1800;
+        ttlMs = 0;
         offset = 0;
       }
+      const flight = r.kind === "flyby" ? randomFlight() : undefined;
+      if (flight) ttlMs = flight.ms;
       setActive({
+        ...spriteSize(character),
+        flight,
         key: Date.now(),
         kind: r.kind,
         character,
@@ -489,11 +506,15 @@ function Hunt({
       let x: number;
       let y = h * 0.42 + Math.sin(t * 2.2) * 16;
       let opacity = Math.min(1, age / 500, (s.ttlMs - age) / 700);
+      let tilt = Math.sin(t * 1.6) * 6;
+      let flip = false;
 
-      if (s.kind === "flyby") {
-        const p = age / s.ttlMs;
-        x = -GHOST_PX + p * (w + GHOST_PX * 2);
-        y = h * 0.55 - Math.sin(p * Math.PI) * h * 0.25;
+      if (s.flight) {
+        const pose = flightPose(s.flight, age / s.ttlMs, w, h, s.w);
+        x = pose.x;
+        y = pose.y;
+        tilt = pose.tilt;
+        flip = pose.facingLeft;
         opacity = 1;
       } else if (s.yaw !== null && yawRef.current !== null) {
         const dx = wrap180(yawRef.current - s.yaw) * (w / FOV_DEG);
@@ -503,9 +524,12 @@ function Hunt({
         x = w / 2 + Math.sin(t * 0.7) * w * 0.28;
       }
 
-      const visible = x > -GHOST_PX / 2 && x < w + GHOST_PX / 2;
+      const visible = x > -s.w / 2 && x < w + s.w / 2;
       posRef.current = { x, y, visible };
-      el.style.transform = `translate(${x - GHOST_PX / 2}px, ${y - GHOST_PX / 2}px) rotate(${Math.sin(t * 1.6) * 6}deg)`;
+      el.style.transform = `translate(${x - s.w / 2}px, ${y - s.h / 2}px) rotate(${tilt}deg)`;
+      // Mirror the art only, so a speech bubble on the button never reads backwards.
+      const art = el.firstElementChild as HTMLElement | null;
+      if (art) art.style.transform = flip ? "scaleX(-1)" : "";
       el.style.opacity = String(Math.max(0, opacity) * (s.kind === "prize" ? 1 : 0.92));
 
       const nextArrow = visible || s.kind === "flyby" ? null : x < 0 ? "left" : "right";
@@ -538,12 +562,13 @@ function Hunt({
       ctx.drawImage(v, 0, 0, vw, vh);
 
       if (s && posRef.current.visible) {
-        const size = GHOST_PX / scale;
+        const sw2 = s.w / scale;
+        const sh2 = s.h / scale;
         const gx = (posRef.current.x - ox) / scale;
         const gy = (posRef.current.y - oy) / scale;
         ctx.shadowColor = "rgba(190,160,255,.9)";
-        ctx.shadowBlur = size * 0.25;
-        ctx.drawImage(s.img, gx - size / 2, gy - size / 2, size, size * 1.1);
+        ctx.shadowBlur = sh2 * 0.2;
+        ctx.drawImage(s.img, gx - sw2 / 2, gy - sh2 / 2, sw2, sh2);
         ctx.shadowBlur = 0;
       }
 
@@ -634,7 +659,7 @@ function Hunt({
           onClick={tapGhost}
           aria-label={`Tap ${spawn.character.name}`}
           className="absolute left-0 top-0 will-change-transform"
-          style={{ width: GHOST_PX, height: GHOST_PX * 1.1, opacity: 0 }}
+          style={{ width: spawn.w, height: spawn.h, opacity: 0 }}
         >
           <img
             src={spawn.img.src}

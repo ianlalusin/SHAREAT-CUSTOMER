@@ -15,7 +15,11 @@ export type Character = {
   name: string;
   lines: string[];
   svg: string;
+  /** Width ÷ height of the art. Wide flyers (a sleigh team) need room. */
+  aspect?: number;
 };
+
+export const DEFAULT_ASPECT = 200 / 220;
 
 export type Pack = {
   theme: GhostTheme;
@@ -33,8 +37,8 @@ export function svgUrl(svg: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-const wrap = (inner: string) =>
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 220" width="400" height="440">${inner}</svg>`;
+const wrap = (inner: string, w = 200, h = 220) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w * 2}" height="${h * 2}">${inner}</svg>`;
 
 /* ---------- Halloween ---------- */
 
@@ -148,22 +152,85 @@ const HALLOWEEN: Pack = {
 
 /* ---------- Christmas ---------- */
 
-const SANTA = wrap(`
-  <path d="M40 92Q100 -10 160 92Z" fill="#dc2626" stroke="#3b0d0d" stroke-width="5"/>
-  <circle cx="160" cy="40" r="14" fill="#fff" stroke="#3b0d0d" stroke-width="4"/>
-  <circle cx="100" cy="118" r="52" fill="#fcd9bd" stroke="#3b0d0d" stroke-width="5"/>
-  <rect x="34" y="84" width="132" height="22" rx="11" fill="#fff" stroke="#3b0d0d" stroke-width="4"/>
-  <path d="M50 130Q100 230 150 130Q130 150 100 146Q70 150 50 130Z" fill="#fff" stroke="#3b0d0d" stroke-width="4"/>
-  <circle cx="82" cy="118" r="6" fill="#3b0d0d"/><circle cx="118" cy="118" r="6" fill="#3b0d0d"/>
-  <circle cx="100" cy="134" r="9" fill="#f87171"/>`);
+const INK = "#3b0d0d";
 
-const RUDOLF = wrap(`
-  <path d="M64 70C40 40 30 20 44 10M58 52C40 50 30 40 28 30M136 70C160 40 170 20 156 10M142 52C160 50 170 40 172 30" stroke="#7c4a1e" stroke-width="8" fill="none" stroke-linecap="round"/>
-  <ellipse cx="100" cy="120" rx="56" ry="66" fill="#a16207" stroke="#3b1d0a" stroke-width="5"/>
-  <ellipse cx="100" cy="150" rx="34" ry="26" fill="#e8c48a"/>
-  <circle cx="80" cy="104" r="7" fill="#1c1917"/><circle cx="120" cy="104" r="7" fill="#1c1917"/>
-  <circle cx="100" cy="140" r="16" fill="#ef4444" stroke="#7f1d1d" stroke-width="4"/>
-  <circle cx="95" cy="135" r="4" fill="#fff" opacity=".8"/>`);
+/** Santa's face, beard and hat — shared by the standing and sleigh-riding Santas. */
+const SANTA_HEAD = `
+  <circle cx="100" cy="72" r="30" fill="#fcd5b5" stroke="${INK}" stroke-width="3"/>
+  <circle cx="80" cy="80" r="7" fill="#f9a8a8" opacity=".8"/><circle cx="120" cy="80" r="7" fill="#f9a8a8" opacity=".8"/>
+  <path d="M66 78Q66 132 100 134Q134 132 134 78Q120 96 100 94Q80 96 66 78Z" fill="#fff" stroke="#d6d3d1" stroke-width="3"/>
+  <path d="M100 90q-8-8-22-2q8 10 22 4q14 6 22-4q-14-6-22 2z" fill="#fff" stroke="#d6d3d1" stroke-width="2"/>
+  <circle cx="100" cy="83" r="6" fill="#f87171"/>
+  <ellipse cx="89" cy="70" rx="4" ry="5" fill="${INK}"/><ellipse cx="111" cy="70" rx="4" ry="5" fill="${INK}"/>
+  <circle cx="90" cy="68" r="1.5" fill="#fff"/><circle cx="112" cy="68" r="1.5" fill="#fff"/>
+  <path d="M82 60q7-5 14 0M104 60q7-5 14 0" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M68 56Q70 18 112 14Q146 12 160 44L148 54Q138 36 124 38Q136 46 134 56Z" fill="#dc2626" stroke="${INK}" stroke-width="3"/>
+  <rect x="64" y="50" width="74" height="14" rx="7" fill="#fff" stroke="#d6d3d1" stroke-width="2"/>
+  <circle cx="156" cy="52" r="10" fill="#fff" stroke="#d6d3d1" stroke-width="2"/>`;
+
+const SANTA = wrap(`
+  <rect x="68" y="190" width="26" height="22" rx="8" fill="#1c1917"/><rect x="106" y="190" width="26" height="22" rx="8" fill="#1c1917"/>
+  <rect x="72" y="168" width="22" height="26" fill="#b91c1c"/><rect x="106" y="168" width="22" height="26" fill="#b91c1c"/>
+  <path d="M146 116Q168 96 176 66" stroke="#dc2626" stroke-width="18" fill="none" stroke-linecap="round"/>
+  <circle cx="178" cy="60" r="11" fill="#166534" stroke="${INK}" stroke-width="3"/>
+  <path d="M56 120Q40 140 36 162" stroke="#dc2626" stroke-width="18" fill="none" stroke-linecap="round"/>
+  <circle cx="35" cy="168" r="11" fill="#166534" stroke="${INK}" stroke-width="3"/>
+  <ellipse cx="100" cy="140" rx="54" ry="46" fill="#dc2626" stroke="${INK}" stroke-width="3"/>
+  <ellipse cx="100" cy="180" rx="52" ry="9" fill="#fff" stroke="#d6d3d1" stroke-width="2"/>
+  <rect x="95" y="100" width="10" height="78" fill="#fff"/>
+  <rect x="47" y="140" width="106" height="14" fill="#1c1917"/>
+  <rect x="87" y="136" width="26" height="22" rx="3" fill="none" stroke="#facc15" stroke-width="4"/>
+  ${SANTA_HEAD}`);
+
+/** Rudolf flying, facing right, in a 240×200 box. Used alone and in front of the sleigh. */
+const RUDOLF_BODY = `
+  <defs><radialGradient id="glow"><stop offset="0" stop-color="#ff4d4d" stop-opacity=".9"/><stop offset="1" stop-color="#ff4d4d" stop-opacity="0"/></radialGradient></defs>
+  <ellipse cx="34" cy="96" rx="12" ry="9" fill="#fff" stroke="#4a2511" stroke-width="3"/>
+  <path d="M62 118L44 146L26 140M82 124L70 154L52 152" stroke="#8b4513" stroke-width="11" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M138 120L160 144L182 136M154 112L180 128L200 116" stroke="#8b4513" stroke-width="11" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="24" cy="140" r="6" fill="#292524"/><circle cx="50" cy="152" r="6" fill="#292524"/>
+  <circle cx="184" cy="136" r="6" fill="#292524"/><circle cx="202" cy="115" r="6" fill="#292524"/>
+  <ellipse cx="100" cy="104" rx="64" ry="32" fill="#a0522d" stroke="#4a2511" stroke-width="4"/>
+  <ellipse cx="106" cy="118" rx="40" ry="13" fill="#deb887"/>
+  <path d="M140 92Q156 60 168 56L184 74Q166 92 156 112Z" fill="#a0522d" stroke="#4a2511" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M146 92q14 6 26-6" stroke="#dc2626" stroke-width="9" fill="none" stroke-linecap="round"/>
+  <circle cx="160" cy="96" r="7" fill="#facc15" stroke="#a16207" stroke-width="2"/>
+  <path d="M168 44C162 24 150 14 138 8M157 27L142 24M178 42C182 20 194 10 206 6M187 23L202 22" stroke="#6b3f1d" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <ellipse cx="160" cy="50" rx="8" ry="13" fill="#a0522d" stroke="#4a2511" stroke-width="3" transform="rotate(-40 160 50)"/>
+  <ellipse cx="180" cy="64" rx="28" ry="23" fill="#a0522d" stroke="#4a2511" stroke-width="4"/>
+  <ellipse cx="202" cy="74" rx="20" ry="14" fill="#c68642" stroke="#4a2511" stroke-width="3"/>
+  <circle cx="184" cy="58" r="5.5" fill="#1c1917"/><circle cx="186" cy="56" r="2" fill="#fff"/>
+  <path d="M192 84q8 5 16 0" stroke="#4a2511" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <circle cx="220" cy="72" r="20" fill="url(#glow)"/>
+  <circle cx="220" cy="72" r="10" fill="#ef233c" stroke="#7f1d1d" stroke-width="2.5"/>
+  <circle cx="217" cy="68" r="3" fill="#fff" opacity=".85"/>`;
+
+const RUDOLF = wrap(RUDOLF_BODY, 240, 200);
+
+/** Santa in his sleigh, pulled by Rudolf, flying right. 420×200. */
+const SLEIGH_TEAM = wrap(
+  `
+  <g fill="#fde68a"><path d="M8 112l4 8 8 2-8 3-4 8-3-8-8-3 8-2z"/><path d="M30 80l3 6 6 2-6 2-3 6-2-6-6-2 6-2z" opacity=".7"/><circle cx="14" cy="150" r="3"/></g>
+  <path d="M168 120Q230 96 296 104" stroke="#7c2d12" stroke-width="3" fill="none"/>
+  <g transform="translate(36 40) scale(.62)">
+    <ellipse cx="70" cy="70" rx="44" ry="42" fill="#92400e" stroke="#451a03" stroke-width="5"/>
+    <rect x="40" y="18" width="34" height="30" rx="5" fill="#22c55e" stroke="#14532d" stroke-width="4"/>
+    <rect x="76" y="10" width="30" height="36" rx="5" fill="#3b82f6" stroke="#1e3a8a" stroke-width="4"/>
+    <path d="M57 18v30M91 10v36" stroke="#facc15" stroke-width="5"/>
+  </g>
+  <g transform="translate(58 -10) scale(.78)">${SANTA_HEAD}
+    <ellipse cx="100" cy="150" rx="48" ry="34" fill="#dc2626" stroke="${INK}" stroke-width="3"/>
+    <path d="M140 140Q164 120 172 92" stroke="#dc2626" stroke-width="16" fill="none" stroke-linecap="round"/>
+    <circle cx="174" cy="86" r="10" fill="#166534" stroke="${INK}" stroke-width="3"/>
+  </g>
+  <path d="M44 110H172Q196 110 196 136V152H70Q44 152 44 128Z" fill="#dc2626" stroke="#450a0a" stroke-width="5"/>
+  <path d="M52 124H186" stroke="#facc15" stroke-width="5"/>
+  <path d="M60 152v22M168 152v22" stroke="#facc15" stroke-width="6"/>
+  <path d="M30 174H196Q214 174 218 156" stroke="#facc15" stroke-width="7" fill="none" stroke-linecap="round"/>
+  <g transform="translate(200 18) scale(.92)">${RUDOLF_BODY}</g>`,
+  420,
+  200
+);
 
 const SNOWMAN = wrap(`
   <circle cx="100" cy="160" r="50" fill="#fff" stroke="#1e3a8a" stroke-width="5"/>
@@ -189,14 +256,6 @@ const ELF = wrap(`
   <path d="M84 142q16 14 32 0" stroke="#7c2d12" stroke-width="5" fill="none" stroke-linecap="round"/>
   <rect x="52" y="84" width="96" height="14" rx="7" fill="#dc2626"/>`);
 
-const SLEIGH = wrap(`
-  <g opacity=".5" stroke="#fde68a" stroke-width="6" stroke-linecap="round"><path d="M2 90h30M6 120h26"/></g>
-  <path d="M40 100h110q24 0 24 30v20H52q-12 0-12-14z" fill="#dc2626" stroke="#450a0a" stroke-width="5"/>
-  <path d="M36 172h140q10 0 14-12" stroke="#facc15" stroke-width="7" fill="none" stroke-linecap="round"/>
-  <path d="M60 150v22M150 150v22" stroke="#facc15" stroke-width="6"/>
-  <rect x="70" y="62" width="40" height="40" rx="6" fill="#22c55e" stroke="#14532d" stroke-width="4"/>
-  <path d="M90 62v40M70 82h40" stroke="#facc15" stroke-width="5"/>`);
-
 const CHRISTMAS: Pack = {
   theme: "christmas",
   label: "Christmas",
@@ -205,14 +264,18 @@ const CHRISTMAS: Pack = {
   prizeById: {},
   prizeFallback: [
     { id: "santa", name: "Santa", lines: ["Ho ho ho! You caught me!"], svg: SANTA },
-    { id: "rudolf", name: "Rudolf", lines: ["My nose led you right. Prize!"], svg: RUDOLF },
+    { id: "rudolf", name: "Rudolf", lines: ["My nose led you right. Prize!"], svg: RUDOLF, aspect: 240 / 200 },
     { id: "snowman", name: "Frosty", lines: ["Cool catch! A treat for you."], svg: SNOWMAN },
     { id: "ginger", name: "Gingy", lines: ["You caught the gingerbread!"], svg: GINGER },
   ],
   hello: [
     { id: "elf", name: "Elfie", lines: ["Merry Christmas from SharEat!", "Santa is somewhere here…", "Busog ka na?"], svg: ELF },
   ],
-  flyby: [{ id: "sleigh", name: "Sleigh", lines: ["Whoosh! Too fast!"], svg: SLEIGH }],
+  // Fly-bys are drawn facing right; the phone mirrors them when they fly left.
+  flyby: [
+    { id: "sleigh", name: "Santa's sleigh", lines: ["Ho ho whoosh! Too fast!"], svg: SLEIGH_TEAM, aspect: 420 / 200 },
+    { id: "rudolf-fly", name: "Rudolf", lines: ["Zoom! Rudolf is on a delivery run!"], svg: RUDOLF, aspect: 240 / 200 },
+  ],
 };
 
 export const PACKS: Record<GhostTheme, Pack> = { halloween: HALLOWEEN, christmas: CHRISTMAS };
