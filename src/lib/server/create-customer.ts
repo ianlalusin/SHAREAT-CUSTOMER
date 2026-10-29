@@ -1,5 +1,6 @@
 import { FieldValue, type DocumentReference, type Firestore } from "firebase-admin/firestore";
 import { PRIVACY_NOTICE_VERSION } from "@/lib/privacy";
+import { legacyPasswordFieldEnabled, stageCustomerPasswordHash } from "@/lib/server/customer-secrets";
 
 export type NewCustomerFields = {
   phone: string;
@@ -33,8 +34,13 @@ export async function createCustomerAccount(
   fields: NewCustomerFields
 ): Promise<boolean> {
   const batch = db.batch();
+  const { passwordHash, ...profile } = fields;
+  // The hash goes to the admin-only secret doc; the profile keeps a copy only
+  // while dual-writing (see customer-secrets.ts). create() can't take a delete.
+  const legacy = stageCustomerPasswordHash(batch, db, fields.phone, passwordHash);
   batch.create(ref, {
-    ...fields,
+    ...profile,
+    ...(legacyPasswordFieldEnabled() ? legacy : {}),
     // Which privacy notice the owner agreed to, and when. Both signup routes
     // refuse to get here without that agreement.
     privacyNoticeVersion: PRIVACY_NOTICE_VERSION,
