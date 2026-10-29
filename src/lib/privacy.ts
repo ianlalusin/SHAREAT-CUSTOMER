@@ -8,5 +8,8 @@
 export const PRIVACY_NOTICE_VERSION = "2026-10-29";
 export const PRIVACY_CONTACT_EMAIL = "admin@shareat.net";
 export const BUSINESS_NAME = "SharEat";
-/** Personal details on a card are deleted this long after its last visit. */
+/**
+ * A card, its personal details and any points left on it are deleted this long
+ * after its last activity (a visit, or any use of the card). See lib/retention.ts.
+ */
 export const RETENTION_YEARS_AFTER_LAST_VISIT = 2;

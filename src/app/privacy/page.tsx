@@ -84,9 +84,9 @@ export default function PrivacyPage() {
 
       <Section title="How long we keep it">
         <p>
-          We keep your card details while you use your card. If you have not visited any branch for{" "}
-          {RETENTION_YEARS_AFTER_LAST_VISIT} years, we delete your personal details. Sales and receipt records are
-          kept only as long as tax law requires.
+          We keep your card details while you use your card. If you have not visited any branch or used your card
+          for {RETENTION_YEARS_AFTER_LAST_VISIT} years, we delete your card and personal details, along with any
+          points left on it. Sales and receipt records are kept only as long as tax law requires.
         </p>
       </Section>
 
