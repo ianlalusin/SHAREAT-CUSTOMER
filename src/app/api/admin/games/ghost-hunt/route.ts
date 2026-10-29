@@ -1,61 +1,47 @@
 import { NextResponse } from "next/server";
-import { FieldValue } from "firebase-admin/firestore";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requireAdmin } from "@/lib/server/admin/access";
-import { GAME_ID, readGhostHuntConfig } from "@/lib/server/games/ghost-hunt-store";
-import { normalizeSettings } from "@/lib/games/ghost-hunt/rules";
+import { GAME_ID } from "@/lib/server/games/ghost-hunt-store";
+import { resolveBranchConfig } from "@/lib/games/ghost-hunt/branches";
+import { eventState } from "@/lib/games/ghost-hunt/rules";
 
 export const runtime = "nodejs";
 
-/** The event settings. Chain-wide, so admin-only — same reasoning as the games PUT. */
+/**
+ * Every branch at a glance: on or off, dates, and whether it is running right
+ * now. Settings are per branch only — edit them through ./branch.
+ */
 export async function GET(req: Request) {
   const gate = await requireAdmin(req);
   if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
 
-  const cfg = await readGhostHuntConfig(getAdminDb());
-  return NextResponse.json({
-    ok: true,
-    configured: cfg.configured,
-    isActive: cfg.configured && cfg.scope?.isActive !== false,
-    applicableStoreIds: Array.isArray(cfg.scope?.applicableStoreIds) ? cfg.scope!.applicableStoreIds : [],
-    settings: cfg.settings,
-  });
-}
+  const db = getAdminDb();
+  const [summarySnap, storesSnap, branchesSnap] = await Promise.all([
+    db.doc(`miniGames/${GAME_ID}`).get(),
+    db.collection("stores").limit(200).get(),
+    db.collection("ghostHuntBranches").get(),
+  ]);
+  const summary = summarySnap.data();
+  const branchDocs = new Map(branchesSnap.docs.map((d) => [d.id, d.data()]));
+  const now = Date.now();
 
-/**
- * Save settings and the on/off switch together. The run dates are mirrored to
- * the top of the doc, where the shared shelf logic reads them — that is what
- * takes the tile off the hub on the last day without anyone remembering to.
- */
-export async function PUT(req: Request) {
-  const gate = await requireAdmin(req);
-  if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
+  const branches = storesSnap.docs
+    .map((s) => {
+      const cfg = resolveBranchConfig(summary, branchDocs.get(s.id), s.id);
+      const ev = eventState(cfg.settings, now);
+      return {
+        storeId: s.id,
+        name: String(s.data()?.name || s.data()?.storeName || s.id),
+        enabled: cfg.enabled,
+        runningNow: cfg.enabled && ev.live,
+        status: !cfg.enabled ? "Off" : ev.live ? "Running now" : ev.message,
+        theme: cfg.settings.theme,
+        startsAtMs: cfg.settings.startsAtMs,
+        endsAtMs: cfg.settings.endsAtMs,
+        prizesPerDay: cfg.settings.prizes.reduce((a, p) => a + (p.perDay || 0), 0),
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 
-  const body = (await req.json().catch(() => ({}))) as Record<string, any>;
-  const settings = normalizeSettings(body?.settings);
-  if (settings.endsAtMs <= settings.startsAtMs) {
-    return NextResponse.json({ ok: false, error: "The end date must be after the start date." }, { status: 400 });
-  }
-
-  // Empty means every branch. A short list is how a launch is tried at one
-  // test branch before the rest see it.
-  const applicableStoreIds = Array.isArray(body?.applicableStoreIds)
-    ? Array.from(new Set(body.applicableStoreIds.map((x: unknown) => String(x)).filter(Boolean))).slice(0, 200)
-    : [];
-
-  await getAdminDb().doc(`miniGames/${GAME_ID}`).set(
-    {
-      isActive: body?.isActive === true,
-      applicableStoreIds,
-      startsAtMs: settings.startsAtMs,
-      endsAtMs: settings.endsAtMs,
-      event: settings,
-      updatedAtMs: Date.now(),
-      updatedByUid: gate.caller.uid,
-      updatedAt: FieldValue.serverTimestamp(),
-    },
-    { merge: true }
-  );
-
-  return NextResponse.json({ ok: true, settings });
+  return NextResponse.json({ ok: true, branches });
 }
