@@ -15,6 +15,7 @@ import { formatBirthday } from "@/lib/birthday";
 import { SharelebratorProfileEditDialog } from "./SharelebratorProfileEditDialog";
 import { SharelebratorTransferDialog } from "./SharelebratorTransferDialog";
 import { SharelebratorReceiveDialog } from "./SharelebratorReceiveDialog";
+import { SharelebratorPrivacyDialog } from "./SharelebratorPrivacyDialog";
 import { takenTableCopy } from "@/lib/sharelebrator-link-copy";
 
 interface Props {
@@ -63,6 +64,7 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
   const [editOpen, setEditOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
   /**
    * Their OWN card, opened while the table belongs to someone else's.
    *
@@ -394,6 +396,19 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
           Unlink this session
         </Button>
       )}
+
+      <div className="text-center">
+        <button type="button" className="text-xs text-muted-foreground underline" onClick={() => setPrivacyOpen(true)}>
+          My data &amp; privacy
+        </button>
+      </div>
+
+      <SharelebratorPrivacyDialog
+        open={privacyOpen}
+        onOpenChange={setPrivacyOpen}
+        pointsBalance={c.pointsBalance}
+        onDeleted={fetchMe}
+      />
 
       <SharelebratorProfileEditDialog
         open={editOpen}
