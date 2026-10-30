@@ -21,7 +21,7 @@ export async function POST(req: Request) {
   try {
     const report = await runRetention(getAdminDb(), { dryRun: true, maxDeletes: 0, uid: "cron" });
     return NextResponse.json({ ok: true, report });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "Cleanup report failed." }, { status: 500 });
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : "Cleanup report failed." }, { status: 500 });
   }
 }
