@@ -40,9 +40,9 @@ export function SharelebratorReceiveDialog({ open, onOpenChange }: Props) {
       setCode(json.code);
       setExpiresAtMs(json.expiresAtMs);
       setNow(Date.now());
-    } catch (e: any) {
+    } catch (e) {
       setCode(null);
-      setError(e?.message || "Could not create a code.");
+      setError(e instanceof Error ? e.message : "Could not create a code.");
     } finally {
       setLoading(false);
     }

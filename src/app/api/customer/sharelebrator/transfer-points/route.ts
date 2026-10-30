@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { DecodedIdToken } from "firebase-admin/auth";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
@@ -55,7 +56,7 @@ export async function POST(req: Request) {
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
   if (!match) return bad("Missing bearer token.", 401);
 
-  let decoded: any;
+  let decoded: DecodedIdToken;
   try {
     decoded = await getAdminAuth().verifyIdToken(match[1]);
   } catch {
@@ -136,7 +137,7 @@ export async function POST(req: Request) {
       ]);
       // A code works once. Re-checked here, inside the transaction, so two sends
       // racing on one code cannot both win.
-      const codeData = codeSnap.exists ? (codeSnap.data() as any) : null;
+      const codeData = codeSnap.exists ? (codeSnap.data() as { phone?: string; expiresAtMs?: number }) : null;
       if (!codeData || codeData.phone !== recipientPhone || !(Number(codeData.expiresAtMs) > Date.now())) {
         throw new Error(BAD_CODE);
       }

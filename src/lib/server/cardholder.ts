@@ -1,3 +1,5 @@
+import type { DecodedIdToken } from "firebase-admin/auth";
+import type { Firestore } from "firebase-admin/firestore";
 import { resolveTokenCard } from "@/lib/server/session-link";
 
 /**
@@ -11,7 +13,7 @@ import { resolveTokenCard } from "@/lib/server/session-link";
  */
 export type Cardholder = { ok: true; phone: string } | { ok: false; status: number; message: string };
 
-export async function resolveCardholder(db: any, decoded: any): Promise<Cardholder> {
+export async function resolveCardholder(db: Firestore, decoded: DecodedIdToken): Promise<Cardholder> {
   if (decoded?.customer === true) {
     const storeId = String(decoded.storeId || "");
     const sessionId = String(decoded.sessionId || "");

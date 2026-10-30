@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { DecodedIdToken } from "firebase-admin/auth";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { RATE_RULES, checkRateLimits, recordRateLimitFailures, tooManyAttempts } from "@/lib/server/rate-limit";
 import { maskDisplayName } from "@/lib/server/mask-name";
@@ -20,7 +21,7 @@ export async function POST(req: Request) {
   const match = (req.headers.get("authorization") || "").match(/^Bearer\s+(.+)$/i);
   if (!match) return bad("Missing bearer token.", 401);
 
-  let decoded: any;
+  let decoded: DecodedIdToken;
   try {
     decoded = await getAdminAuth().verifyIdToken(match[1]);
   } catch {
@@ -28,7 +29,7 @@ export async function POST(req: Request) {
   }
   if (decoded.customer !== true && decoded.loyaltyCustomer !== true) return bad("Unauthorized.", 403);
 
-  let body: any;
+  let body: { code?: unknown } | null;
   try {
     body = await req.json();
   } catch {
@@ -48,5 +49,5 @@ export async function POST(req: Request) {
     return bad(BAD_CODE, 404);
   }
 
-  return NextResponse.json({ ok: true, name: maskDisplayName(String((snap.data() as any)?.name || "")) });
+  return NextResponse.json({ ok: true, name: maskDisplayName(String((snap.data() as { name?: unknown } | undefined)?.name || "")) });
 }

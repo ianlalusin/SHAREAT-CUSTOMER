@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { DecodedIdToken } from "firebase-admin/auth";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { resolveCardholder } from "@/lib/server/cardholder";
 import { RATE_RULES, consumeRateLimits, tooManyAttempts } from "@/lib/server/rate-limit";
@@ -20,7 +21,7 @@ export async function POST(req: Request) {
   const match = (req.headers.get("authorization") || "").match(/^Bearer\s+(.+)$/i);
   if (!match) return bad("Missing bearer token.", 401);
 
-  let decoded: any;
+  let decoded: DecodedIdToken;
   try {
     decoded = await getAdminAuth().verifyIdToken(match[1]);
   } catch {
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
   try {
     const { code, expiresAtMs } = await issueTransferCode(db, who.phone);
     return NextResponse.json({ ok: true, code: formatTransferCode(code), expiresAtMs });
-  } catch (e: any) {
-    return bad(e?.message || "Could not create a code.", 500);
+  } catch (e) {
+    return bad(e instanceof Error ? e.message : "Could not create a code.", 500);
   }
 }

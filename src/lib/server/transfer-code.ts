@@ -64,8 +64,8 @@ export async function issueTransferCode(
         expiresAt: Timestamp.fromMillis(expiresAtMs),
       });
       return { code, expiresAtMs };
-    } catch (e: any) {
-      if (e?.code !== ALREADY_EXISTS) throw e;
+    } catch (e) {
+      if ((e as { code?: number } | null)?.code !== ALREADY_EXISTS) throw e;
     }
   }
   throw new Error("Could not issue a code. Try again.");
@@ -75,7 +75,7 @@ export async function issueTransferCode(
 export async function peekTransferCode(db: Firestore, code: string, nowMs: number = Date.now()): Promise<string | null> {
   const snap = await transferCodeRef(db, code).get();
   if (!snap.exists) return null;
-  const d = snap.data() as any;
+  const d = snap.data() as { phone?: string; expiresAtMs?: number } | undefined;
   if (!d?.phone || !(Number(d.expiresAtMs) > nowMs)) return null;
   return String(d.phone);
 }
