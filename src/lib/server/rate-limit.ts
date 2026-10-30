@@ -45,6 +45,10 @@ export const RATE_RULES = {
   signupIp: { bucket: "signup-ip", limit: 40, windowMs: 60 * MIN },
   /** Recipient lookups per signed-in account (phone enumeration brake). */
   lookupCaller: { bucket: "lookup-caller", limit: 20, windowMs: 60 * MIN },
+  /** WRONG receive codes per signed-in account. Failures only: a right code costs nothing. */
+  codeGuess: { bucket: "code-guess", limit: 10, windowMs: 15 * MIN },
+  /** Receive codes a card may ask for per hour. */
+  receiveCode: { bucket: "receive-code", limit: 10, windowMs: 60 * MIN },
 } satisfies Record<string, RateRule>;
 
 export type WindowState = { count: number; windowStartMs: number };

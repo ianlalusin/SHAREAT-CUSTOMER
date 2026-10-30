@@ -8,11 +8,12 @@ import { useFirestore } from "@/firebase/provider";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Star, Loader2, RefreshCw, Unlink2, Settings, Send, Gift } from "lucide-react";
+import { Star, Loader2, RefreshCw, Unlink2, Settings, Send, Gift, ArrowDownLeft } from "lucide-react";
 import { format } from "date-fns";
 import { SharelebratorLinkCard } from "./SharelebratorLinkCard";
 import { SharelebratorProfileEditDialog } from "./SharelebratorProfileEditDialog";
 import { SharelebratorTransferDialog } from "./SharelebratorTransferDialog";
+import { SharelebratorReceiveDialog } from "./SharelebratorReceiveDialog";
 import { takenTableCopy } from "@/lib/sharelebrator-link-copy";
 
 interface Props {
@@ -63,6 +64,7 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
   const [unlinking, setUnlinking] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
+  const [receiveOpen, setReceiveOpen] = useState(false);
   /**
    * Their OWN card, opened while the table belongs to someone else's.
    *
@@ -305,6 +307,15 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
               <Button
                 size="sm"
                 variant="ghost"
+                onClick={() => setReceiveOpen(true)}
+                className="text-white hover:bg-white/10 h-8 gap-1.5 text-xs"
+              >
+                <ArrowDownLeft className="h-3.5 w-3.5" />
+                Receive
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
                 onClick={handleRefresh}
                 disabled={refreshing}
                 className="text-white hover:bg-white/10 h-8"
@@ -398,10 +409,11 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
         onSaved={fetchMe}
       />
 
+      <SharelebratorReceiveDialog open={receiveOpen} onOpenChange={setReceiveOpen} />
+
       <SharelebratorTransferDialog
         open={transferOpen}
         onOpenChange={setTransferOpen}
-        senderPhone={c.phone}
         senderBalance={c.pointsBalance}
         onTransferred={fetchMe}
       />

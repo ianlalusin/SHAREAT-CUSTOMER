@@ -18,24 +18,15 @@ import { ArrowRight, CheckCircle2, Loader2, Send, User } from "lucide-react";
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  senderPhone: string;
   senderBalance: number;
   onTransferred: () => void;
 }
 
 type Step = "form" | "confirm" | "success";
 
-function normalizePhoneLocal(raw: string): string {
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length === 12 && digits.startsWith("63")) return `+${digits}`;
-  if (digits.length === 11 && digits.startsWith("09")) return `+63${digits.slice(1)}`;
-  if (digits.length === 10 && digits.startsWith("9")) return `+63${digits}`;
-  return digits;
-}
-
-export function SharelebratorTransferDialog({ open, onOpenChange, senderPhone, senderBalance, onTransferred }: Props) {
+export function SharelebratorTransferDialog({ open, onOpenChange, senderBalance, onTransferred }: Props) {
   const [step, setStep] = useState<Step>("form");
-  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
   const [points, setPoints] = useState("");
   const [recipientName, setRecipientName] = useState("");
   const [loading, setLoading] = useState(false);
@@ -43,7 +34,7 @@ export function SharelebratorTransferDialog({ open, onOpenChange, senderPhone, s
 
   function reset() {
     setStep("form");
-    setPhone("");
+    setCode("");
     setPoints("");
     setRecipientName("");
     setError(null);
@@ -65,9 +56,8 @@ export function SharelebratorTransferDialog({ open, onOpenChange, senderPhone, s
     e.preventDefault();
     setError(null);
 
-    const cleanPhone = phone.replace(/[\s\-()]/g, "");
-    if (!cleanPhone) { setError("Phone number is required."); return; }
-    if (normalizePhoneLocal(cleanPhone) === senderPhone) { setError("You cannot transfer points to yourself."); return; }
+    const cleanCode = code.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+    if (cleanCode.length !== 6) { setError("Enter the 6-character code your friend sees under Receive."); return; }
 
     const pts = parseInt(points, 10);
     if (!pts || pts <= 0) { setError("Enter a valid number of points."); return; }
@@ -80,13 +70,13 @@ export function SharelebratorTransferDialog({ open, onOpenChange, senderPhone, s
       const res = await fetch("/api/customer/sharelebrator/lookup-recipient", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ phone: cleanPhone }),
+        body: JSON.stringify({ code: cleanCode }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) {
-        throw new Error(json.error || "Recipient not found.");
+        throw new Error(json.error || "That code did not work.");
       }
-      setPhone(cleanPhone);
+      setCode(cleanCode);
       setRecipientName(json.name);
       setStep("confirm");
     } catch (err: any) {
@@ -104,7 +94,7 @@ export function SharelebratorTransferDialog({ open, onOpenChange, senderPhone, s
       const res = await fetch("/api/customer/sharelebrator/transfer-points", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ recipientPhone: phone, points: parseInt(points, 10) }),
+        body: JSON.stringify({ recipientCode: code, points: parseInt(points, 10) }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.ok) {
@@ -128,19 +118,25 @@ export function SharelebratorTransferDialog({ open, onOpenChange, senderPhone, s
               <DialogTitle className="flex items-center gap-2">
                 <Send className="h-5 w-5" /> Transfer Points
               </DialogTitle>
-              <DialogDescription>Send points to another Sharelebrator cardholder.</DialogDescription>
+              <DialogDescription>
+                Ask your friend to tap <b>Receive</b> on their card and read you the code.
+              </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleLookup} className="space-y-3">
               <div className="space-y-1">
-                <Label>Recipient Phone</Label>
+                <Label>Your friend&apos;s code</Label>
                 <Input
-                  type="tel"
-                  placeholder="09XXXXXXXXX"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="ABC-DEF"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  autoCapitalize="characters"
+                  autoComplete="off"
+                  maxLength={8}
+                  className="font-mono tracking-widest text-center text-lg uppercase"
                   required
                   disabled={loading}
                 />
+                <p className="text-xs text-muted-foreground">Codes work once and expire after 10 minutes.</p>
               </div>
               <div className="space-y-1">
                 <Label>Points to Send</Label>
@@ -181,7 +177,6 @@ export function SharelebratorTransferDialog({ open, onOpenChange, senderPhone, s
                 </div>
                 <div>
                   <p className="font-bold text-sm">{recipientName}</p>
-                  <p className="text-xs text-muted-foreground font-mono">{phone}</p>
                 </div>
               </div>
               <div className="text-center py-2">
