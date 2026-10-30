@@ -19,3 +19,10 @@ env:
     value: "off"
     availability:
       - RUNTIME
+  # Weekly privacy-cleanup report (audit PRV-02d). Create the secret FIRST
+  # (`firebase apphosting:secrets:set CRON_SECRET`), then uncomment. Without
+  # it /api/cron/loyalty-retention answers 503 and does nothing.
+  # - variable: CRON_SECRET
+  #   secret: CRON_SECRET
+  #   availability:
+  #     - RUNTIME
