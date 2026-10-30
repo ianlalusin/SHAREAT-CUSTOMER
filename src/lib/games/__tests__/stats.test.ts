@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   dayIdFor, isoDateFor, recentDayIds, dayIdToIso, buildSeries, toMetricCounts,
-  totalsByGame, grandTotal, peakDay, useRate, totalLegacyPlays, MAX_STATS_DAYS, storeLabel,
+  totalsByGame, grandTotal, peakDay, conversionRate, totalLegacyPlays, MAX_STATS_DAYS, storeLabel,
   type RawDay,
 } from "@/lib/games/stats";
 
@@ -172,14 +172,14 @@ describe("summaries", () => {
   });
 });
 
-describe("useRate", () => {
+describe("conversionRate", () => {
   it("is the share of viewers who went on to use it", () => {
-    expect(useRate({ view: 10, use: 3 })).toBe(30);
+    expect(conversionRate({ view: 10, use: 3 })).toBe(30);
   });
 
   /** Nobody viewed it, so nobody failed to use it — not a division by zero. */
   it("is zero when nobody has viewed it", () => {
-    expect(useRate({ view: 0, use: 0 })).toBe(0);
+    expect(conversionRate({ view: 0, use: 0 })).toBe(0);
   });
 });
 

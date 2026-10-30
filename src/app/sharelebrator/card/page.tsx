@@ -188,7 +188,7 @@ export default function SharelebratorCardPage() {
             </CardContent>
           </Card>
           <p className="text-xs text-center text-muted-foreground">
-            Don't have a card yet? Create one during your next visit using the in-store PIN.
+            Don&apos;t have a card yet? Create one during your next visit using the in-store PIN.
           </p>
         </div>
       </main>
