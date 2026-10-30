@@ -1,5 +1,6 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { birthMonthDay } from "@/lib/birthday";
+import { maskDisplayName } from "@/lib/server/mask-name";
 
 /**
  * One customer's card and recent points history.
@@ -82,8 +83,9 @@ export async function loadLoyaltyCard(db: Firestore, phone: string): Promise<Loy
         storeId: data.storeId,
         sessionId: data.sessionId,
         createdAtMs: data.createdAt?.toMillis ? data.createdAt.toMillis() : null,
-        recipientName: data.recipientName ?? null,
-        senderName: data.senderName ?? null,
+        // Stored in full on the ledger (older rows too); shown as "Ben R.".
+        recipientName: data.recipientName ? maskDisplayName(data.recipientName) : null,
+        senderName: data.senderName ? maskDisplayName(data.senderName) : null,
       };
     }),
   };

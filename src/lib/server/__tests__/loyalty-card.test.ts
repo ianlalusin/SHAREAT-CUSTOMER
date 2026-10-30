@@ -13,7 +13,7 @@ function fakeDb() {
   const ledger = [
     {
       type: "transfer_out", points: -10, amount: 0, storeId: "s1", sessionId: "x1",
-      recipientName: "Ben R.", recipientPhone: "+639170000002", senderName: "Ana C.", senderPhone: PHONE,
+      recipientName: "Ben Reyes", recipientPhone: "+639170000002", senderName: "Ana Dela Cruz", senderPhone: PHONE,
       createdAt: { toMillis: () => 1000 },
     },
   ];
@@ -50,7 +50,7 @@ describe("card read", () => {
     expect(JSON.stringify(card)).not.toMatch(/Rizal|ana@example|1995/);
   });
 
-  it("keeps counterparty names for the history but not their phone numbers", async () => {
+  it("shows counterparty names masked, and not their phone numbers", async () => {
     const card = await loadLoyaltyCard(fakeDb(), PHONE);
     const e = card!.ledger[0] as any;
     expect(e.recipientName).toBe("Ben R.");
@@ -58,6 +58,7 @@ describe("card read", () => {
     expect(e).not.toHaveProperty("recipientPhone");
     expect(e).not.toHaveProperty("senderPhone");
     expect(JSON.stringify(card)).not.toContain("+639170000002");
+    expect(JSON.stringify(card)).not.toMatch(/Reyes|Dela Cruz/);
   });
 
   it("returns null for an unknown card", async () => {
