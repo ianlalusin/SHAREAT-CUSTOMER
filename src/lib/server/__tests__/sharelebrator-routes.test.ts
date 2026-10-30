@@ -116,6 +116,7 @@ vi.mock("@/lib/server/customer-gate", () => ({
 vi.mock("@/lib/server/loyaltyLog", () => ({ writeLoyaltyLog: async () => {} }));
 vi.mock("@/lib/server/loyalty-card", () => ({
   loadLoyaltyCard: async (_db: any, phone: string) => ({ phone, name: "Ana", pointsBalance: 100 }),
+  loadEditableProfile: async () => ({ address: "12 Rizal St", email: "a@x.com", bday: "1995-04-02" }),
 }));
 vi.mock("bcryptjs", () => ({
   default: {
@@ -428,6 +429,36 @@ describe("card actions are limited to the participant that linked the card", () 
     const res = await transferPOST(req(token("p1"), { recipientPhone: "bad", points: 5 }));
     // Passes the ownership gate (then fails body validation, not 403).
     expect(res.status).toBe(400);
+  });
+});
+
+describe("private profile fields are separate from the card read (audit PRV-02)", () => {
+  const dinerLink = { ...cashierLink, linkedBy: null, linkedByUid: null, linkedAt: null, linkedByParticipantId: "p1" };
+  const me = (t: string, qs = "") =>
+    meGET(new Request(`http://x/api/customer/sharelebrator/me${qs}`, { headers: { authorization: `Bearer ${t}` } }));
+
+  it("a plain card read carries no address, email or birth date", async () => {
+    seed(dinerLink);
+    const body = await (await me(token("p1"))).json();
+    expect(body.linked).toBe(true);
+    expect(body).not.toHaveProperty("profile");
+    expect(JSON.stringify(body)).not.toMatch(/Rizal|a@x.com|1995/);
+  });
+
+  it("the linking participant gets them when the edit form asks", async () => {
+    seed(dinerLink);
+    const body = await (await me(token("p1"), "?include=profile")).json();
+    expect(body.profile).toEqual({ address: "12 Rizal St", email: "a@x.com", bday: "1995-04-02" });
+  });
+
+  it("another diner at the table, or a cashier-linked card, never gets them", async () => {
+    seed(dinerLink);
+    const other = await (await me(token("p2"), "?include=profile")).json();
+    expect(other.linked).toBe(false);
+    expect(JSON.stringify(other)).not.toMatch(/Rizal|a@x.com|1995/);
+    seed(cashierLink);
+    const viaCashier = await (await me(token("p1"), "?include=profile")).json();
+    expect(JSON.stringify(viaCashier)).not.toMatch(/Rizal|a@x.com|1995/);
   });
 });
 

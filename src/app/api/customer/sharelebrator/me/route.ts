@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { checkLiveParticipant } from "@/lib/server/customer-gate";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
-import { loadLoyaltyCard } from "@/lib/server/loyalty-card";
+import { loadEditableProfile, loadLoyaltyCard } from "@/lib/server/loyalty-card";
 import { isCashierLinked } from "@/lib/server/session-link";
 
 export const runtime = "nodejs";
@@ -84,5 +84,11 @@ export async function GET(req: Request) {
   const card = await loadLoyaltyCard(db, phone);
   if (!card) return NextResponse.json({ ok: true, linked: false });
 
-  return NextResponse.json({ ok: true, linked: true, locked, ...card });
+  // Address, email and the full birth date are not part of the card the screen
+  // shows. The edit form asks for them separately, and only reaches this line
+  // as the cardholder (every other caller returned above).
+  const wantsProfile = new URL(req.url).searchParams.get("include") === "profile";
+  const profile = wantsProfile ? await loadEditableProfile(db, phone) : undefined;
+
+  return NextResponse.json({ ok: true, linked: true, locked, ...card, ...(profile ? { profile } : {}) });
 }

@@ -1,4 +1,5 @@
 import type { Firestore } from "firebase-admin/firestore";
+import { birthMonthDay } from "@/lib/birthday";
 
 /**
  * One customer's card and recent points history.
@@ -22,24 +23,28 @@ export type LoyaltyLedgerEntry = {
   sessionId: string;
   createdAtMs: number | null;
   recipientName: string | null;
-  recipientPhone: string | null;
   senderName: string | null;
-  senderPhone: string | null;
 };
 
 export type LoyaltyCard = {
   customer: {
     phone: string;
     name: string;
-    bday: string;
-    address: string;
-    email: string | null;
+    /** "MM-DD" — the card shows "April 2"; the year never leaves the server. */
+    birthday: string | null;
     pointsBalance: number;
     pointsReserved: number;
     available: number;
   };
   ledger: LoyaltyLedgerEntry[];
 };
+
+/**
+ * What the card screen shows is NOT what the edit form needs. Address, email and
+ * the full birth date are private fields: they are read only when the cardholder
+ * opens the edit form, through the same checks as the card itself.
+ */
+export type EditableProfile = { address: string; email: string | null; bday: string };
 
 /** The most recent entries a cardholder is shown. */
 const LEDGER_LIMIT = 20;
@@ -62,9 +67,7 @@ export async function loadLoyaltyCard(db: Firestore, phone: string): Promise<Loy
     customer: {
       phone: c.phone,
       name: c.name,
-      bday: c.bday,
-      address: c.address ?? "",
-      email: c.email ?? null,
+      birthday: birthMonthDay(c.bday),
       pointsBalance,
       pointsReserved,
       available: Math.max(0, pointsBalance - pointsReserved),
@@ -80,10 +83,15 @@ export async function loadLoyaltyCard(db: Firestore, phone: string): Promise<Loy
         sessionId: data.sessionId,
         createdAtMs: data.createdAt?.toMillis ? data.createdAt.toMillis() : null,
         recipientName: data.recipientName ?? null,
-        recipientPhone: data.recipientPhone ?? null,
         senderName: data.senderName ?? null,
-        senderPhone: data.senderPhone ?? null,
       };
     }),
   };
+}
+
+export async function loadEditableProfile(db: Firestore, phone: string): Promise<EditableProfile | null> {
+  const snap = await db.doc(`customers/${phone}`).get();
+  if (!snap.exists) return null;
+  const c = snap.data() as any;
+  return { address: c.address ?? "", email: c.email ?? null, bday: c.bday ?? "" };
 }
