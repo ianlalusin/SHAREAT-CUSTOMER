@@ -2,6 +2,7 @@ import "server-only";
 
 import { getAdminDb } from "@/lib/firebase/admin";
 import { FieldValue } from "firebase-admin/firestore";
+import { maskDisplayName } from "@/lib/server/mask-name";
 
 /**
  * Daily projection cap per doc. Each entry ~300-400 bytes including
@@ -45,7 +46,10 @@ function buildProjectionEntry(entry: LoyaltyLogInput, logId: string) {
     logId,
     type: entry.type,
     phone: entry.phone,
-    customerName: entry.customerName,
+    // Masked ("Ana C."): the phone already says which card; a full name in a
+    // log that staff screens and exports copy around is more than it needs
+    // (audit PRV-02). Applied here so no caller can forget.
+    customerName: maskDisplayName(entry.customerName),
     actorUid: entry.actorUid,
     source: entry.source ?? null,
     storeId: entry.storeId ?? null,

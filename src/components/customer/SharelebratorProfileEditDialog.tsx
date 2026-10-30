@@ -12,12 +12,8 @@ import { Loader2, KeyRound, UserCog } from "lucide-react";
 interface Props {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  initial: {
-    name: string;
-    address: string;
-    email: string | null;
-    bday: string;
-  };
+  /** Only the name is passed in. Address, email and birth date are read from the server when the form opens. */
+  initial: { name: string };
   onSaved: () => void;
 }
 
@@ -26,9 +22,11 @@ export function SharelebratorProfileEditDialog({ open, onOpenChange, initial, on
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState(initial.name);
-  const [address, setAddress] = useState(initial.address);
-  const [email, setEmail] = useState(initial.email ?? "");
-  const [bday, setBday] = useState(initial.bday);
+  const [address, setAddress] = useState("");
+  const [email, setEmail] = useState("");
+  const [bday, setBday] = useState("");
+  // Saving before the private fields arrive would overwrite them with blanks.
+  const [profileReady, setProfileReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,17 +40,39 @@ export function SharelebratorProfileEditDialog({ open, onOpenChange, initial, on
       setNewPassword("");
       setConfirmPassword("");
       setName(initial.name);
-      setAddress(initial.address);
-      setEmail(initial.email ?? "");
-      setBday(initial.bday);
+      setAddress("");
+      setEmail("");
+      setBday("");
+      setProfileReady(false);
       setError(null);
+      void loadProfile();
     }
     prevOpenRef.current = open;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  async function loadProfile() {
+    try {
+      const user = getAuth().currentUser;
+      if (!user) throw new Error("Session expired. Please re-enter your PIN.");
+      const idToken = await user.getIdToken();
+      const res = await fetch("/api/customer/sharelebrator/me?include=profile", {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok || !json.profile) throw new Error("Could not load your details. Close and try again.");
+      setAddress(json.profile.address ?? "");
+      setEmail(json.profile.email ?? "");
+      setBday(json.profile.bday ?? "");
+      setProfileReady(true);
+    } catch (err: any) {
+      setError(err.message || "Could not load your details.");
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!profileReady) return;
     setError(null);
 
     if (newPassword || confirmPassword) {
@@ -157,21 +177,21 @@ export function SharelebratorProfileEditDialog({ open, onOpenChange, initial, on
           </div>
           <div className="space-y-1">
             <Label>Address (optional)</Label>
-            <Input value={address} onChange={(e) => setAddress(e.target.value)} disabled={submitting} />
+            <Input value={address} onChange={(e) => setAddress(e.target.value)} disabled={submitting || !profileReady} />
           </div>
           <div className="space-y-1">
             <Label>Email</Label>
-            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={submitting} />
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={submitting || !profileReady} />
           </div>
           <div className="space-y-1">
             <Label>Birthday</Label>
-            <Input type="date" value={bday} onChange={(e) => setBday(e.target.value)} required disabled={submitting} />
+            <Input type="date" value={bday} onChange={(e) => setBday(e.target.value)} required disabled={submitting || !profileReady} />
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <DialogFooter>
-            <Button type="submit" disabled={submitting} className="w-full">
+            <Button type="submit" disabled={submitting || !profileReady} className="w-full">
               {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Save Changes
             </Button>

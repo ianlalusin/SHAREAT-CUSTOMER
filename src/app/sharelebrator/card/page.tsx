@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Sparkles, LogOut, Loader2, ArrowLeft, Settings, RefreshCw, Star, QrCode } from "lucide-react";
 import { format } from "date-fns";
+import { formatBirthday } from "@/lib/birthday";
 import { SharelebratorProfileEditDialog } from "@/components/customer/SharelebratorProfileEditDialog";
 import { SharelebratorPrivacyDialog } from "@/components/customer/SharelebratorPrivacyDialog";
 
@@ -20,9 +21,8 @@ type MeResponse = {
   customer?: {
     phone: string;
     name: string;
-    bday: string;
-    address: string;
-    email: string | null;
+    /** "MM-DD". Address, email and full birth date are fetched by the edit form only. */
+    birthday: string | null;
     pointsBalance: number;
   };
   ledger?: {
@@ -277,9 +277,9 @@ export default function SharelebratorCardPage() {
                       <p className="text-[9px] uppercase opacity-60 tracking-wider">Cardholder</p>
                       <p className="text-xl font-black leading-tight">{c.name}</p>
                       <p className="text-xs font-mono opacity-80">{c.phone}</p>
-                      {c.bday && (
+                      {c.birthday && (
                         <p className="text-[10px] opacity-70">
-                          Birthday: {format(new Date(c.bday), "MMMM d")}
+                          Birthday: {formatBirthday(c.birthday)}
                         </p>
                       )}
                     </div>
@@ -391,12 +391,7 @@ export default function SharelebratorCardPage() {
             <SharelebratorProfileEditDialog
               open={editOpen}
               onOpenChange={setEditOpen}
-              initial={{
-                name: c.name,
-                address: c.address,
-                email: c.email,
-                bday: c.bday,
-              }}
+              initial={{ name: c.name }}
               onSaved={fetchMe}
             />
           </>

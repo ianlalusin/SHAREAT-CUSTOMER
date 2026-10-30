@@ -1,0 +1,27 @@
+name: Weekly privacy cleanup report
+
+# REPORT ONLY. Asks the app which loyalty cards are past the 2-year retention
+# period and saves the count in Firestore (retentionRuns). It cannot delete.
+# Needs two repository secrets: APP_URL (e.g. https://your-app-domain, no
+# trailing slash) and CRON_SECRET (same value as the app's CRON_SECRET).
+on:
+  schedule:
+    - cron: "0 22 * * 0" # Sunday 22:00 UTC = Monday 06:00 Manila
+  workflow_dispatch:
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask the app for the cleanup report
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$APP_URL" && test -n "$CRON_SECRET" || { echo "APP_URL or CRON_SECRET secret is missing"; exit 1; }
+          code=$(curl -sS -o report.json -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$APP_URL/api/cron/loyalty-retention")
+          echo "HTTP $code"
+          node -e 'const r=require("./report.json").report||{};console.log(JSON.stringify({dryRun:r.dryRun,scanned:r.scanned,due:r.due,deleted:r.deleted,cutoff:r.cutoffDate}))'
+          test "$code" = "200"

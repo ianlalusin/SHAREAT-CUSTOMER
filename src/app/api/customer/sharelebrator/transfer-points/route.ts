@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { DecodedIdToken } from "firebase-admin/auth";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
+import { maskDisplayName } from "@/lib/server/mask-name";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { resolveCardholder } from "@/lib/server/cardholder";
 import { RATE_RULES, checkRateLimits, recordRateLimitFailures, tooManyAttempts } from "@/lib/server/rate-limit";

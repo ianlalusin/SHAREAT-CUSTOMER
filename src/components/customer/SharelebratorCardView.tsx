@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Star, Loader2, RefreshCw, Unlink2, Settings, Send, Gift, ArrowDownLeft } from "lucide-react";
 import { format } from "date-fns";
 import { SharelebratorLinkCard } from "./SharelebratorLinkCard";
+import { formatBirthday } from "@/lib/birthday";
 import { SharelebratorProfileEditDialog } from "./SharelebratorProfileEditDialog";
 import { SharelebratorTransferDialog } from "./SharelebratorTransferDialog";
 import { SharelebratorReceiveDialog } from "./SharelebratorReceiveDialog";
@@ -36,9 +37,8 @@ type MeResponse = {
   customer?: {
     phone: string;
     name: string;
-    bday: string;
-    address: string;
-    email: string | null;
+    /** "MM-DD". Address, email and full birth date are fetched by the edit form only. */
+    birthday: string | null;
     pointsBalance: number;
   };
   ledger?: {
@@ -50,9 +50,7 @@ type MeResponse = {
     sessionId: string;
     createdAtMs: number | null;
     recipientName?: string | null;
-    recipientPhone?: string | null;
     senderName?: string | null;
-    senderPhone?: string | null;
   }[];
 };
 
@@ -276,9 +274,9 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
             <p className="text-[10px] uppercase opacity-60 tracking-wider">Cardholder</p>
             <p className="text-2xl font-black leading-tight">{c.name}</p>
             <p className="text-sm font-mono opacity-80 mt-1">{c.phone}</p>
-            {c.bday && (
+            {c.birthday && (
               <p className="text-xs opacity-70 mt-0.5">
-                Birthday: {format(new Date(c.bday), "MMMM d")}
+                Birthday: {formatBirthday(c.birthday)}
               </p>
             )}
           </div>
@@ -415,12 +413,7 @@ export function SharelebratorCardView({ storeId, sessionId }: Props) {
       <SharelebratorProfileEditDialog
         open={editOpen}
         onOpenChange={setEditOpen}
-        initial={{
-          name: c.name,
-          address: c.address,
-          email: c.email,
-          bday: c.bday,
-        }}
+        initial={{ name: c.name }}
         onSaved={fetchMe}
       />
 
