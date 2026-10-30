@@ -16,6 +16,13 @@ const eslintConfig = [
       "@typescript-eslint/no-explicit-any": "warn",
     },
   },
+  {
+    // Test doubles (fake databases, mocked modules) stand in for large external
+    // types; typing them fully costs more than it protects. Production code is
+    // still held to the cap.
+    files: ["**/*.test.ts", "**/__tests__/**"],
+    rules: { "@typescript-eslint/no-explicit-any": "off" },
+  },
 ];
 
 export default eslintConfig;
