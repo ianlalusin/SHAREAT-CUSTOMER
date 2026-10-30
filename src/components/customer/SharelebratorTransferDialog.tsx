@@ -77,10 +77,11 @@ export function SharelebratorTransferDialog({ open, onOpenChange, senderPhone, s
     setLoading(true);
     try {
       const idToken = await getToken();
-      const res = await fetch(
-        `/api/customer/sharelebrator/lookup-recipient?phone=${encodeURIComponent(cleanPhone)}`,
-        { headers: { Authorization: `Bearer ${idToken}` } }
-      );
+      const res = await fetch("/api/customer/sharelebrator/lookup-recipient", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ phone: cleanPhone }),
+      });
       const json = await res.json();
       if (!res.ok || !json.ok) {
         throw new Error(json.error || "Recipient not found.");

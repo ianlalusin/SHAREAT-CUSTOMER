@@ -10,7 +10,7 @@ function bad(msg: string, status = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status });
 }
 
-export async function GET(req: Request) {
+export async function POST(req: Request) {
   const authHeader = req.headers.get("authorization") || "";
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
   if (!match) return bad("Missing bearer token.", 401);
@@ -26,8 +26,15 @@ export async function GET(req: Request) {
     return bad("Unauthorized.", 403);
   }
 
-  const url = new URL(req.url);
-  const phone = normalizePhone(url.searchParams.get("phone"));
+  // The phone travels in the body, never the URL: URLs are kept in access logs,
+  // browser history and referrers (audit PRV-01).
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return bad("Invalid JSON body.");
+  }
+  const phone = normalizePhone(body?.phone);
   if (!phone) return bad("Invalid phone number format.");
 
   const db = getAdminDb();
