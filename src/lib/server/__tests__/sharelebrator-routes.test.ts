@@ -43,8 +43,12 @@ function fakeDb() {
     }
     return out;
   };
-  const apply = (writes: Array<[string, any, "update" | "set"]>) => {
+  const apply = (writes: Array<[string, any, "update" | "set" | "delete"]>) => {
     for (const [path, patch, kind] of writes) {
+      if (kind === "delete") {
+        h.store.delete(path);
+        continue;
+      }
       if (kind === "update" && !h.store.has(path)) throw new Error(`NOT_FOUND: ${path}`);
       h.store.set(path, merge(h.store.get(path), patch));
     }
@@ -75,7 +79,7 @@ function fakeDb() {
     // and a race test could never pass.
     runTransaction: async (fn: any) => {
       for (let attempt = 0; attempt < 5; attempt++) {
-        const w: Array<[string, any, "update" | "set"]> = [];
+        const w: Array<[string, any, "update" | "set" | "delete"]> = [];
         const seen = new Map<string, string>();
         const tx = {
           get: async (r: any) => {
@@ -84,6 +88,7 @@ function fakeDb() {
           },
           update: (r: any, d: any) => void w.push([r.path, d, "update"]),
           set: (r: any, d: any) => void w.push([r.path, d, "set"]),
+          delete: (r: any) => void w.push([r.path, null, "delete"]),
         };
         const out = await fn(tx);
         const stale = [...seen].some(([p, v]) => JSON.stringify(h.store.get(p) ?? null) !== v);
@@ -151,6 +156,16 @@ const cashierLink = {
   linkedByUid: "cashier-uid",
   linkedAt: 123,
 };
+
+/** A live receive code for a phone, as /receive-code would have minted it. Each call is a new code. */
+const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+let codeSeq = 0;
+function codeFor(phone: string, over: Record<string, any> = {}) {
+  const n = ++codeSeq;
+  const code = "AAA" + CODE_CHARS[Math.floor(n / 31) % 31] + CODE_CHARS[n % 31] + "K";
+  h.store.set(`transferCodes/${code}`, { phone, expiresAtMs: Date.now() + 60_000, ...over });
+  return code;
+}
 
 function seed(link: Record<string, any>) {
   h.store.set(ACTIVE, { ...link });
@@ -346,9 +361,82 @@ describe("in-session signup and the privacy notice", () => {
   });
 });
 
+describe("transfer-points by receive code (audit PRV-01)", () => {
+  const dinerLink = { ...cashierLink, linkedBy: null, linkedByUid: null, linkedAt: null, linkedByParticipantId: "p1" };
+  const send = (body: any) => transferPOST(req(token("p1"), body));
+
+  it("sends to the code holder and uses the code up", async () => {
+    seed(dinerLink);
+    const code = codeFor(BEN);
+    const res = await send({ recipientCode: code, points: 10 });
+    expect(res.status).toBe(200);
+    expect(h.store.get(`customers/${ANA}`).pointsBalance).toBe(90);
+    expect(h.store.get(`customers/${BEN}`).pointsBalance).toBe(110);
+    expect(h.store.has(`transferCodes/${code}`)).toBe(false);
+    expect((await res.json()).recipientName).toBe("Ben");
+  });
+
+  it("a code works once: the second send with it fails and moves nothing", async () => {
+    seed(dinerLink);
+    const code = codeFor(BEN);
+    expect((await send({ recipientCode: code, points: 5 })).status).toBe(200);
+    const again = await send({ recipientCode: code, points: 5 });
+    expect(again.status).toBe(404);
+    expect(h.store.get(`customers/${ANA}`).pointsBalance).toBe(95);
+  });
+
+  it("two sends racing on one code: exactly one wins", async () => {
+    seed(dinerLink);
+    const code = codeFor(BEN);
+    const results = await Promise.all([send({ recipientCode: code, points: 5 }), send({ recipientCode: code, points: 5 })]);
+    expect(results.map((r) => r.status).sort()).toEqual([200, 400]);
+    expect(h.store.get(`customers/${ANA}`).pointsBalance).toBe(95);
+    expect(h.store.get(`customers/${BEN}`).pointsBalance).toBe(105);
+  });
+
+  it("an expired, unknown or malformed code is refused the same way, and moves nothing", async () => {
+    seed(dinerLink);
+    const expired = codeFor(BEN, { expiresAtMs: Date.now() - 1 });
+    const answers = [];
+    for (const recipientCode of [expired, "QQQQQQ", "nope", undefined]) {
+      const res = await send({ recipientCode, points: 5 });
+      answers.push([res.status, await res.json()]);
+    }
+    for (const a of answers) expect(a).toEqual(answers[0]);
+    expect(answers[0][0]).toBe(404);
+    expect(h.store.get(`customers/${ANA}`).pointsBalance).toBe(100);
+    expect(h.store.get(`customers/${BEN}`).pointsBalance).toBe(100);
+  });
+
+  it("a phone number is no longer accepted as the recipient", async () => {
+    seed(dinerLink);
+    const res = await send({ recipientPhone: BEN, points: 5 });
+    expect(res.status).toBe(404);
+    expect(h.store.get(`customers/${ANA}`).pointsBalance).toBe(100);
+    expect(h.store.get(`customers/${BEN}`).pointsBalance).toBe(100);
+  });
+
+  it("cannot send to your own code, and the code is not used up", async () => {
+    seed(dinerLink);
+    const mine = codeFor(ANA);
+    const res = await send({ recipientCode: mine, points: 5 });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/yourself/);
+    expect(h.store.has(`transferCodes/${mine}`)).toBe(true);
+  });
+
+  it("a failed send (not enough points) leaves the code usable", async () => {
+    seed(dinerLink);
+    h.store.set(`customers/${ANA}`, { name: "Ana", pointsBalance: 3 });
+    const code = codeFor(BEN);
+    expect((await send({ recipientCode: code, points: 5 })).status).toBe(400);
+    expect(h.store.has(`transferCodes/${code}`)).toBe(true);
+  });
+});
+
 describe("transfer-points wallet rules", () => {
   const dinerLink = { ...cashierLink, linkedBy: null, linkedByUid: null, linkedAt: null, linkedByParticipantId: "p1" };
-  const send = (points: number) => transferPOST(req(token("p1"), { recipientPhone: BEN, points }));
+  const send = (points: number) => transferPOST(req(token("p1"), { recipientCode: codeFor(BEN), points }));
 
   it("cannot send points held for a claimed voucher (audit COR-01)", async () => {
     seed(dinerLink);
@@ -385,7 +473,7 @@ describe("a phone removed from the table loses the card (audit SEC-04)", () => {
     expect((await linkPOST(req(t, login(ANA)))).status).toBe(403);
     expect((await unlinkPOST(req(t))).status).toBe(403);
     expect((await redeemPOST(req(t, { rewardId: "r1" }))).status).toBe(403);
-    expect((await transferPOST(req(t, { recipientPhone: BEN, points: 5 }))).status).toBe(403);
+    expect((await transferPOST(req(t, { recipientCode: codeFor(BEN), points: 5 }))).status).toBe(403);
     expect(h.store.get(ACTIVE)).toEqual(dinerLink);
   });
 
@@ -404,7 +492,7 @@ describe("card actions are limited to the participant that linked the card", () 
     seed(cashierLink);
     const t = token("p1");
     expect((await redeemPOST(req(t, { rewardId: "r1" }))).status).toBe(403);
-    expect((await transferPOST(req(t, { recipientPhone: BEN, points: 5 }))).status).toBe(403);
+    expect((await transferPOST(req(t, { recipientCode: codeFor(BEN), points: 5 }))).status).toBe(403);
     expect((await profilePOST(req(t, { currentPassword: "secret1", name: "Hacked" }))).status).toBe(403);
     expect((await collectPOST(req(t, { voucherId: "v1" }))).status).toBe(403);
     const rewards = await rewardsGET(new Request("http://x", { headers: { authorization: `Bearer ${t}` } }));
@@ -418,7 +506,7 @@ describe("card actions are limited to the participant that linked the card", () 
     seed(dinerLink);
     const t = token("p2");
     expect((await redeemPOST(req(t, { rewardId: "r1" }))).status).toBe(403);
-    expect((await transferPOST(req(t, { recipientPhone: BEN, points: 5 }))).status).toBe(403);
+    expect((await transferPOST(req(t, { recipientCode: codeFor(BEN), points: 5 }))).status).toBe(403);
     expect((await profilePOST(req(t, { currentPassword: "secret1", name: "Hacked" }))).status).toBe(403);
     expect(h.store.get(`customers/${ANA}`).pointsBalance).toBe(100);
   });
@@ -426,7 +514,7 @@ describe("card actions are limited to the participant that linked the card", () 
   it("diner link: the linking participant can still transfer", async () => {
     seed(dinerLink);
     // transfer-points queries the points ledger; stub the collection read.
-    const res = await transferPOST(req(token("p1"), { recipientPhone: "bad", points: 5 }));
+    const res = await transferPOST(req(token("p1"), { recipientCode: codeFor(BEN), points: -5 }));
     // Passes the ownership gate (then fails body validation, not 403).
     expect(res.status).toBe(400);
   });
@@ -567,7 +655,7 @@ describe("edge cases", () => {
   it("a cashier link blocks even its own participant id (cashier links have no owner)", async () => {
     seed({ ...cashierLink, linkedByParticipantId: "p1" });
     expect((await redeemPOST(req(token("p1"), { rewardId: "r1" }))).status).toBe(403);
-    expect((await transferPOST(req(token("p1"), { recipientPhone: BEN, points: 5 }))).status).toBe(403);
+    expect((await transferPOST(req(token("p1"), { recipientCode: codeFor(BEN), points: 5 }))).status).toBe(403);
   });
 
   it("legacy diner link with no linkedByParticipantId, or a token with no participantId, is refused", async () => {
@@ -583,7 +671,7 @@ describe("edge cases", () => {
     const t = token("p1");
     expect((await redeemPOST(req(t, { rewardId: "r1" }))).status).toBe(403);
     expect((await collectPOST(req(t, { voucherId: "v1" }))).status).toBe(403);
-    expect((await transferPOST(req(t, { recipientPhone: BEN, points: 5 }))).status).toBe(400);
+    expect((await transferPOST(req(t, { recipientCode: codeFor(BEN), points: 5 }))).status).toBe(400);
     expect((await profilePOST(req(t, { currentPassword: "secret1" }))).status).toBe(404);
   });
 

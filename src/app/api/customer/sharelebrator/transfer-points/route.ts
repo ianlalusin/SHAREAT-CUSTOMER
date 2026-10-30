@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
+import type { DecodedIdToken } from "firebase-admin/auth";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
-import { normalizePhone } from "@/lib/phone";
 import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
 import { maskDisplayName } from "@/lib/server/mask-name";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
-import { resolveTokenCard } from "@/lib/server/session-link";
+import { resolveCardholder } from "@/lib/server/cardholder";
+import { RATE_RULES, checkRateLimits, recordRateLimitFailures, tooManyAttempts } from "@/lib/server/rate-limit";
+import { maskDisplayName } from "@/lib/server/mask-name";
+import { BAD_CODE, normalizeTransferCode, peekTransferCode, transferCodeRef } from "@/lib/server/transfer-code";
 
 export const runtime = "nodejs";
 
@@ -54,34 +57,19 @@ export async function POST(req: Request) {
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
   if (!match) return bad("Missing bearer token.", 401);
 
-  let decoded: any;
+  let decoded: DecodedIdToken;
   try {
     decoded = await getAdminAuth().verifyIdToken(match[1]);
   } catch {
     return bad("Invalid token.", 401);
   }
 
-  // Resolve sender phone from token
+  // Resolve the sender from the token. Only the participant that linked the card
+  // may spend it; a cashier link is earn-only (audit SEC-04).
   const db = getAdminDb();
-  let senderPhone: string | null = null;
-
-  if (decoded.customer === true) {
-    const storeId = String(decoded.storeId || "");
-    const sessionId = String(decoded.sessionId || "");
-    if (!storeId || !sessionId) return bad("Session claims missing.", 403);
-    // Only the participant that linked the card may spend it; a cashier link is
-    // earn-only. resolveTokenCard also refuses a phone removed from the table
-    // or a table closed to customers (audit SEC-04).
-    const card = await resolveTokenCard(db, decoded);
-    if (!card.ok) return bad(card.message, card.reason === "none" ? 400 : 403);
-    senderPhone = card.phone;
-  } else if (decoded.loyaltyCustomer === true) {
-    senderPhone = String(decoded.phone || "");
-  } else {
-    return bad("Unauthorized.", 403);
-  }
-
-  if (!senderPhone) return bad("No loyalty card linked to this session.", 400);
+  const who = await resolveCardholder(db, decoded);
+  if (!who.ok) return bad(who.message, who.status);
+  const senderPhone = who.phone;
 
   // Parse body
   let body: any;
@@ -91,11 +79,21 @@ export async function POST(req: Request) {
     return bad("Invalid JSON body.");
   }
 
-  const recipientPhone = normalizePhone(body.recipientPhone);
   const points = Number(body.points);
-
-  if (!recipientPhone) return bad("Invalid recipient phone number format.");
   if (!Number.isInteger(points) || points <= 0) return bad("Points must be a positive integer.");
+
+  // The recipient is named by a receive code their own app showed the sender,
+  // never by a phone number (audit PRV-01). Every kind of miss is one answer,
+  // and wrong guesses are budgeted per account.
+  const budget: [typeof RATE_RULES.codeGuess, string][] = [[RATE_RULES.codeGuess, String(decoded.uid || "")]];
+  const gate = await checkRateLimits(db, budget);
+  if (!gate.ok) return tooManyAttempts(gate.retryAfterMs);
+  const code = normalizeTransferCode(body.recipientCode);
+  const recipientPhone = code ? await peekTransferCode(db, code) : null;
+  if (!code || !recipientPhone) {
+    await recordRateLimitFailures(db, budget);
+    return bad(BAD_CODE, 404);
+  }
   if (senderPhone === recipientPhone) return bad("Cannot transfer points to yourself.");
 
   // Rate limiting: check daily totals
@@ -129,12 +127,21 @@ export async function POST(req: Request) {
     const sentRef = senderRef.collection("transferDays").doc(day);
     const receivedRef = recipientRef.collection("transferDays").doc(day);
 
+    const codeRef = transferCodeRef(db, code);
+
     const result = await db.runTransaction(async (tx: any) => {
-      const [senderSnap, sentSnap, receivedSnap] = await Promise.all([
+      const [senderSnap, sentSnap, receivedSnap, codeSnap] = await Promise.all([
         tx.get(senderRef),
         tx.get(sentRef),
         tx.get(receivedRef),
+        tx.get(codeRef),
       ]);
+      // A code works once. Re-checked here, inside the transaction, so two sends
+      // racing on one code cannot both win.
+      const codeData = codeSnap.exists ? (codeSnap.data() as { phone?: string; expiresAtMs?: number }) : null;
+      if (!codeData || codeData.phone !== recipientPhone || !(Number(codeData.expiresAtMs) > Date.now())) {
+        throw new Error(BAD_CODE);
+      }
       const sentSoFar = sentSnap.exists ? Number(sentSnap.data()?.sent || 0) : sentToday;
       const receivedSoFar = receivedSnap.exists ? Number(receivedSnap.data()?.received || 0) : receivedToday;
       if (sentSoFar + points > MAX_SEND_PER_DAY) {
@@ -170,6 +177,9 @@ export async function POST(req: Request) {
 
       tx.set(sentRef, { sent: sentSoFar + points, day, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
       tx.set(receivedRef, { received: receivedSoFar + points, day, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+
+      // Use the code up.
+      tx.delete(codeRef);
 
       // Debit sender
       tx.update(senderRef, {
@@ -231,6 +241,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, recipientName: maskDisplayName(result.recipientName), points });
   } catch (err: any) {
     const msg = err.message || "Transfer failed.";
-    return bad(msg, msg.includes("Insufficient") || msg.includes("not found") || msg.includes("limit") ? 400 : 500);
+    return bad(msg, msg === BAD_CODE || msg.includes("Insufficient") || msg.includes("not found") || msg.includes("limit") ? 400 : 500);
   }
 }
