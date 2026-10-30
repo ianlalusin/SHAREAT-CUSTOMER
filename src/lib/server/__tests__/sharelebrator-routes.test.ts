@@ -520,6 +520,35 @@ describe("card actions are limited to the participant that linked the card", () 
   });
 });
 
+describe("in-session signup: the already-exists answer is budgeted (audit PRV-01)", () => {
+  const signup = (phone: string) => ({
+    mode: "signup", phone, password: "secret1", name: "Cara", bday: "1995-04-02", acceptPrivacy: true,
+  });
+
+  it("answers 409 for a taken number ten times, then 429 for everything, taken or not", async () => {
+    h.store.set(ACTIVE, {});
+    h.store.set(SESSION, {});
+    const t = token("p1");
+    for (let i = 0; i < 10; i++) expect((await linkPOST(req(t, signup(ANA)))).status).toBe(409);
+    expect((await linkPOST(req(t, signup(ANA)))).status).toBe(429);
+    expect((await linkPOST(req(t, signup("+639170000077")))).status).toBe(429);
+    expect(h.store.has("customers/+639170000077")).toBe(false);
+  });
+
+  it("new numbers never use the budget up", async () => {
+    h.store.set(ACTIVE, {});
+    h.store.set(SESSION, {});
+    const t = token("p1");
+    for (let i = 0; i < 12; i++) {
+      // Each new card links itself to the table, so every try gets a fresh table.
+      h.store.set(ACTIVE, {});
+      h.store.set(SESSION, {});
+      const res = await linkPOST(req(t, signup("+63917000" + String(1000 + i))));
+      expect(res.status).toBe(200);
+    }
+  });
+});
+
 describe("private profile fields are separate from the card read (audit PRV-02)", () => {
   const dinerLink = { ...cashierLink, linkedBy: null, linkedByUid: null, linkedAt: null, linkedByParticipantId: "p1" };
   const me = (t: string, qs = "") =>

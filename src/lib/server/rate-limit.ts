@@ -47,6 +47,13 @@ export const RATE_RULES = {
   lookupCaller: { bucket: "lookup-caller", limit: 20, windowMs: 60 * MIN },
   /** WRONG receive codes per signed-in account. Failures only: a right code costs nothing. */
   codeGuess: { bucket: "code-guess", limit: 10, windowMs: 15 * MIN },
+  /**
+   * Signups answered "this phone already has a card", per caller IP. That answer
+   * is true and a signup must give it, so it is budgeted instead: failures only,
+   * a new number costs nothing (audit PRV-01). Above what a table of diners who
+   * forgot they had a card would use on the shared store WiFi.
+   */
+  signupTaken: { bucket: "signup-taken", limit: 10, windowMs: 60 * MIN },
   /** Receive codes a card may ask for per hour. */
   receiveCode: { bucket: "receive-code", limit: 10, windowMs: 60 * MIN },
 } satisfies Record<string, RateRule>;
