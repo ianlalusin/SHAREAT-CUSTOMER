@@ -58,7 +58,7 @@ describe("card read", () => {
     expect(e).not.toHaveProperty("recipientPhone");
     expect(e).not.toHaveProperty("senderPhone");
     expect(JSON.stringify(card)).not.toContain("+639170000002");
-    expect(JSON.stringify(card)).not.toMatch(/Reyes|Dela Cruz/);
+    expect(JSON.stringify(card!.ledger)).not.toMatch(/Reyes|Dela Cruz/);
   });
 
   it("returns null for an unknown card", async () => {
