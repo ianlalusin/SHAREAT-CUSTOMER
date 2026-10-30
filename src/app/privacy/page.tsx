@@ -92,8 +92,10 @@ export default function PrivacyPage() {
 
       <Section title="Your rights">
         <p>
-          You can ask to see the information we hold about you, correct it, or have your card and personal details
-          deleted. You can also withdraw your consent at any time — this closes your card. Email us at{" "}
+          You can download everything we hold about you, correct it, or delete your card and personal details
+          yourself: open your card and tap <b>My data &amp; privacy</b> (you will need your password). Deleting
+          also withdraws your consent and closes your card. Points left on it are forfeited. You can also ask us
+          by email instead. Email us at{" "}
           <a className="font-semibold text-primary underline" href={`mailto:${PRIVACY_CONTACT_EMAIL}`}>
             {PRIVACY_CONTACT_EMAIL}
           </a>{" "}

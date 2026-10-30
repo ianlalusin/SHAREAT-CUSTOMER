@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Sparkles, LogOut, Loader2, ArrowLeft, Settings, RefreshCw, Star, QrCode } from "lucide-react";
 import { format } from "date-fns";
 import { SharelebratorProfileEditDialog } from "@/components/customer/SharelebratorProfileEditDialog";
+import { SharelebratorPrivacyDialog } from "@/components/customer/SharelebratorPrivacyDialog";
 
 type MeResponse = {
   ok: boolean;
@@ -49,6 +50,7 @@ export default function SharelebratorCardPage() {
   const [data, setData] = useState<MeResponse | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
   const [flipped, setFlipped] = useState(false);
 
   const fetchMe = useCallback(async () => {
@@ -399,10 +401,26 @@ export default function SharelebratorCardPage() {
             />
           </>
         )}
+        {data?.linked && data.customer && (
+          <SharelebratorPrivacyDialog
+            open={privacyOpen}
+            onOpenChange={setPrivacyOpen}
+            pointsBalance={data.customer.pointsBalance}
+            onDeleted={handleSignOut}
+          />
+        )}
         <p className="pb-6 pt-2 text-center text-xs text-muted-foreground">
           <a href="/privacy" className="underline">
             Privacy Notice
           </a>
+          {data?.linked && data.customer && (
+            <>
+              {" · "}
+              <button type="button" className="underline" onClick={() => setPrivacyOpen(true)}>
+                My data &amp; privacy
+              </button>
+            </>
+          )}
         </p>
       </div>
     </main>

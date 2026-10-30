@@ -146,6 +146,27 @@ async function deleteCard(db: Firestore, phone: string, nowMs: number, years: nu
   const data = snap.data() as Record<string, any>;
   const decision = retentionDecision(data, nowMs, years);
   if (decision.action !== "delete") return null;
+  return eraseCard(db, phone, nowMs, {
+    reason: `no activity for ${years} years`,
+    lastActivityDate: isoDay(decision.lastActivityMs),
+  });
+}
+
+/**
+ * Erase one card and the person from everything that points at it: the steps
+ * in the header comment, in that order. It does NOT decide whether the card
+ * may go. Two callers do that first: the two-year job (inactivity) and the
+ * cardholder's own delete (password + typed confirmation).
+ */
+export async function eraseCard(
+  db: Firestore,
+  phone: string,
+  nowMs: number,
+  why: { reason: string; lastActivityDate?: string }
+): Promise<{ points: number }> {
+  const ref = db.doc(`customers/${phone}`);
+  const snap = await ref.get();
+  const data = (snap.exists ? snap.data() : {}) as Record<string, any>;
   const points = Math.max(0, Number(data.pointsBalance || 0));
 
   // 1. Logs about this person, and the daily projection days they appear on.
@@ -186,9 +207,9 @@ async function deleteCard(db: Firestore, phone: string, nowMs: number, years: nu
   );
   stats.set(tombstone, {
     deletedAtMs: nowMs,
-    lastActivityDate: isoDay(decision.lastActivityMs),
+    ...(why.lastActivityDate ? { lastActivityDate: why.lastActivityDate } : {}),
     pointsForfeited: points,
-    reason: `no activity for ${years} years`,
+    reason: why.reason,
   });
   await stats.commit();
 

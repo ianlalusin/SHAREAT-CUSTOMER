@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { runRetention } from "../retention-job";
+import { eraseCard, runRetention } from "../retention-job";
 
 /**
  * The deletion job against an in-memory Firestore. Enough of the API to run
@@ -170,5 +170,39 @@ describe("runRetention", () => {
     const r = await runRetention(fakeDb(), { nowMs: Date.UTC(2026, 9, 29), dryRun: false });
     expect(r.deleted).toBe(0);
     expect(store.has(`customers/${GONE}`)).toBe(true);
+  });
+});
+
+describe("eraseCard (a cardholder deleting their own card)", () => {
+  it("erases a card that is NOT old, the same way the two-year job does, and nothing else", async () => {
+    store.set("loyaltyLogs/c", { phone: ACTIVE, customerName: "Ben", points: 10, createdAt: ts(RECENT) });
+    store.set("loyaltyLogsDaily/20280110_meta", { partCount: 1 });
+    store.set("loyaltyLogsDaily/20280110_0", { entries: [{ phone: ACTIVE, customerName: "Ben", points: 10 }, { phone: GONE, customerName: "Ana", points: 1 }] });
+    store.set("loyaltyRedemptions/v2", { phone: ACTIVE, code: "XYZ", status: "used" });
+    store.set(`customers/${ACTIVE}/secrets/auth`, { passwordHash: "h" });
+    store.set(`customers/${ACTIVE}/pointsLedger/l9`, { type: "earn", points: 10 });
+
+    const r = await eraseCard(fakeDb(), ACTIVE, NOW, { reason: "deleted by the cardholder" });
+    expect(r).toEqual({ points: 10 });
+
+    // The card, its password record and its history are gone.
+    expect([...store.keys()].filter((p) => p.startsWith(`customers/${ACTIVE}`))).toEqual([]);
+    // Logs and vouchers keep the record but not the person.
+    expect(store.get("loyaltyLogs/c")).toMatchObject({ phone: null, customerName: "", points: 10, redacted: true });
+    expect(store.get("loyaltyLogsDaily/20280110_0").entries).toEqual([
+      { phone: null, customerName: "", points: 10, redacted: true },
+      { phone: GONE, customerName: "Ana", points: 1 },
+    ]);
+    expect(store.get("loyaltyRedemptions/v2")).toMatchObject({ phone: null, code: "XYZ" });
+    // Stats: one account fewer, its points no longer outstanding.
+    expect(store.get("loyaltyStats/global")).toMatchObject({ totalAccounts: 2, totalPointsOutstanding: 130 });
+    // Proof of deletion holds no personal data and says who asked.
+    const tomb = [...store.entries()].find(([p]) => p.startsWith("retentionDeletions/"))!;
+    expect(tomb[0]).not.toContain(ACTIVE);
+    expect(JSON.stringify(tomb[1])).not.toMatch(/Ben|[+]63917/);
+    expect(tomb[1]).toMatchObject({ pointsForfeited: 10, reason: "deleted by the cardholder" });
+    // Other people are untouched.
+    expect(store.has(`customers/${GONE}`)).toBe(true);
+    expect(store.get("loyaltyLogs/a")).toMatchObject({ phone: GONE, customerName: "Ana" });
   });
 });
