@@ -6,7 +6,6 @@ import { maskDisplayName } from "@/lib/server/mask-name";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { resolveCardholder } from "@/lib/server/cardholder";
 import { RATE_RULES, checkRateLimits, recordRateLimitFailures, tooManyAttempts } from "@/lib/server/rate-limit";
-import { maskDisplayName } from "@/lib/server/mask-name";
 import { BAD_CODE, normalizeTransferCode, peekTransferCode, transferCodeRef } from "@/lib/server/transfer-code";
 
 export const runtime = "nodejs";
