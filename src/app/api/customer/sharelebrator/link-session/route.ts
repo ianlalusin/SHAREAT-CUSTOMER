@@ -196,8 +196,16 @@ export async function POST(req: Request) {
     const gate = await consumeRateLimits(db, [[RATE_RULES.signupIp, clientIp(req)]]);
     if (!gate.ok) return tooManyAttempts(gate.retryAfterMs);
 
+    // Same "already exists" budget as the standalone signup (audit PRV-01).
+    const taken: RateHit[] = [[RATE_RULES.signupTaken, clientIp(req)]];
+    const takenGate = await checkRateLimits(db, taken);
+    if (!takenGate.ok) return tooManyAttempts(takenGate.retryAfterMs);
+
     const existing = await customerRef.get();
-    if (existing.exists) return bad(SIGNUP_EXISTS, 409);
+    if (existing.exists) {
+      await recordRateLimitFailures(db, taken);
+      return bad(SIGNUP_EXISTS, 409);
+    }
 
     const passwordHash = await bcrypt.hash(password, 10);
     // Create-only: a concurrent signup for this phone that won the race while
@@ -210,7 +218,10 @@ export async function POST(req: Request) {
       email: email ?? null,
       bday,
     });
-    if (!created) return bad(SIGNUP_EXISTS, 409);
+    if (!created) {
+      await recordRateLimitFailures(db, taken);
+      return bad(SIGNUP_EXISTS, 409);
+    }
     // Audit log (individual + daily projection)
     await writeLoyaltyLog({
       type: "account_created",

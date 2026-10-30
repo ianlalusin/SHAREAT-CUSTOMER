@@ -3,7 +3,15 @@ import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { normalizePhone } from "@/lib/phone";
 import bcrypt from "bcryptjs";
 import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
-import { RATE_RULES, clientIp, consumeRateLimits, tooManyAttempts } from "@/lib/server/rate-limit";
+import {
+  RATE_RULES,
+  checkRateLimits,
+  clientIp,
+  consumeRateLimits,
+  recordRateLimitFailures,
+  tooManyAttempts,
+  type RateHit,
+} from "@/lib/server/rate-limit";
 import { birthdayError } from "@/lib/server/signup-fields";
 import { createCustomerAccount } from "@/lib/server/create-customer";
 
@@ -52,9 +60,19 @@ export async function POST(req: Request) {
   const gate = await consumeRateLimits(db, [[RATE_RULES.signupIp, clientIp(req)]]);
   if (!gate.ok) return tooManyAttempts(gate.retryAfterMs);
 
+  // "Already exists" tells the caller a phone has a card, so each such answer
+  // costs this address a try; once they are gone, nothing is answered at all
+  // (audit PRV-01). Checked before any phone is looked at.
+  const taken: RateHit[] = [[RATE_RULES.signupTaken, clientIp(req)]];
+  const takenGate = await checkRateLimits(db, taken);
+  if (!takenGate.ok) return tooManyAttempts(takenGate.retryAfterMs);
+
   const ref = db.doc(`customers/${phone}`);
   const existing = await ref.get();
-  if (existing.exists) return bad(ALREADY_EXISTS, 409);
+  if (existing.exists) {
+    await recordRateLimitFailures(db, taken);
+    return bad(ALREADY_EXISTS, 409);
+  }
 
   const passwordHash = await bcrypt.hash(password, 10);
 
@@ -68,7 +86,10 @@ export async function POST(req: Request) {
     email: email ?? null,
     bday,
   });
-  if (!created) return bad(ALREADY_EXISTS, 409);
+  if (!created) {
+    await recordRateLimitFailures(db, taken);
+    return bad(ALREADY_EXISTS, 409);
+  }
 
   // Audit log (individual + daily projection)
   await writeLoyaltyLog({
