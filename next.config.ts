@@ -5,10 +5,10 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
-  // ESLint has no config in this repo yet, so a lint pass would mean nothing;
-  // `npm run typecheck` and the vitest suite are the gates until it does.
+  // A lint error now fails the build too (audit BLD-02). Rules live in
+  // eslint.config.mjs; warnings are capped by `npm run lint`, not here.
   eslint: {
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: false,
   },
   images: {
     remotePatterns: [

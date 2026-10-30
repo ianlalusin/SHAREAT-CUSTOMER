@@ -6,7 +6,7 @@ import { Loader2, BarChart3 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { useRate, storeLabel, type DayStat, type MetricCounts } from "@/lib/games/stats";
+import { conversionRate, storeLabel, type DayStat, type MetricCounts } from "@/lib/games/stats";
 import { GamePlayChart, colorFor } from "./GamePlayChart";
 import type { GameMetric, GameMetricDefinitions } from "@/lib/games/metrics";
 
@@ -154,7 +154,7 @@ export function GamePlayStats() {
                 </p>
               </div>
               <div>
-                <p className="text-3xl font-black tabular-nums leading-none">{useRate(data.grandTotal)}%</p>
+                <p className="text-3xl font-black tabular-nums leading-none">{conversionRate(data.grandTotal)}%</p>
                 {/* Views say people found it. This says they did the thing it
                     exists for, which is the only one worth acting on. */}
                 <p className="text-xs text-muted-foreground">went on to use it</p>
@@ -165,7 +165,7 @@ export function GamePlayStats() {
                   <span className="text-sm">
                     <span className="font-bold tabular-nums">{data.totals[g.id]?.[metric] ?? 0}</span>{" "}
                     <span className="text-muted-foreground">
-                      {g.title} · {useRate(data.totals[g.id] || NO_COUNTS)}%
+                      {g.title} · {conversionRate(data.totals[g.id] || NO_COUNTS)}%
                     </span>
                   </span>
                 </div>

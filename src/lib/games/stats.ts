@@ -187,7 +187,7 @@ export function peakDay(series: DayStat[], metric: GameMetric = "view"): number 
  * This is the number that actually answers "is this game working": views say
  * people found it, this says they did the thing it exists for.
  */
-export function useRate(counts: MetricCounts): number {
+export function conversionRate(counts: MetricCounts): number {
   return counts.view > 0 ? Math.round((counts.use / counts.view) * 100) : 0;
 }
 
