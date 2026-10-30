@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAdminAuth, getAdminDb } from "@/lib/firebase/admin";
 import { normalizePhone } from "@/lib/phone";
 import { writeLoyaltyLog } from "@/lib/server/loyaltyLog";
+import { maskDisplayName } from "@/lib/server/mask-name";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { resolveTokenCard } from "@/lib/server/session-link";
 
@@ -227,7 +228,7 @@ export async function POST(req: Request) {
       });
     } catch {}
 
-    return NextResponse.json({ ok: true, recipientName: result.recipientName, points });
+    return NextResponse.json({ ok: true, recipientName: maskDisplayName(result.recipientName), points });
   } catch (err: any) {
     const msg = err.message || "Transfer failed.";
     return bad(msg, msg.includes("Insufficient") || msg.includes("not found") || msg.includes("limit") ? 400 : 500);
