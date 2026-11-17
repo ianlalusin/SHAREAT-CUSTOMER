@@ -30,7 +30,11 @@ describe("which ghost carries a Halloween prize", () => {
     }
   });
 
-  it("still cycles Christmas characters, which hold no particular food", () => {
-    expect(prizeCharacter(PACKS.christmas, "noodles", 1).name).toBe("Rudolf");
+  it("gives Christmas prizes a carrier holding that food, and Santa's gift for the rest", () => {
+    const x = (id: string, i = 0) => prizeCharacter(PACKS.christmas, id, i).name;
+    expect(x("1-serving-ramyeon", 1)).toBe("Elfie");
+    expect(x("1-5l-coke")).toBe("Santa");
+    expect(x("enoki")).toBe("Rudolf");
+    expect(prizeCharacter(PACKS.christmas, "mystery", 3).id).toBe("gift");
   });
 });

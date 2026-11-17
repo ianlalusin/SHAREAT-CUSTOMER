@@ -8,7 +8,6 @@ import {
   ChevronRight,
   Copy,
   Download,
-  Ghost,
   Gift,
   Loader2,
   Share2,
@@ -112,7 +111,7 @@ export function GhostHuntGame() {
   const [photos, setPhotos] = useState<SavedPhoto[]>([]);
   const [viewing, setViewing] = useState<SavedPhoto | null>(null);
 
-  const pack = packFor(status?.theme || "halloween");
+  const pack = packFor(status?.theme || "christmas");
   const tableHasWon = !!status?.ticket || wonThisVisit;
 
   const refreshPhotos = useCallback(() => {
@@ -291,7 +290,7 @@ function Intro({
         <p className="text-xs font-bold uppercase tracking-widest text-violet-200">{pack.label} hunt · until {endDate}</p>
         <h2 className="mt-2 max-w-[70%] text-3xl font-black leading-tight">Spot a {pack.noun}, win a treat</h2>
         <p className="mt-2 max-w-[75%] text-sm text-white/80">
-          {pack.noun === "ghost" ? "Ghosts" : "Visitors"} are hiding around the restaurant. Some say hi, some fly
+          {pack.crowd} are hiding around the restaurant. Some say hi, some fly
           past, and a few carry a prize.
         </p>
 
@@ -335,7 +334,7 @@ function Intro({
         <p className="mt-4 text-xs text-muted-foreground">
           {/* No "while prizes last": Philippine sales-promo rules (RA 7394) bar "until supply lasts"
               wording, so the limit is stated as a fixed number per day instead. */}
-          {pack.noun === "ghost" ? "Ghosts" : "They"} come out {status.hours}. One prize per table per visit. Each
+          {pack.crowd} come out {status.hours}. One prize per table per visit. Each
           branch has a limited number of prizes per day. Prizes are valid on the day they are won.
         </p>
       </div>
@@ -642,7 +641,7 @@ function Hunt({
       const unit = Math.round(vh * 0.13);
       const pad = unit * 0.35;
       const maxW = vw - pad * 2;
-      const headline = prizeLine || (s ? `I spotted ${s.character.name} at SharEat!` : "Ghost hunting at SharEat!");
+      const headline = prizeLine || (s ? `I spotted ${s.character.name} at SharEat!` : `${pack.label} hunting at SharEat!`);
       const measure = (text: string, px: number) => {
         ctx.font = `900 ${px}px Arial, sans-serif`;
         return ctx.measureText(text).width;
@@ -666,7 +665,7 @@ function Hunt({
 
       return new Promise((resolve) => c.toBlob((b) => resolve(b), "image/jpeg", 0.9));
     },
-    [status.hashtag, status.tagHandle]
+    [status.hashtag, status.tagHandle, pack.label]
   );
 
   const snap = useCallback(
@@ -830,8 +829,8 @@ function Hunt({
 
 function photoCaption(pack: Pack, name: string, prizeName: string | null, hashtag: string, tagHandle: string) {
   return prizeName
-    ? `I caught ${name || `a ${pack.noun}`} at SharEat and won ${prizeName}! 👻 ${hashtag} ${tagHandle}`
-    : `${pack.noun === "ghost" ? "Ghost" : "Holiday"} hunting at SharEat! 👻 ${hashtag} ${tagHandle}`;
+    ? `I caught ${name || `a ${pack.noun}`} at SharEat and won ${prizeName}! ${pack.emoji} ${hashtag} ${tagHandle}`
+    : `${pack.label} hunting at SharEat! ${pack.emoji} ${hashtag} ${tagHandle}`;
 }
 
 /**
@@ -879,7 +878,7 @@ function PhotoSheet({
           <p className="text-xs font-semibold">Post this photo, tag {tagHandle}, then show the cashier.</p>
         </div>
       )}
-      <img src={url} alt="Your ghost photo" className="min-h-0 flex-1 rounded-2xl object-contain" />
+      <img src={url} alt="Your hunt photo" className="min-h-0 flex-1 rounded-2xl object-contain" />
       <p className="mt-3 rounded-xl bg-white/10 px-3 py-2 text-xs text-white/80">{photo.caption}</p>
       {shareFailed && (
         <p className="mt-2 text-xs font-semibold text-amber-300">
@@ -910,7 +909,7 @@ function PhotoSheet({
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
         <Button variant="ghost" onClick={onClose} className="h-11 rounded-2xl text-white hover:bg-white/10">
-          <Ghost className="mr-2 h-4 w-4" /> {closeLabel}
+          <Camera className="mr-2 h-4 w-4" /> {closeLabel}
         </Button>
         {photo.catchId && onShowTicket && (
           <Button onClick={onShowTicket} className="h-11 rounded-2xl bg-amber-400 font-black text-zinc-900 hover:bg-amber-300">

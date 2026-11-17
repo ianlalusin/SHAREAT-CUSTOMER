@@ -204,17 +204,17 @@ export type HuntStatus =
 export function huntStatus(cfg: GhostHuntConfig, storeId: string | null, nowMs: number): HuntStatus {
   const { settings } = cfg;
   if (!cfg.configured || cfg.scope?.isActive === false) {
-    return { live: false, message: "The ghost hunt is not running right now.", settings };
+    return { live: false, message: "The hunt is not running right now.", settings };
   }
   if (!storeId) {
     return summaryLive(cfg.scope, nowMs)
       ? { live: true, settings }
-      : { live: false, message: "The ghost hunt is not running right now.", settings };
+      : { live: false, message: "The hunt is not running right now.", settings };
   }
   // The branch's own switch, and the manager's per-branch off switch (Manager → Games).
   const managerOff = Array.isArray(cfg.scope?.disabledStoreIds) && cfg.scope!.disabledStoreIds.includes(storeId);
   if (!cfg.branchEnabled || managerOff) {
-    return { live: false, message: "The ghost hunt is not running at this branch.", settings };
+    return { live: false, message: "The hunt is not running at this branch.", settings };
   }
   const ev = eventState(settings, nowMs);
   return ev.live ? { live: true, settings } : { live: false, message: ev.message, settings };

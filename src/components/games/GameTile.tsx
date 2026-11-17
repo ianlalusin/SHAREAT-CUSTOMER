@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Flame, Gamepad2, Ghost, Utensils, type LucideIcon } from "lucide-react";
+import { Flame, Gamepad2, Ghost, Gift, Utensils, type LucideIcon } from "lucide-react";
 import { ChevronRight } from "lucide-react";
 
 /**
@@ -9,7 +9,7 @@ import { ChevronRight } from "lucide-react";
  * and the tile resolves it. An unknown name falls back rather than crashing the
  * hub — a game added to the registry ahead of an icon should still render.
  */
-const ICONS: Record<string, LucideIcon> = { Flame, Gamepad2, Ghost, Utensils };
+const ICONS: Record<string, LucideIcon> = { Flame, Gamepad2, Ghost, Gift, Utensils };
 
 export type GameTileData = {
   id: string;
@@ -31,6 +31,7 @@ const ACCENTS: Record<string, string> = {
   ocean: "bg-gradient-to-br from-sky-500 to-blue-600",
   ember: "bg-gradient-to-br from-red-500 to-amber-600",
   night: "bg-gradient-to-br from-violet-600 to-zinc-900",
+  holly: "bg-gradient-to-br from-red-600 to-emerald-700",
 };
 
 export function GameTile({ game }: { game: GameTileData }) {

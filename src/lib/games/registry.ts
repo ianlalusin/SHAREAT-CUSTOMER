@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Flame, Ghost, Utensils } from "lucide-react";
+import { Flame, Gift, Utensils } from "lucide-react";
 import type { GameMetricDefinitions } from "@/lib/games/metrics";
 
 /**
@@ -14,7 +14,7 @@ import type { GameMetricDefinitions } from "@/lib/games/metrics";
  * A game listed here is NOT live until its config doc exists and says so. There
  * is no "default on".
  */
-export type GameAccent = "flame" | "berry" | "ocean" | "ember" | "night";
+export type GameAccent = "flame" | "berry" | "ocean" | "ember" | "night" | "holly";
 
 export type GameDefinition = {
   /** Stable. Doubles as the `miniGames/{id}` key — never rename a shipped id. */
@@ -83,12 +83,12 @@ export const GAMES: GameDefinition[] = [
   },
   {
     id: "ghost-hunt",
-    // Seasonal. The same game reruns for other occasions by switching the
-    // event's `theme` in /admin/games/ghost-hunt — the title stays generic.
-    title: "Spot a Ghost",
-    tagline: "Point your camera around. Catch the right ghost, win a treat.",
-    icon: Ghost,
-    accent: "night",
+    // Seasonal. The same game reruns each occasion by switching the branch's
+    // `theme` in /admin/games/ghost-hunt; rename it here when the season changes.
+    title: "Catch the Christmas & Share",
+    tagline: "Point your camera around. Catch Santa and friends, share the photo, win a treat.",
+    icon: Gift,
+    accent: "holly",
     href: "/play/ghost-hunt",
     // The server decides who wins and checks the table; a prize needs a seat.
     requiresSession: true,

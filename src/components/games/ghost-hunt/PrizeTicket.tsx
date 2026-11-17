@@ -145,7 +145,7 @@ export function PrizeTicket({
             <p className="font-black">For the cashier</p>
             {ticket.locked ? (
               <p className="mt-2 flex items-center gap-2 text-sm text-amber-700">
-                <Lock className="h-4 w-4" /> Locked after too many wrong PINs. The manager can release it from Manager → Ghost Hunt.
+                <Lock className="h-4 w-4" /> Locked after too many wrong PINs. The manager can release it from Manager → Christmas Hunt.
               </p>
             ) : (
               <>
