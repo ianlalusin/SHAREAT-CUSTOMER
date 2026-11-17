@@ -236,9 +236,9 @@ export function rollSpawn(args: {
   return { kind: rand() < settings.helloShare ? "hello" : "flyby" };
 }
 
-/** Halloween 2026 defaults: Oct 30 to the end of Nov 15, Manila. */
+/** Defaults for a branch with no settings yet. Theme follows the season; dates are still Halloween 2026's, so admins set their own. */
 export const DEFAULT_SETTINGS: GhostHuntSettings = {
-  theme: "halloween",
+  theme: "christmas",
   startsAtMs: manilaMidnightMs(2026, 10, 30),
   endsAtMs: manilaMidnightMs(2026, 11, 16) - 1,
   windows: [
@@ -254,7 +254,7 @@ export const DEFAULT_SETTINGS: GhostHuntSettings = {
   appearChance: 0.45,
   prizeShare: 0.12,
   helloShare: 0.55,
-  hashtag: "#SharEatGhostHunt",
+  hashtag: "#SharEatChristmas",
   tagHandle: "@shareat",
 };
 

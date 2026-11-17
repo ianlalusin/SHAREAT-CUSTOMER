@@ -135,7 +135,7 @@ export default function AdminGhostHuntPage() {
 
         <Card className="rounded-[2rem] border-none bg-white shadow-xl">
           <CardHeader>
-            <CardTitle className="text-xl font-black">Spot a Ghost — branches</CardTitle>
+            <CardTitle className="text-xl font-black">Catch the Christmas & Share — branches</CardTitle>
             <p className="text-sm text-muted-foreground">
               Every branch has its own settings. Tap a branch to change it. A branch turns itself off after its end
               date, even if it is switched on.
@@ -241,7 +241,7 @@ export default function AdminGhostHuntPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>Hours ghosts come out (every day)</Label>
+                <Label>Hours characters come out (every day)</Label>
                 <HoursEditor value={s.windows} onChange={(windows) => set({ windows })} defaultPrizeShare={s.prizeShare} />
               </div>
 
@@ -367,7 +367,7 @@ function HoursEditor({
       <Button variant="outline" size="sm" className="rounded-xl" onClick={() => onChange([...value, { start: "17:00", end: "21:00" }])}>
         <Plus className="mr-1 h-4 w-4" /> Add hours
       </Button>
-      {value.length === 0 && <p className="text-xs text-amber-700">No hours set: ghosts appear all day.</p>}
+      {value.length === 0 && <p className="text-xs text-amber-700">No hours set: characters appear all day.</p>}
       <p className="text-xs text-muted-foreground">
         Blank share = prizes spread evenly by the clock. Blank prize ghost % = the branch&apos;s prize ghost % below.
       </p>

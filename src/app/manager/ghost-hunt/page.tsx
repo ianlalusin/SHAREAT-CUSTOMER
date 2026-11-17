@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getAuth } from "firebase/auth";
-import { CheckCircle2, Ghost, KeyRound, Loader2, Lock, RefreshCw } from "lucide-react";
+import { CheckCircle2, Gift, KeyRound, Loader2, Lock, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,7 +27,7 @@ const time = (ms: number) =>
   new Date(ms).toLocaleTimeString("en-PH", { timeZone: "Asia/Manila", hour: "numeric", minute: "2-digit" });
 
 /**
- * Ghost Hunt at one branch: set the cashier PIN, see today's winners.
+ * The seasonal hunt at one branch: set the cashier PIN, see today's winners.
  *
  * The cashier types the PIN on the diner's phone when handing a prize over, so
  * pick one the cashiers know and diners don't — and change it if it leaks.
@@ -105,7 +105,7 @@ export default function ManagerGhostHuntPage() {
 
   return (
     <main className="mx-auto min-h-screen max-w-[560px] space-y-6 p-6">
-      <ManagerHeader title="Ghost Hunt" subtitle={`Prizes and cashier PIN for ${storeName}`} icon={<Ghost className="h-6 w-6" />} />
+      <ManagerHeader title="Christmas Hunt" subtitle={`Prizes and cashier PIN for ${storeName}`} icon={<Gift className="h-6 w-6" />} />
 
       {data === null ? (
         <div className="flex justify-center py-14">

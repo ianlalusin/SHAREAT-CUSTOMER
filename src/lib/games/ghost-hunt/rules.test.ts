@@ -229,6 +229,6 @@ describe("normalizeSettings", () => {
   });
 
   it("rejects an unknown theme", () => {
-    expect(normalizeSettings({ theme: "easter" }).theme).toBe("halloween");
+    expect(normalizeSettings({ theme: "easter" }).theme).toBe("christmas");
   });
 });

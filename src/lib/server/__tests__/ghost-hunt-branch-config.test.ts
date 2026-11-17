@@ -87,7 +87,7 @@ describe("the first per-branch save", () => {
     await writeBranchConfig(db, "lipa", false, DEFAULT_SETTINGS, "admin");
     expect(store.get("miniGames/ghost-hunt").applicableStoreIds).toEqual(["malvar"]);
     const cfg = await readGhostHuntConfig(db, "lipa");
-    expect(huntStatus(cfg, "lipa", NOW)).toMatchObject({ live: false, message: "The ghost hunt is not running at this branch." });
+    expect(huntStatus(cfg, "lipa", NOW)).toMatchObject({ live: false, message: "The hunt is not running at this branch." });
     expect(huntStatus(await readGhostHuntConfig(db, "malvar"), "malvar", NOW).live).toBe(true);
   });
 
