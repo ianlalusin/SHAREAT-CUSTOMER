@@ -121,8 +121,8 @@ export function GamePlayStats() {
           <>
             {/* ---- headline: both numbers at once, whatever the chart shows ---- */}
             <div className="grid grid-cols-3 gap-2">
-              <Stat value={data.grandTotal.view} label={`views in ${data.days} days`} />
-              <Stat value={data.grandTotal.use} label={`uses in ${data.days} days`} />
+              <Stat value={data.grandTotal.view.toLocaleString()} label={`views in ${data.days} days`} />
+              <Stat value={data.grandTotal.use.toLocaleString()} label={`uses in ${data.days} days`} />
               {/* Views say people found it. This says they did the thing it
                   exists for, which is the only one worth acting on. */}
               <Stat value={`${conversionRate(data.grandTotal)}%`} label="of viewers used it" />
@@ -194,35 +194,39 @@ export function GamePlayStats() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-muted-foreground">
-                        <th className="pb-1.5 text-left text-[11px] font-bold">
+                        <th className="pb-1.5 text-left align-top text-[11px] font-bold">
                           {metric === "view" ? "Views" : "Uses"}
                         </th>
                         {data.games.map((g, i) => (
-                          <th key={g.id} className="pb-1.5 pl-3 text-right" title={g.title}>
-                            <span className="sr-only">{g.title}</span>
+                          <th key={g.id} className="pb-1.5 pl-2 text-right align-top">
                             <span
                               aria-hidden
                               className="ml-auto block h-2.5 w-2.5 rounded-full"
                               style={{ backgroundColor: colorFor(i) }}
                             />
+                            <span className="mt-1 block max-w-[4.5rem] text-[10px] font-semibold leading-tight">
+                              {g.title}
+                            </span>
                           </th>
                         ))}
-                        <th className="pb-1.5 pl-3 text-right text-[11px] font-bold">Total</th>
+                        <th className="pb-1.5 pl-2 text-right align-top text-[11px] font-bold">Total</th>
                       </tr>
                     </thead>
                     <tbody>
                       {stores.map(([storeId, counts]) => (
                         <tr key={storeId} className="border-t">
-                          <td className="max-w-[10rem] truncate py-1.5 font-medium">{storeLabel(storeId, data.storeNames)}</td>
+                          <td className="py-1.5 font-medium">
+                            <div className="max-w-[10rem] truncate">{storeLabel(storeId, data.storeNames)}</div>
+                          </td>
                           {data.games.map((g) => {
                             const n = counts[g.id]?.[metric] || 0;
                             return (
-                              <td key={g.id} className={`py-1.5 pl-3 text-right tabular-nums ${n ? "" : "text-zinc-300"}`}>
+                              <td key={g.id} className={`py-1.5 pl-2 text-right tabular-nums ${n ? "" : "text-zinc-300"}`}>
                                 {n || "–"}
                               </td>
                             );
                           })}
-                          <td className="py-1.5 pl-3 text-right font-bold tabular-nums">{sum(counts, metric)}</td>
+                          <td className="py-1.5 pl-2 text-right font-bold tabular-nums">{sum(counts, metric)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -245,8 +249,8 @@ export function GamePlayStats() {
 
 function Stat({ value, label }: { value: number | string; label: string }) {
   return (
-    <div className="rounded-2xl bg-zinc-50 px-3 py-2.5">
-      <p className="text-2xl font-black tabular-nums leading-none">{value}</p>
+    <div className="min-w-0 rounded-2xl bg-zinc-50 px-3 py-2.5">
+      <p className="truncate text-xl font-black tabular-nums leading-none sm:text-2xl">{value}</p>
       <p className="mt-1 text-[11px] leading-tight text-muted-foreground">{label}</p>
     </div>
   );

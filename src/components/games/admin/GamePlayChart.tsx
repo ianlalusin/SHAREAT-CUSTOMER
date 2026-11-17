@@ -62,13 +62,13 @@ export function GamePlayChart({
     )
   );
   const lines = games.map((g) => plot(series.map((d) => d.unique[g.id]?.[metric] || 0), chartMax));
-  const activeX = lines[0]?.[active]?.x ?? CHART_W / 2;
+  const activeX = PAD_X + (series.length > 1 ? (active * PLOT_W) / (series.length - 1) : PLOT_W / 2);
 
   return (
     <div className="mt-5">
       {/* ---- readout for the chosen day ---- */}
       {day && (
-        <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-zinc-50 px-3 py-2 text-xs">
+        <div aria-live="polite" className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-zinc-50 px-3 py-2 text-xs">
           <span className="font-bold">{picked === null ? `Today · ${dayLabel(day.date)}` : dayLabel(day.date)}</span>
           {games.map((g, i) => (
             <span key={g.id} className="flex items-center gap-1.5">
@@ -160,7 +160,8 @@ export function GamePlayChart({
                 key={d.dayId}
                 type="button"
                 aria-label={`Show ${dayLabel(d.date)}`}
-                className="h-full flex-1 cursor-pointer hover:bg-zinc-900/5 focus:outline-none"
+                aria-pressed={pinned === i}
+                className="h-full flex-1 cursor-pointer hover:bg-zinc-900/5 focus:outline-none focus-visible:bg-zinc-900/10"
                 onMouseEnter={() => setHovered(i)}
                 onFocus={() => setPinned(i)}
                 onClick={() => setPinned(i)}
