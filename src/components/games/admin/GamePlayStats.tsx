@@ -78,7 +78,7 @@ export function GamePlayStats() {
 
   return (
     <Card className="rounded-[2rem] border-none bg-white shadow-xl">
-      <CardHeader className="space-y-3">
+      <CardHeader>
         <div className="flex flex-row items-start justify-between gap-3">
           <div>
             <CardTitle className="text-xl font-black">Views and uses</CardTitle>
@@ -100,32 +100,6 @@ export function GamePlayStats() {
             ))}
           </div>
         </div>
-
-        <div className="flex gap-1">
-          {METRICS.map((m) => (
-            <Button
-              key={m.key}
-              size="sm"
-              variant={m.key === metric ? "default" : "outline"}
-              className="rounded-xl px-3"
-              onClick={() => setMetric(m.key)}
-            >
-              {m.label}
-            </Button>
-          ))}
-        </div>
-
-        {/* A number nobody can define is a number nobody can act on, so each
-            game says what it counted, right beside the chart. */}
-        {data && (
-          <ul className="space-y-0.5 text-[11px] text-muted-foreground">
-            {data.games.map((g) => (
-              <li key={g.id}>
-                <span className="font-semibold">{g.title}</span> — {g.metrics[metric].label.toLowerCase()}
-              </li>
-            ))}
-          </ul>
-        )}
       </CardHeader>
 
       <CardContent>
@@ -145,30 +119,65 @@ export function GamePlayStats() {
           </div>
         ) : (
           <>
-            {/* ---- totals ---- */}
-            <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
-              <div>
-                <p className="text-3xl font-black tabular-nums leading-none">{data.grandTotal[metric]}</p>
-                <p className="text-xs text-muted-foreground">
-                  {metric === "view" ? "views" : "uses"} in {data.days} days
-                </p>
-              </div>
-              <div>
-                <p className="text-3xl font-black tabular-nums leading-none">{conversionRate(data.grandTotal)}%</p>
-                {/* Views say people found it. This says they did the thing it
-                    exists for, which is the only one worth acting on. */}
-                <p className="text-xs text-muted-foreground">went on to use it</p>
-              </div>
-              {data.games.map((g, i) => (
-                <div key={g.id} className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colorFor(i) }} />
-                  <span className="text-sm">
-                    <span className="font-bold tabular-nums">{data.totals[g.id]?.[metric] ?? 0}</span>{" "}
-                    <span className="text-muted-foreground">
-                      {g.title} · {conversionRate(data.totals[g.id] || NO_COUNTS)}%
-                    </span>
-                  </span>
-                </div>
+            {/* ---- headline: both numbers at once, whatever the chart shows ---- */}
+            <div className="grid grid-cols-3 gap-2">
+              <Stat value={data.grandTotal.view.toLocaleString()} label={`views in ${data.days} days`} />
+              <Stat value={data.grandTotal.use.toLocaleString()} label={`uses in ${data.days} days`} />
+              {/* Views say people found it. This says they did the thing it
+                  exists for, which is the only one worth acting on. */}
+              <Stat value={`${conversionRate(data.grandTotal)}%`} label="of viewers used it" />
+            </div>
+
+            {/* ---- per game. A number nobody can define is a number nobody
+                can act on, so each row says what it counted. ---- */}
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                    <th className="pb-1.5 text-left font-bold">Game</th>
+                    <th className="pb-1.5 pl-4 text-right font-bold">Views</th>
+                    <th className="pb-1.5 pl-4 text-right font-bold">Uses</th>
+                    <th className="pb-1.5 text-right font-bold">Used</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.games.map((g, i) => {
+                    const c = data.totals[g.id] || NO_COUNTS;
+                    return (
+                      <tr key={g.id} className="border-t align-top">
+                        <td className="py-2 pr-3">
+                          <div className="flex items-center gap-2 font-semibold">
+                            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: colorFor(i) }} />
+                            {g.title}
+                          </div>
+                          <p className="ml-[18px] mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                            View: {g.metrics.view.label.toLowerCase()} · Use: {g.metrics.use.label.toLowerCase()}
+                          </p>
+                        </td>
+                        <td className="py-2 text-right font-bold tabular-nums">{c.view}</td>
+                        <td className="py-2 text-right font-bold tabular-nums">{c.use}</td>
+                        <td className="py-2 pl-3 text-right tabular-nums text-muted-foreground">{conversionRate(c)}%</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* The toggle only steers the chart and the branch table below:
+                the numbers above already show both. */}
+            <div className="mt-6 flex items-center gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Per day</span>
+              {METRICS.map((m) => (
+                <Button
+                  key={m.key}
+                  size="sm"
+                  variant={m.key === metric ? "default" : "outline"}
+                  className="h-7 rounded-xl px-3"
+                  onClick={() => setMetric(m.key)}
+                >
+                  {m.label}
+                </Button>
               ))}
             </div>
 
@@ -181,18 +190,47 @@ export function GamePlayStats() {
                 <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                   By branch
                 </p>
-                <div className="space-y-1.5">
-                  {stores.map(([storeId, counts]) => (
-                    <div key={storeId} className="flex items-center justify-between gap-3 text-sm">
-                      <span className="truncate font-medium">{storeLabel(storeId, data.storeNames)}</span>
-                      <span className="shrink-0 tabular-nums text-muted-foreground">
-                        {data.games
-                          .filter((g) => (counts[g.id]?.[metric] || 0) > 0)
-                          .map((g) => `${g.title.split(" ")[0]} ${counts[g.id][metric]}`)
-                          .join("  ·  ")}
-                      </span>
-                    </div>
-                  ))}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-muted-foreground">
+                        <th className="pb-1.5 text-left align-top text-[11px] font-bold">
+                          {metric === "view" ? "Views" : "Uses"}
+                        </th>
+                        {data.games.map((g, i) => (
+                          <th key={g.id} className="pb-1.5 pl-2 text-right align-top">
+                            <span
+                              aria-hidden
+                              className="ml-auto block h-2.5 w-2.5 rounded-full"
+                              style={{ backgroundColor: colorFor(i) }}
+                            />
+                            <span className="mt-1 block max-w-[4.5rem] text-[10px] font-semibold leading-tight">
+                              {g.title}
+                            </span>
+                          </th>
+                        ))}
+                        <th className="pb-1.5 pl-2 text-right align-top text-[11px] font-bold">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {stores.map(([storeId, counts]) => (
+                        <tr key={storeId} className="border-t">
+                          <td className="py-1.5 font-medium">
+                            <div className="max-w-[10rem] truncate">{storeLabel(storeId, data.storeNames)}</div>
+                          </td>
+                          {data.games.map((g) => {
+                            const n = counts[g.id]?.[metric] || 0;
+                            return (
+                              <td key={g.id} className={`py-1.5 pl-2 text-right tabular-nums ${n ? "" : "text-zinc-300"}`}>
+                                {n || "–"}
+                              </td>
+                            );
+                          })}
+                          <td className="py-1.5 pl-2 text-right font-bold tabular-nums">{sum(counts, metric)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
                 {/* Flip It needs no table, so anyone playing away from the
                     restaurant has no branch to attribute. Say so rather than
@@ -206,6 +244,15 @@ export function GamePlayStats() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function Stat({ value, label }: { value: number | string; label: string }) {
+  return (
+    <div className="min-w-0 rounded-2xl bg-zinc-50 px-3 py-2.5">
+      <p className="truncate text-xl font-black tabular-nums leading-none sm:text-2xl">{value}</p>
+      <p className="mt-1 text-[11px] leading-tight text-muted-foreground">{label}</p>
+    </div>
   );
 }
 
