@@ -19,7 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { waitForAuthUser } from "@/lib/auth-ready";
 import { markView, signalUse } from "@/lib/games/trackGame";
-import { CONSENT_TEXT, LAYOUTS, footerBox, keepClear, rotatedExtents, type Layout } from "@/lib/games/capture-share/layouts";
+import { CONSENT_TEXT, LAYOUTS, TEMPLATES, defaultFields, footerBox, keepClear, rotatedExtents, type Layout } from "@/lib/games/capture-share/layouts";
 import { drawOverlays, grabFrame, loadImage, overlayBox, renderBase, renderFinal, type Overlay, type Shot } from "@/lib/games/capture-share/render";
 
 const GAME_ID = "capture-share";
@@ -62,6 +62,29 @@ function LayoutThumb({ layout, height = 112, progress }: { layout: Layout; heigh
   );
 }
 
+/** A small sketch of a template for the picker. */
+function TemplateThumb({ layout }: { layout: Layout }) {
+  const H = 112;
+  const k = H / layout.h;
+  const s = layout.slots[0];
+  return (
+    <div
+      className={cn("relative mx-auto overflow-hidden rounded-md shadow ring-1 ring-zinc-200", layout.template === "ticket" ? "bg-primary" : "bg-zinc-200")}
+      style={{ width: layout.w * k, height: H }}
+    >
+      <div className={cn("absolute inset-[4px] rounded", layout.template === "ticket" ? "bg-amber-50" : "bg-white")} />
+      {layout.template === "idcard" && <div className="absolute inset-x-[4px] top-[4px] h-[19px] rounded-t bg-primary" />}
+      {layout.template === "ticket" && <div className="absolute inset-x-[10px] top-[11px] h-[6px] rounded-sm bg-zinc-800" />}
+      <div className="absolute bg-zinc-300" style={{ left: s.x * k, top: s.y * k, width: s.w * k, height: s.h * k }} />
+      {layout.template === "ticket" && (
+        <div className="absolute inset-x-[10px] border-t border-dashed border-zinc-400" style={{ top: 1110 * k }} />
+      )}
+      {layout.template === "idcard" && <div className="absolute inset-x-[16px] h-[5px] rounded-sm bg-zinc-800" style={{ top: 1060 * k }} />}
+      <div className="absolute rounded-sm bg-primary/30" style={{ left: layout.footer.x * k + 6, top: layout.footer.y * k + 6, width: 14, height: 14 }} />
+    </div>
+  );
+}
+
 export function CaptureShareGame() {
   const [storeName, setStoreName] = useState<string | null>(null);
   const [gateError, setGateError] = useState<string | null>(null);
@@ -71,6 +94,10 @@ export function CaptureShareGame() {
   const [base, setBase] = useState<HTMLCanvasElement | null>(null);
   const [overlays, setOverlays] = useState<Overlay[]>([]);
   const [finalBlob, setFinalBlob] = useState<Blob | null>(null);
+  const [guest, setGuest] = useState({ name: "", table: "" });
+  // A template's editable lines (ticket title, ID name…); empty for plain layouts.
+  const [fields, setFields] = useState<Record<string, string>>({});
+  const logoRef = useRef<HTMLImageElement | null | undefined>(undefined);
 
   useEffect(() => {
     markView(GAME_ID);
@@ -80,6 +107,7 @@ export function CaptureShareGame() {
         const json = await res.json().catch(() => ({}));
         if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not open Capture & Share.");
         setStoreName(String(json.storeName || "SharEat"));
+        setGuest({ name: String(json.customerName || ""), table: String(json.tableName || "") });
       } catch (e) {
         setGateError((e as Error)?.message || "Could not open Capture & Share.");
       }
@@ -94,20 +122,20 @@ export function CaptureShareGame() {
     setPhase("pick");
   };
 
-  // Build the collage once the last photo is in.
+  // Build the collage once the last photo is in, and again as the guest edits a template's text.
   useEffect(() => {
     if (!layout || storeName === null || shots.length !== layout.shots) return;
     let cancelled = false;
     (async () => {
-      const logo = await loadImage("/icons/logo.png").catch(() => null);
+      if (logoRef.current === undefined) logoRef.current = await loadImage("/icons/logo.png").catch(() => null);
       if (cancelled) return;
-      setBase(renderBase(layout, shots, storeName, format(new Date(), "MMM d, yyyy"), logo));
-      setPhase("edit");
+      setBase(renderBase(layout, shots, storeName, format(new Date(), "MMM d, yyyy"), logoRef.current, { tableName: guest.table, fields }));
+      setPhase((ph) => (ph === "shoot" ? "edit" : ph));
     })();
     return () => {
       cancelled = true;
     };
-  }, [layout, shots, storeName]);
+  }, [layout, shots, storeName, fields, guest.table]);
 
   if (gateError) return <p className="rounded-2xl bg-amber-50 px-4 py-6 text-center text-sm text-amber-900">{gateError}</p>;
   if (storeName === null)
@@ -117,30 +145,55 @@ export function CaptureShareGame() {
       </div>
     );
 
+  const choose = (l: Layout) => {
+    setLayout(l);
+    setFields(defaultFields(l, guest.name));
+    setShots([]);
+    setPhase("shoot");
+  };
+
   if (phase === "pick")
     return (
-      <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">Pick a layout, then strike a pose.</p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {LAYOUTS.map((l) => (
-            <button
-              key={l.id}
-              type="button"
-              onClick={() => {
-                setLayout(l);
-                setShots([]);
-                setPhase("shoot");
-              }}
-              className="flex flex-col items-center gap-3 rounded-3xl bg-white p-4 pt-6 shadow-md transition hover:shadow-lg active:scale-[0.98]"
-            >
-              <LayoutThumb layout={l} />
-              <span className="text-sm font-bold">{l.label}</span>
-              <span className="-mt-2 text-xs text-muted-foreground">
-                {l.shots} photo{l.shots > 1 ? "s" : ""}
-              </span>
-            </button>
-          ))}
-        </div>
+      <div className="space-y-6">
+        <section className="space-y-3">
+          <p className="text-sm text-muted-foreground">Pick a layout, then strike a pose.</p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {LAYOUTS.map((l) => (
+              <button
+                key={l.id}
+                type="button"
+                onClick={() => choose(l)}
+                className="flex flex-col items-center gap-3 rounded-3xl bg-white p-4 pt-6 shadow-md transition hover:shadow-lg active:scale-[0.98]"
+              >
+                <LayoutThumb layout={l} />
+                <span className="text-sm font-bold">{l.label}</span>
+                <span className="-mt-2 text-xs text-muted-foreground">
+                  {l.shots} photo{l.shots > 1 ? "s" : ""}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-base font-black">Templates</h2>
+            <p className="text-sm text-muted-foreground">One photo, and you write the words.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {TEMPLATES.map((l) => (
+              <button
+                key={l.id}
+                type="button"
+                onClick={() => choose(l)}
+                className="flex flex-col items-center gap-3 rounded-3xl bg-white p-4 pt-6 shadow-md ring-2 ring-primary/20 transition hover:shadow-lg active:scale-[0.98]"
+              >
+                <TemplateThumb layout={l} />
+                <span className="text-sm font-bold">{l.label}</span>
+                <span className="-mt-2 text-xs text-muted-foreground">Edit: {(l.fields ?? []).map((f) => f.label.replace(/^Your /, "")).join(", ").toLowerCase()}</span>
+              </button>
+            ))}
+          </div>
+        </section>
       </div>
     );
 
@@ -159,6 +212,8 @@ export function CaptureShareGame() {
       <Editor
         layout={layout}
         base={base}
+        fields={fields}
+        setFields={setFields}
         overlays={overlays}
         setOverlays={setOverlays}
         onRetake={() => {
@@ -315,6 +370,8 @@ function Shooter({
 function Editor({
   layout,
   base,
+  fields,
+  setFields,
   overlays,
   setOverlays,
   onRetake,
@@ -322,6 +379,8 @@ function Editor({
 }: {
   layout: Layout;
   base: HTMLCanvasElement;
+  fields: Record<string, string>;
+  setFields: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   overlays: Overlay[];
   setOverlays: React.Dispatch<React.SetStateAction<Overlay[]>>;
   onRetake: () => void;
@@ -592,6 +651,28 @@ function Editor({
         </div>
       )}
       </div>
+
+      {layout.fields?.length ? (
+        <div className="space-y-3 rounded-2xl bg-white p-4 shadow">
+          <p className="text-sm font-black">Make it yours</p>
+          {layout.fields.map((f) => (
+            <label key={f.id} className="block space-y-1">
+              <span className="flex justify-between text-xs font-bold text-muted-foreground">
+                {f.label}
+                <span>
+                  {(fields[f.id] ?? "").length}/{f.maxLength}
+                </span>
+              </span>
+              <input
+                value={fields[f.id] ?? ""}
+                maxLength={f.maxLength}
+                onChange={(e) => setFields((prev) => ({ ...prev, [f.id]: e.target.value.slice(0, f.maxLength) }))}
+                className="w-full rounded-xl border px-3 py-2 text-base"
+              />
+            </label>
+          ))}
+        </div>
+      ) : null}
 
       {!selected && (
         <p className="text-center text-xs text-muted-foreground">Tap a sticker below to add it, then tap it on the photo to edit.</p>

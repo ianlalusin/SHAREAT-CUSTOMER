@@ -17,7 +17,9 @@ export async function GET(req: Request) {
     const gate = await requirePlayer(req);
     if (!gate.ok) return bad(gate.error, gate.status);
     if (!(await isCaptureShareLive(getAdminDb(), gate.player.storeId))) return bad(OFF, 403);
-    return NextResponse.json({ ok: true, storeName: gate.player.storeName });
+    const p = gate.player;
+    // Name and table prefill the templates (ID card name, ticket stub).
+    return NextResponse.json({ ok: true, storeName: p.storeName, customerName: p.customerName, tableName: p.tableDisplayName });
   } catch (e) {
     return bad((e as Error)?.message || "Could not open Capture & Share.", 500);
   }
