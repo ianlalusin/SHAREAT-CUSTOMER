@@ -338,3 +338,13 @@ export function keepClear(x: number, y: number, ex: number, ey: number, canvas: 
   if (!options.length) return { x, y: inside(block.y - ey, ey, canvas.h) };
   return options.reduce((best, p) => (Math.hypot(p.x - x, p.y - y) < Math.hypot(best.x - x, best.y - y) ? p : best));
 }
+
+/**
+ * Tone curve for the PRINTED copy's photos only (0-255 in, 0-255 out). Thermal dots
+ * spread, so dark photo areas print as solid black; this lifts the shadows and
+ * brightens mid-tones. White stays white. Text, logo and frame are not passed
+ * through it, so they print as dark as before.
+ */
+export function printTone(v: number): number {
+  return Math.round(255 * (0.12 + 0.88 * Math.pow(v / 255, 0.8)));
+}

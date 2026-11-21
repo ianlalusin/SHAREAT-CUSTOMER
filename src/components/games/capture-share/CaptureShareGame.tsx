@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { waitForAuthUser } from "@/lib/auth-ready";
 import { markView, signalUse } from "@/lib/games/trackGame";
 import { CONSENT_TEXT, LAYOUTS, TEMPLATES, defaultFields, footerBox, keepClear, rotatedExtents, type Layout } from "@/lib/games/capture-share/layouts";
-import { drawOverlays, grabFrame, loadImage, overlayBox, renderBase, renderFinal, type Overlay, type Shot } from "@/lib/games/capture-share/render";
+import { drawOverlays, grabFrame, lightenForPrint, loadImage, overlayBox, renderBase, renderFinal, type Overlay, type Shot } from "@/lib/games/capture-share/render";
 
 const GAME_ID = "capture-share";
 const EMOJIS = ["🥩", "🔥", "😋", "🤤", "❤️", "🎉", "🥳", "✨", "😎", "👑", "💯", "🍻", "😂", "🙌", "⭐", "🎂"];
@@ -105,6 +105,7 @@ export function CaptureShareGame() {
   const [base, setBase] = useState<HTMLCanvasElement | null>(null);
   const [overlays, setOverlays] = useState<Overlay[]>([]);
   const [finalBlob, setFinalBlob] = useState<Blob | null>(null);
+  const [printBlob, setPrintBlob] = useState<Blob | null>(null);
   const [guest, setGuest] = useState({ name: "", table: "" });
   const [paperWidth, setPaperWidth] = useState<"58mm" | "80mm">("80mm");
   const [printingOn, setPrintingOn] = useState(true);
@@ -240,6 +241,9 @@ export function CaptureShareGame() {
         onFinish={async () => {
           const blob = await renderFinal(base, overlays);
           if (blob) {
+            // The cashier's print gets lighter photos (thermal paper prints dark); text and stickers stay the same.
+            const printBase = renderBase(layout, shots.map(lightenForPrint), storeName ?? "", format(new Date(), "MMM d, yyyy"), logoRef.current ?? null, { tableName: guest.table, fields });
+            setPrintBlob(await renderFinal(printBase, overlays));
             setFinalBlob(blob);
             setPhase("done");
           }
@@ -251,6 +255,7 @@ export function CaptureShareGame() {
     return (
       <Finished
         blob={finalBlob}
+        printBlob={printBlob}
         layoutId={layout.id}
         // 57/58mm paper is too narrow for the 2-photo and 2x2 layouts (owner's call).
         printable={paperWidth === "80mm" || layout.paper58}
@@ -773,6 +778,7 @@ function Editor({
 
 function Finished({
   blob,
+  printBlob,
   layoutId,
   printable,
   printingOn,
@@ -780,6 +786,7 @@ function Finished({
   onNew,
 }: {
   blob: Blob;
+  printBlob: Blob | null;
   layoutId: string;
   printable: boolean;
   printingOn: boolean;
@@ -885,7 +892,7 @@ function Finished({
       const res = await fetch("/api/customer/games/capture-share/print", {
         method: "POST",
         headers: { ...(await authHeader()), "Content-Type": "image/jpeg", "X-Photo-Id": photoId, "X-Layout": layoutId },
-        body: await blob.arrayBuffer(),
+        body: await (printBlob ?? blob).arrayBuffer(),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json?.ok) throw new Error(String(json?.error || `Server said ${res.status}`));
