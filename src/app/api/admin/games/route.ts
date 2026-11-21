@@ -27,7 +27,14 @@ export async function GET(req: Request) {
     // For the per-branch switches; written only through PUT /api/manager/games.
     disabledStoreIds: Array.isArray(configs[g.id]?.disabledStoreIds) ? configs[g.id]?.disabledStoreIds : [],
     // Capture & Share only: cashier printing, switched separately from the game. Absent = on.
-    ...(g.id === "capture-share" ? { printingEnabled: (configs[g.id] as { printingEnabled?: boolean } | undefined)?.printingEnabled !== false } : {}),
+    ...(g.id === "capture-share"
+      ? {
+          printingEnabled: (configs[g.id] as { printingEnabled?: boolean } | undefined)?.printingEnabled !== false,
+          printingDisabledStoreIds: Array.isArray((configs[g.id] as { printingDisabledStoreIds?: unknown } | undefined)?.printingDisabledStoreIds)
+            ? (configs[g.id] as { printingDisabledStoreIds: string[] }).printingDisabledStoreIds
+            : [],
+        }
+      : {}),
   }));
 
   return NextResponse.json({ ok: true, games, pendingCount: await countPending(db) });
@@ -51,6 +58,21 @@ export async function PUT(req: Request) {
   const isActive = (body as any)?.isActive === true;
 
   // Capture & Share's printing switch: only that one field, the game's on/off untouched.
+  // Capture & Share printing at ONE branch: add/remove it in printingDisabledStoreIds (atomic array ops).
+  const b = body as { printingStoreId?: unknown; printingOnAtStore?: unknown };
+  if (gameId === "capture-share" && typeof b.printingStoreId === "string" && b.printingStoreId && typeof b.printingOnAtStore === "boolean") {
+    await getAdminDb().doc(`miniGames/${gameId}`).set(
+      {
+        printingDisabledStoreIds: b.printingOnAtStore ? FieldValue.arrayRemove(b.printingStoreId) : FieldValue.arrayUnion(b.printingStoreId),
+        updatedAtMs: Date.now(),
+        updatedByUid: gate.caller.uid,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    return NextResponse.json({ ok: true, gameId, storeId: b.printingStoreId, printingOnAtStore: b.printingOnAtStore });
+  }
+
   const printingEnabled = (body as { printingEnabled?: unknown }).printingEnabled;
   if (gameId === "capture-share" && typeof printingEnabled === "boolean") {
     await getAdminDb().doc(`miniGames/${gameId}`).set(

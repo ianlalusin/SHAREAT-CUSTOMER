@@ -26,7 +26,7 @@ export async function GET(req: Request) {
       customerName: p.customerName,
       tableName: p.tableDisplayName,
       paperWidth: await readPaperWidth(db, p.storeId),
-      printing: await isPrintingEnabled(db),
+      printing: await isPrintingEnabled(db, p.storeId),
     });
   } catch (e) {
     return bad((e as Error)?.message || "Could not open Capture & Share.", 500);

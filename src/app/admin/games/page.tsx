@@ -16,7 +16,7 @@ import { RecipeEditDialog, type EditableRecipe } from "@/components/games/recipe
 import { GamePlayStats } from "@/components/games/admin/GamePlayStats";
 import { RecipeScoreLine } from "@/components/games/recipe/RecipeScoreLine";
 
-type GameRow = { id: string; title: string; tagline: string; configured: boolean; isActive: boolean; disabledStoreIds: string[]; printingEnabled?: boolean };
+type GameRow = { id: string; title: string; tagline: string; configured: boolean; isActive: boolean; disabledStoreIds: string[]; printingEnabled?: boolean; printingDisabledStoreIds?: string[] };
 type StoreRow = { storeId: string; name: string };
 type QueueRow = {
   id: string;
@@ -56,6 +56,7 @@ export default function AdminGamesPage() {
   const [games, setGames] = useState<GameRow[] | null>(null);
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [openBranches, setOpenBranches] = useState<string | null>(null);
+  const [openPrintBranches, setOpenPrintBranches] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [status, setStatus] = useState<(typeof STATUSES)[number]>("pending");
   const [queue, setQueue] = useState<QueueRow[] | null>(null);
@@ -144,6 +145,21 @@ export default function AdminGamesPage() {
       if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not update.");
       await loadGames();
       toast({ title: printingEnabled ? "Printing switched on" : "Printing paused", description: "Capture & Share itself keeps running." });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Couldn't update", description: (e as Error)?.message });
+    }
+  };
+
+  const togglePrintingAt = async (storeId: string, on: boolean) => {
+    try {
+      const res = await fetch("/api/admin/games", {
+        method: "PUT",
+        headers: await authed(),
+        body: JSON.stringify({ gameId: "capture-share", printingStoreId: storeId, printingOnAtStore: on }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not update.");
+      await loadGames();
     } catch (e) {
       toast({ variant: "destructive", title: "Couldn't update", description: (e as Error)?.message });
     }
@@ -261,6 +277,32 @@ export default function AdminGamesPage() {
                         </span>
                         <Switch checked={g.printingEnabled !== false} onCheckedChange={(v) => togglePrinting(v)} />
                       </label>
+                    )}
+                    {g.id === "capture-share" && g.configured && g.printingEnabled !== false && stores.length > 0 && (
+                      <div className="mt-1 rounded-xl bg-zinc-50 px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => setOpenPrintBranches((o) => !o)}
+                          className="text-xs font-bold text-primary underline"
+                        >
+                          {openPrintBranches
+                            ? "Hide printing per branch"
+                            : `Printing per branch (${stores.filter((s) => !(g.printingDisabledStoreIds ?? []).includes(s.storeId)).length}/${stores.length} on)`}
+                        </button>
+                        {openPrintBranches && (
+                          <div className="mt-2 space-y-2">
+                            {stores.map((s) => (
+                              <label key={s.storeId} className="flex items-center justify-between gap-3 text-sm">
+                                <span className="truncate">{s.name}</span>
+                                <Switch
+                                  checked={!(g.printingDisabledStoreIds ?? []).includes(s.storeId)}
+                                  onCheckedChange={(v) => togglePrintingAt(s.storeId, v)}
+                                />
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     )}
                     {openBranches === g.id && (
                       <div className="mt-2 space-y-2">
