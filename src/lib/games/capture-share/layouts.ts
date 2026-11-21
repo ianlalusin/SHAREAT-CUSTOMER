@@ -12,6 +12,15 @@
 
 export type Slot = { x: number; y: number; w: number; h: number };
 
+/** A line of text the guest may change on a template. Everything else on it is locked. */
+export type TemplateField = {
+  id: string;
+  label: string;
+  maxLength: number;
+  /** Starting text; "{name}" is replaced with the guest's name from the table. */
+  defaultValue: string;
+};
+
 export type Layout = {
   id: string;
   label: string;
@@ -23,6 +32,9 @@ export type Layout = {
   footer: Slot;
   tiltDeg?: number;
   paper58: boolean;
+  /** A designed template drawn by render.ts instead of the plain white card. */
+  template?: "ticket" | "idcard";
+  fields?: TemplateField[];
 };
 
 // Instax Square card is 72×86mm with a 62mm image — the same proportions here.
@@ -84,8 +96,51 @@ export const LAYOUTS: Layout[] = [
   },
 ];
 
+/**
+ * Designed templates: one photo, a few lines the guest can change, the rest
+ * locked (stub, barcode, branding). Geometry here, the artwork in render.ts.
+ */
+export const TEMPLATES: Layout[] = [
+  {
+    id: "ticket",
+    label: "Ticket",
+    shots: 1,
+    w: 1080,
+    h: 1500,
+    slots: [{ x: 150, y: 300, w: 780, h: 780 }],
+    // The whole stub below the tear line is locked: stickers stay off it.
+    footer: { x: 60, y: 1100, w: 960, h: 340 },
+    paper58: true,
+    template: "ticket",
+    fields: [{ id: "title", label: "Ticket title", maxLength: 24, defaultValue: "Samgyup Night" }],
+  },
+  {
+    id: "idcard",
+    label: "ID card",
+    shots: 1,
+    w: 1080,
+    h: 1500,
+    slots: [{ x: 280, y: 370, w: 520, h: 650 }],
+    footer: { x: 60, y: 1290, w: 960, h: 150 },
+    paper58: true,
+    template: "idcard",
+    fields: [
+      { id: "school", label: "School name", maxLength: 28, defaultValue: "SharEat University" },
+      { id: "name", label: "Your name", maxLength: 24, defaultValue: "{name}" },
+      { id: "course", label: "Course", maxLength: 28, defaultValue: "BS Samgyupsal" },
+      { id: "motto", label: "Motto", maxLength: 50, defaultValue: "Eat. Grill. Repeat." },
+    ],
+  },
+];
+
+/** Starting values for a template's fields, with the guest's name filled in. */
+export function defaultFields(l: Layout, guestName: string): Record<string, string> {
+  const name = guestName.trim() || "Your Name";
+  return Object.fromEntries((l.fields ?? []).map((f) => [f.id, f.defaultValue.replace("{name}", name).slice(0, f.maxLength)]));
+}
+
 export function getLayout(id: string): Layout | null {
-  return LAYOUTS.find((l) => l.id === id) ?? null;
+  return [...LAYOUTS, ...TEMPLATES].find((l) => l.id === id) ?? null;
 }
 
 /** The backdrop canvas a tilted card needs so no corner is cut off. */

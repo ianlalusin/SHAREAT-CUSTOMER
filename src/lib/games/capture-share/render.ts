@@ -1,6 +1,7 @@
 "use client";
 
 import { captionLine, coverCrop, outerSize, type Layout } from "./layouts";
+import { drawIdCard, drawTicket } from "./templates";
 
 /** A sticker or a line of text the diner placed, in finished-canvas pixels. */
 export type Overlay = {
@@ -111,8 +112,23 @@ function drawCard(layout: Layout, shots: Shot[], storeName: string, dateText: st
   return c;
 }
 
-/** The collage without stickers: card, or the tilted card on its backdrop. */
-export function renderBase(layout: Layout, shots: Shot[], storeName: string, dateText: string, logo: HTMLImageElement | null) {
+/** The collage without stickers: card, template, or the tilted card on its backdrop. */
+export function renderBase(
+  layout: Layout,
+  shots: Shot[],
+  storeName: string,
+  dateText: string,
+  logo: HTMLImageElement | null,
+  extra: { tableName?: string; fields?: Record<string, string> } = {}
+) {
+  if (layout.template) {
+    const c = document.createElement("canvas");
+    c.width = layout.w;
+    c.height = layout.h;
+    const info = { storeName, dateText, tableName: extra.tableName ?? "", fields: extra.fields ?? {} };
+    (layout.template === "ticket" ? drawTicket : drawIdCard)(c.getContext("2d")!, layout, shots[0], info, logo);
+    return c;
+  }
   const card = drawCard(layout, shots, storeName, dateText, logo);
   if (!layout.tiltDeg) return card;
 

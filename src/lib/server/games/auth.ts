@@ -73,6 +73,8 @@ export type PlayerContext = {
   sessionId: string;
   storeName: string;
   tableDisplayName: string;
+  /** The name the cashier opened the table under; empty when none was given. */
+  customerName: string;
 };
 
 /**
@@ -112,6 +114,7 @@ export async function requirePlayer(
         sessionId: caller.sessionId,
         storeName,
         tableDisplayName: session.tableDisplayName,
+        customerName: String(session.customerName ?? ""),
       },
     };
   } catch (e: any) {

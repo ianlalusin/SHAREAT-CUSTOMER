@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { LAYOUTS, captionLine, coverCrop, footerBox, keepClear, outerSize, rotatedExtents } from "./layouts";
+import { LAYOUTS, TEMPLATES, captionLine, coverCrop, defaultFields, footerBox, keepClear, outerSize, rotatedExtents } from "./layouts";
 
 const inside = (a: { x: number; y: number; w: number; h: number }, W: number, H: number) =>
   a.x >= 0 && a.y >= 0 && a.x + a.w <= W && a.y + a.h <= H;
 
 describe("capture-share layouts", () => {
   it("every slot and footer fits inside its card, one slot per shot", () => {
-    for (const l of LAYOUTS) {
+    for (const l of [...LAYOUTS, ...TEMPLATES]) {
       expect(l.slots.length, l.id).toBe(l.shots);
       for (const s of l.slots) expect(inside(s, l.w, l.h), l.id).toBe(true);
       expect(inside(l.footer, l.w, l.h), l.id).toBe(true);
@@ -14,7 +14,7 @@ describe("capture-share layouts", () => {
   });
 
   it("footer never overlaps a photo", () => {
-    for (const l of LAYOUTS) {
+    for (const l of [...LAYOUTS, ...TEMPLATES]) {
       const lowest = Math.max(...l.slots.map((s) => s.y + s.h));
       expect(l.footer.y, l.id).toBeGreaterThanOrEqual(lowest);
     }
@@ -78,5 +78,20 @@ describe("stickers stay off the logo + caption", () => {
     const e = rotatedExtents(100, 20, Math.PI / 2);
     expect(e.ex).toBeCloseTo(20);
     expect(e.ey).toBeCloseTo(100);
+  });
+});
+
+describe("templates", () => {
+  it("are one photo each, with capped editable fields", () => {
+    for (const t of TEMPLATES) {
+      expect(t.shots).toBe(1);
+      for (const f of t.fields ?? []) expect(f.defaultValue.replace("{name}", "").length).toBeLessThanOrEqual(f.maxLength);
+    }
+  });
+  it("fills the guest's name into the ID card and caps it", () => {
+    const id = TEMPLATES.find((t) => t.id === "idcard")!;
+    expect(defaultFields(id, "Shaira").name).toBe("Shaira");
+    expect(defaultFields(id, "").name).toBe("Your Name");
+    expect(defaultFields(id, "A".repeat(40)).name.length).toBe(24);
   });
 });
