@@ -12,7 +12,7 @@
 
 export type Slot = { x: number; y: number; w: number; h: number };
 
-export type TemplateKind = "ticket" | "idcard" | "boarding" | "magazine" | "wanted" | "certificate" | "movie" | "receipt";
+export type TemplateKind = "ticket" | "idcard" | "boarding" | "magazine" | "wanted" | "certificate" | "movie" | "receipt" | "nowplaying";
 
 /** A line of text the guest may change on a template. Everything else on it is locked. */
 export type TemplateField = {
@@ -220,6 +220,22 @@ export const TEMPLATES: Layout[] = [
     paper58: true,
     template: "receipt",
     fields: [{ id: "celebrating", label: "Celebrating", maxLength: 28, defaultValue: "Samgyup night" }],
+  },
+  {
+    id: "nowplaying",
+    label: "Now playing",
+    shots: 1,
+    w: 1080,
+    h: 1770,
+    slots: [{ x: 66, y: 160, w: 948, h: 948 }],
+    // Player controls and branding are locked; stickers stay on the cover and title area.
+    footer: { x: 0, y: 1270, w: 1080, h: 500 },
+    paper58: true,
+    template: "nowplaying",
+    fields: [
+      { id: "song", label: "Song title", maxLength: 28, defaultValue: "Busog Na Busog" },
+      { id: "artist", label: "Artist", maxLength: 24, defaultValue: "{name}" },
+    ],
   },
 ];
 
