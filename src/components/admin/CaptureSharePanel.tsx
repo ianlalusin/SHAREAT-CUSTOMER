@@ -5,9 +5,19 @@ import { getAuth } from "firebase/auth";
 import { Camera, Download, Loader2, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 
-type Photo = { id: string; tableDisplayName: string; layout: string; consentAtMs: number; url: string; downloadUrl: string };
+type Photo = { id: string; tableDisplayName: string; layout: string; consentAtMs: number; url: string };
 
 /**
  * Photos diners agreed SharEat may post, for one branch.
@@ -20,6 +30,7 @@ export function CaptureSharePanel({ storeId, storeName }: { storeId: string; sto
   const [photos, setPhotos] = useState<Photo[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const headers = useCallback(async () => {
     const user = getAuth().currentUser;
@@ -46,7 +57,7 @@ export function CaptureSharePanel({ storeId, storeName }: { storeId: string; sto
   }, [storeId, load]);
 
   const remove = async (id: string) => {
-    if (!window.confirm("Delete this photo for good? Use this when a guest asks for it to be removed.")) return;
+    setConfirmId(null);
     setBusy(id);
     try {
       const res = await fetch(`/api/manager/capture-share?storeId=${encodeURIComponent(storeId)}&id=${encodeURIComponent(id)}`, {
@@ -93,11 +104,11 @@ export function CaptureSharePanel({ storeId, storeName }: { storeId: string; sto
                 </p>
                 <div className="flex gap-2">
                   <Button asChild size="sm" className="flex-1">
-                    <a href={p.downloadUrl}>
+                    <a href={p.url}>
                       <Download className="mr-1 h-4 w-4" /> Download
                     </a>
                   </Button>
-                  <Button size="sm" variant="outline" disabled={busy === p.id} onClick={() => remove(p.id)} aria-label="Delete photo">
+                  <Button size="sm" variant="outline" disabled={busy === p.id} onClick={() => setConfirmId(p.id)} aria-label="Delete photo">
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -106,6 +117,18 @@ export function CaptureSharePanel({ storeId, storeName }: { storeId: string; sto
           ))}
         </div>
       )}
+      <AlertDialog open={confirmId !== null} onOpenChange={(o) => !o && setConfirmId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this photo for good?</AlertDialogTitle>
+            <AlertDialogDescription>Use this when a guest asks for it to be removed. It cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep</AlertDialogCancel>
+            <AlertDialogAction onClick={() => confirmId && remove(confirmId)}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

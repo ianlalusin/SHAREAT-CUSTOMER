@@ -350,7 +350,7 @@ export default function DashboardPage() {
 `;
 
   return (
-    <main className="min-h-screen pb-16 flex flex-col bg-zinc-50">
+    <main className="min-h-screen pb-24 flex flex-col bg-zinc-50">
       <DashboardHeader
         customerName={session.customerName}
         tableDisplayName={session.tableDisplayName || (session.tableNumber ? `Table ${session.tableNumber}` : "Table -")}

@@ -55,7 +55,8 @@ export async function saveConsentedPhoto(db: Firestore, p: ConsentedPhotoInput):
   if (used >= MAX_PER_SESSION) return { ok: false, status: 429, error: "This table has saved the most photos allowed." };
 
   const path = `captureShare/${p.storeId}/${id}.jpg`;
-  await getAdminBucket().file(path).save(Buffer.from(p.bytes), { contentType: "image/jpeg", resumable: false });
+  const file = getAdminBucket().file(path);
+  await file.save(Buffer.from(p.bytes), { contentType: "image/jpeg", resumable: false });
 
   try {
     await ref.create({
@@ -73,7 +74,11 @@ export async function saveConsentedPhoto(db: Firestore, p: ConsentedPhotoInput):
     });
   } catch (e) {
     // ALREADY_EXISTS: a parallel retry won the race and wrote the same file. Fine.
-    if ((e as { code?: number })?.code !== 6) throw e;
+    if ((e as { code?: number })?.code !== 6) {
+      // No record will point at this file, so nobody could find or delete it. Remove it.
+      await file.delete({ ignoreNotFound: true }).catch(() => {});
+      throw e;
+    }
   }
   return { ok: true };
 }
@@ -83,8 +88,8 @@ export type ConsentedPhotoRow = {
   tableDisplayName: string;
   layout: string;
   consentAtMs: number;
+  /** Signed for an hour. Served as an attachment, which still renders in <img>. */
   url: string;
-  downloadUrl: string;
 };
 
 /** One branch's consented photos, newest first, with short-lived signed links. */
@@ -95,18 +100,15 @@ export async function listConsentedPhotos(db: Firestore, storeId: string, limit 
   return Promise.all(
     snap.docs.map(async (d) => {
       const x = d.data();
-      const file = bucket.file(String(x.path));
-      const [[url], [downloadUrl]] = await Promise.all([
-        file.getSignedUrl({ action: "read", expires }),
-        file.getSignedUrl({ action: "read", expires, responseDisposition: `attachment; filename="shareat-${d.id}.jpg"` }),
-      ]);
+      const [url] = await bucket
+        .file(String(x.path))
+        .getSignedUrl({ action: "read", expires, responseDisposition: `attachment; filename="shareat-${d.id}.jpg"` });
       return {
         id: d.id,
         tableDisplayName: String(x.tableDisplayName || ""),
         layout: String(x.layout || ""),
         consentAtMs: Number(x.consentAtMs || 0),
         url,
-        downloadUrl,
       };
     })
   );

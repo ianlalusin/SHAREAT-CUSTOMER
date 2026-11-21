@@ -128,15 +128,28 @@ export function renderBase(layout: Layout, shots: Shot[], storeName: string, dat
   return c;
 }
 
+const emojiFont = (px: number) => `${px}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+const textFont = (px: number) => `900 ${px}px ${FONT}`;
+
+let measureCtx: CanvasRenderingContext2D | null = null;
+
+/** Half-width / half-height of a sticker as drawn — used for tapping and the selection box. */
+export function overlayBox(o: Overlay): { halfW: number; halfH: number } {
+  measureCtx ??= document.createElement("canvas").getContext("2d")!;
+  measureCtx.font = o.kind === "emoji" ? emojiFont(o.size) : textFont(o.size);
+  const pad = o.size * 0.15;
+  return { halfW: measureCtx.measureText(o.text).width / 2 + pad, halfH: o.size * 0.6 + pad };
+}
+
 export function drawOverlays(ctx: CanvasRenderingContext2D, overlays: Overlay[]) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   for (const o of overlays) {
     if (o.kind === "emoji") {
-      ctx.font = `${o.size}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+      ctx.font = emojiFont(o.size);
       ctx.fillText(o.text, o.x, o.y);
     } else {
-      ctx.font = `900 ${o.size}px ${FONT}`;
+      ctx.font = textFont(o.size);
       ctx.lineJoin = "round";
       ctx.lineWidth = Math.max(2, o.size * 0.16);
       ctx.strokeStyle = o.color === "#ffffff" ? "#000000" : "#ffffff";

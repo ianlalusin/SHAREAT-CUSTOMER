@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { waitForAuthUser } from "@/lib/auth-ready";
 import { markView, signalUse } from "@/lib/games/trackGame";
 import { CONSENT_TEXT, LAYOUTS, type Layout } from "@/lib/games/capture-share/layouts";
-import { drawOverlays, grabFrame, loadImage, renderBase, renderFinal, type Overlay, type Shot } from "@/lib/games/capture-share/render";
+import { drawOverlays, grabFrame, loadImage, overlayBox, renderBase, renderFinal, type Overlay, type Shot } from "@/lib/games/capture-share/render";
 
 const GAME_ID = "capture-share";
 const EMOJIS = ["🥩", "🔥", "😋", "🤤", "❤️", "🎉", "🥳", "✨", "😎", "👑", "💯", "🍻", "😂", "🙌", "⭐", "🎂"];
@@ -298,6 +298,12 @@ function Editor({
   const [textDraft, setTextDraft] = useState<string | null>(null);
   const [textColor, setTextColor] = useState(TEXT_COLORS[0]);
   const drag = useRef<{ id: string; px: number; py: number } | null>(null);
+  // Latest pointer position; applied once per animation frame so a drag does not redraw the full canvas per event.
+  const pending = useRef<{ x: number; y: number } | null>(null);
+  const frame = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (frame.current !== null) cancelAnimationFrame(frame.current);
+  }, []);
 
   // Redraw the preview canvas (same pixels as the export) on every change.
   useEffect(() => {
@@ -313,9 +319,8 @@ function Editor({
       ctx.strokeStyle = "#3b82f6";
       ctx.lineWidth = Math.max(4, base.width / 250);
       ctx.setLineDash([16, 10]);
-      const half = sel.kind === "emoji" ? sel.size * 0.65 : sel.size * 0.7;
-      const halfW = sel.kind === "emoji" ? half : Math.max(half, (sel.text.length * sel.size) / 3.6);
-      ctx.strokeRect(sel.x - halfW, sel.y - half, halfW * 2, half * 2);
+      const { halfW, halfH } = overlayBox(sel);
+      ctx.strokeRect(sel.x - halfW, sel.y - halfH, halfW * 2, halfH * 2);
       ctx.setLineDash([]);
     }
   }, [base, overlays, selected]);
@@ -327,9 +332,8 @@ function Editor({
 
   const hit = (x: number, y: number) =>
     [...overlays].reverse().find((o) => {
-      const half = o.size * 0.7;
-      const halfW = o.kind === "emoji" ? half : Math.max(half, (o.text.length * o.size) / 3.6);
-      return Math.abs(x - o.x) <= halfW && Math.abs(y - o.y) <= half;
+      const { halfW, halfH } = overlayBox(o);
+      return Math.abs(x - o.x) <= halfW && Math.abs(y - o.y) <= halfH;
     });
 
   const add = (kind: Overlay["kind"], text: string, color = "#000000") => {
@@ -357,10 +361,16 @@ function Editor({
           }
         }}
         onPointerMove={(e) => {
-          const d = drag.current;
-          if (!d) return;
-          const p = toCanvas(e);
-          setOverlays((os) => os.map((o) => (o.id === d.id ? { ...o, x: p.x - d.px, y: p.y - d.py } : o)));
+          if (!drag.current) return;
+          pending.current = toCanvas(e);
+          if (frame.current !== null) return;
+          frame.current = requestAnimationFrame(() => {
+            frame.current = null;
+            const d = drag.current;
+            const p = pending.current;
+            if (!d || !p) return;
+            setOverlays((os) => os.map((o) => (o.id === d.id ? { ...o, x: p.x - d.px, y: p.y - d.py } : o)));
+          });
         }}
         onPointerUp={() => (drag.current = null)}
         onPointerCancel={() => (drag.current = null)}
@@ -457,8 +467,8 @@ function Editor({
 
 function Finished({ blob, layoutId, onEdit, onNew }: { blob: Blob; layoutId: string; onEdit: () => void; onNew: () => void }) {
   const [consent, setConsent] = useState(false);
+  const [sendState, setSendState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
   const [shareFailed, setShareFailed] = useState(false);
-  const uploaded = useRef(false);
   // Remounts per finished photo (phase change), so one id per version the diner saved.
   const [photoId] = useState(() => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
   const url = useMemo(() => URL.createObjectURL(blob), [blob]);
@@ -467,26 +477,33 @@ function Finished({ blob, layoutId, onEdit, onNew }: { blob: Blob; layoutId: str
   const file = useMemo(() => new File([blob], "shareat-capture.jpg", { type: "image/jpeg" }), [blob]);
   const canShareFile = typeof navigator !== "undefined" && !!navigator.canShare?.({ files: [file] });
 
-  // Only a photo the diner agreed we may post is ever stored. Fire-and-forget:
-  // a failed upload must never stop them saving or sharing their own photo.
-  const keepIfConsented = useCallback(async () => {
-    if (!consent || uploaded.current) return;
-    uploaded.current = true;
+  // Only a photo the diner agreed we may post is ever stored. Sent the moment
+  // they tick the box (not tied to Save/Share), and the result is shown, so a
+  // guest never believes they consented when nothing reached us.
+  const sendConsented = useCallback(async () => {
+    setSendState("sending");
     try {
       const res = await fetch("/api/customer/games/capture-share", {
         method: "POST",
         headers: { ...(await authHeader()), "Content-Type": "image/jpeg", "X-Photo-Id": photoId, "X-Layout": layoutId },
         body: blob,
       });
-      if (!res.ok) uploaded.current = false;
+      setSendState(res.ok ? "sent" : "failed");
     } catch {
-      uploaded.current = false;
+      setSendState("failed");
     }
-  }, [consent, blob, photoId, layoutId]);
+  }, [blob, photoId, layoutId]);
+
+  const onConsent = (v: boolean) => {
+    // Once sent it cannot be unsent from here; the consent text says how to have it removed.
+    if (sendState === "sent" || sendState === "sending") return;
+    setConsent(v);
+    if (v) void sendConsented();
+    else setSendState("idle");
+  };
 
   const save = () => {
     signalUse(GAME_ID);
-    void keepIfConsented();
     const a = document.createElement("a");
     a.href = url;
     a.download = `shareat-${format(new Date(), "yyyyMMdd-HHmmss")}.jpg`;
@@ -496,7 +513,6 @@ function Finished({ blob, layoutId, onEdit, onNew }: { blob: Blob; layoutId: str
   const share = async () => {
     setShareFailed(false);
     signalUse(GAME_ID);
-    void keepIfConsented();
     try {
       await navigator.share({ files: [file], text: "#Sharelebrate at SharEat" });
     } catch (e) {
@@ -510,9 +526,19 @@ function Finished({ blob, layoutId, onEdit, onNew }: { blob: Blob; layoutId: str
       <img src={url} alt="Your photo" className="mx-auto max-h-[60vh] rounded-2xl shadow-lg" />
 
       <label className="flex items-start gap-3 rounded-2xl bg-white p-4 text-sm shadow">
-        <Checkbox checked={consent} onCheckedChange={(v) => setConsent(v === true)} className="mt-0.5" />
+        <Checkbox checked={consent} onCheckedChange={(v) => onConsent(v === true)} className="mt-0.5" />
         <span>{CONSENT_TEXT}</span>
       </label>
+      {sendState === "sending" && <p className="-mt-2 text-xs text-muted-foreground">Sending to SharEat…</p>}
+      {sendState === "sent" && <p className="-mt-2 text-xs font-semibold text-emerald-700">Thanks! SharEat has your photo.</p>}
+      {sendState === "failed" && (
+        <p className="-mt-2 text-xs font-semibold text-amber-700">
+          Couldn&apos;t send it to SharEat.{" "}
+          <button type="button" className="underline" onClick={() => void sendConsented()}>
+            Try again
+          </button>
+        </p>
+      )}
 
       {shareFailed && (
         <p className="text-xs font-semibold text-amber-700">Sharing didn&apos;t work. Save the photo, then post it from your gallery.</p>
