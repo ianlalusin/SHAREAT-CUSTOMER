@@ -324,10 +324,15 @@ export function drawMagazine(ctx: CanvasRenderingContext2D, l: Layout, shot: HTM
   const issue = info.dateText.replace(/^(\w{3})\w*\s+\d+,\s*(\d{4})$/, "$1 $2").toUpperCase();
   ctx.shadowColor = "rgba(0,0,0,0.6)";
   ctx.shadowBlur = 12;
-  aligned(ctx, "THE SAMGYUP ISSUE", 36, 262, 40, 600, 28, (px) => `900 ${px}px ${FONT}`, 1, "#ffffff", "left");
+  aligned(ctx, "LIFE UPDATE", 36, 262, 40, 600, 28, (px) => `900 ${px}px ${FONT}`, 1, "#ffffff", "left");
   aligned(ctx, issue, W - 36, 262, 40, 300, 28, (px) => `900 ${px}px ${FONT}`, 1, "#ffffff", "right");
-  ["10 WAYS TO WRAP YOUR SSAM", "WHY RICE IS UNLIMITED", "GRILL LIKE A PRO"].forEach((line, i) => {
-    aligned(ctx, line, 42, 400 + i * 120, 96, 380, 36, (px) => `900 ${px}px ${FONT}`, 2, "#ffffff", "left");
+  // Hugot cover lines (owner's wording, 2026-11-21); the middle one runs to three lines.
+  [
+    "PINAKILIG, PERO HINDI INIBIG",
+    "MADALING MAINIS, MAGALING MAGLINIS, PAHINGI PONG KISS",
+    "BAGSAK SA EXAM PERO PASADO SAYO",
+  ].forEach((line, i) => {
+    aligned(ctx, line, 42, 390 + i * 135, 120, 400, 36, (px) => `900 ${px}px ${FONT}`, 3, "#ffffff", "left");
   });
 
   const headline = (info.fields.headline || "Grill Master of the Year").toUpperCase();
