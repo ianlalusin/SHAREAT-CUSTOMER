@@ -1,6 +1,6 @@
 "use client";
 
-import { captionLine, coverCrop, outerSize, type Layout } from "./layouts";
+import { captionLine, coverCrop, outerSize, printTone, type Layout } from "./layouts";
 import { DRAWERS } from "./templates";
 
 /** A sticker or a line of text the diner placed, in finished-canvas pixels. */
@@ -44,6 +44,25 @@ export function grabFrame(video: HTMLVideoElement, mirror: boolean): Shot {
     ctx.scale(-1, 1);
   }
   ctx.drawImage(video, 0, 0);
+  return c;
+}
+
+/** A lighter copy of a photo for the thermal print (see printTone). The original is untouched. */
+export function lightenForPrint(shot: Shot): Shot {
+  const c = document.createElement("canvas");
+  c.width = shot.width;
+  c.height = shot.height;
+  const ctx = c.getContext("2d")!;
+  ctx.drawImage(shot, 0, 0);
+  const img = ctx.getImageData(0, 0, c.width, c.height);
+  const lut = Array.from({ length: 256 }, (_, v) => printTone(v));
+  const px = img.data;
+  for (let i = 0; i < px.length; i += 4) {
+    px[i] = lut[px[i]];
+    px[i + 1] = lut[px[i + 1]];
+    px[i + 2] = lut[px[i + 2]];
+  }
+  ctx.putImageData(img, 0, 0);
   return c;
 }
 

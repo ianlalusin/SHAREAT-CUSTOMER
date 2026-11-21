@@ -106,3 +106,19 @@ describe("boarding pass airport code", () => {
     expect(airportCode("")).toBe("BSG");
   });
 });
+
+import { printTone } from "./layouts";
+
+describe("printTone (lighter photos on the thermal print)", () => {
+  it("keeps white white and lifts black off solid", () => {
+    expect(printTone(255)).toBe(255);
+    expect(printTone(0)).toBeGreaterThan(25);
+  });
+  it("brightens mid-tones and never darkens or reorders a tone", () => {
+    expect(printTone(128)).toBeGreaterThan(150);
+    for (let v = 0; v < 255; v++) {
+      expect(printTone(v)).toBeGreaterThanOrEqual(v);
+      expect(printTone(v + 1)).toBeGreaterThanOrEqual(printTone(v));
+    }
+  });
+});
