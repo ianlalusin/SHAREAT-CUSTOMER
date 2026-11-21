@@ -26,6 +26,8 @@ export async function GET(req: Request) {
     isActive: configs[g.id]?.isActive !== false && !!configs[g.id],
     // For the per-branch switches; written only through PUT /api/manager/games.
     disabledStoreIds: Array.isArray(configs[g.id]?.disabledStoreIds) ? configs[g.id]?.disabledStoreIds : [],
+    // Capture & Share only: cashier printing, switched separately from the game. Absent = on.
+    ...(g.id === "capture-share" ? { printingEnabled: (configs[g.id] as { printingEnabled?: boolean } | undefined)?.printingEnabled !== false } : {}),
   }));
 
   return NextResponse.json({ ok: true, games, pendingCount: await countPending(db) });
@@ -47,6 +49,16 @@ export async function PUT(req: Request) {
   const body = await req.json().catch(() => ({}));
   const gameId = String((body as any)?.gameId || "");
   const isActive = (body as any)?.isActive === true;
+
+  // Capture & Share's printing switch: only that one field, the game's on/off untouched.
+  const printingEnabled = (body as { printingEnabled?: unknown }).printingEnabled;
+  if (gameId === "capture-share" && typeof printingEnabled === "boolean") {
+    await getAdminDb().doc(`miniGames/${gameId}`).set(
+      { printingEnabled, updatedAtMs: Date.now(), updatedByUid: gate.caller.uid, updatedAt: FieldValue.serverTimestamp() },
+      { merge: true }
+    );
+    return NextResponse.json({ ok: true, gameId, printingEnabled });
+  }
 
   // Ghost Hunt's on/off is per branch (Admin → Games → Spot a Ghost); its
   // summary doc is recomputed from the branches, so a chain-wide flip here

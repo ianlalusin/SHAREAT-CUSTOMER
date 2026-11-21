@@ -107,6 +107,7 @@ export function CaptureShareGame() {
   const [finalBlob, setFinalBlob] = useState<Blob | null>(null);
   const [guest, setGuest] = useState({ name: "", table: "" });
   const [paperWidth, setPaperWidth] = useState<"58mm" | "80mm">("80mm");
+  const [printingOn, setPrintingOn] = useState(true);
   // A template's editable lines (ticket title, ID name…); empty for plain layouts.
   const [fields, setFields] = useState<Record<string, string>>({});
   const logoRef = useRef<HTMLImageElement | null | undefined>(undefined);
@@ -121,6 +122,7 @@ export function CaptureShareGame() {
         setStoreName(String(json.storeName || "SharEat"));
         setGuest({ name: String(json.customerName || ""), table: String(json.tableName || "") });
         setPaperWidth(json.paperWidth === "58mm" ? "58mm" : "80mm");
+        setPrintingOn(json.printing !== false);
       } catch (e) {
         setGateError((e as Error)?.message || "Could not open Capture & Share.");
       }
@@ -252,6 +254,7 @@ export function CaptureShareGame() {
         layoutId={layout.id}
         // 57/58mm paper is too narrow for the 2-photo and 2x2 layouts (owner's call).
         printable={paperWidth === "80mm" || layout.paper58}
+        printingOn={printingOn}
         onEdit={() => setPhase("edit")}
         onNew={startOver}
       />
@@ -772,12 +775,14 @@ function Finished({
   blob,
   layoutId,
   printable,
+  printingOn,
   onEdit,
   onNew,
 }: {
   blob: Blob;
   layoutId: string;
   printable: boolean;
+  printingOn: boolean;
   onEdit: () => void;
   onNew: () => void;
 }) {
@@ -957,7 +962,9 @@ function Finished({
           <Button variant="outline" className="h-12 rounded-2xl" onClick={onNew}>New photo</Button>
         )}
       </div>
-      {printable ? (
+      {!printingOn ? (
+        <p className="text-center text-xs text-muted-foreground">Printing isn&apos;t available right now. Save or share your photo instead.</p>
+      ) : printable ? (
         <div className="space-y-2 rounded-2xl bg-white p-4 shadow">
           <Button
             variant="outline"

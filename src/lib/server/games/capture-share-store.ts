@@ -20,6 +20,17 @@ export const MAX_BYTES = 4 * 1024 * 1024;
 /** Per table session. Stops a stuck retry loop or a prankster filling the bucket. */
 export const MAX_PER_SESSION = 20;
 
+/**
+ * Whether guests may send photos to the cashier's printer. A chain-wide admin
+ * switch (`miniGames/capture-share.printingEnabled`), separate from the game's
+ * on/off: printing can be paused (printer down, out of paper) while the photo
+ * booth keeps running. Absent means on.
+ */
+export async function isPrintingEnabled(db: Firestore): Promise<boolean> {
+  const snap = await db.doc(`miniGames/${GAME_ID}`).get();
+  return snap.data()?.printingEnabled !== false;
+}
+
 export async function isCaptureShareLive(db: Firestore, storeId: string): Promise<boolean> {
   const cfg = (await readGameConfigs(db))[GAME_ID];
   return isGameConfigured(cfg) && isGameEnabledForStore(cfg, storeId);
