@@ -74,6 +74,7 @@ export default function DashboardPage() {
   const [refillCooldowns, setRefillCooldowns] = useState<RefillCooldowns | null>(null);
   const [isAddGrillerOpen, setIsAddGrillerOpen] = useState(false);
   const [assistanceBusy, setAssistanceBusy] = useState(false);
+  const [isAssistOpen, setIsAssistOpen] = useState(false);
   const [assistanceCooldown, setAssistanceCooldown] = useState(false);
 
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
@@ -408,10 +409,10 @@ export default function DashboardPage() {
       <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 mt-6 relative z-10">
         <div className="w-full sm:w-[420px] mx-auto grid grid-cols-2 gap-3">
           {/*
-            Two layouts. With Add Griller (4, 8, 12+ guests): Refill | Griller,
-            Assistance | Loyalty Card, then Fun & Games below. Without it, the
-            Loyalty Card takes the griller's place and Fun & Games takes the
-            Loyalty Card's: Refill | Loyalty Card, Assistance | Fun & Games.
+            Fixed layout: Refill | Loyalty Card, Assistance | Fun & Games, then
+            Review order full-width while the basket has items. Add Griller
+            lives inside the Assistance menu (only at 4, 8 or 12+ guests), so
+            the grid no longer changes shape with the head count.
           */}
           <Button
             className="h-14 rounded-2xl text-base font-bold shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all"
@@ -433,55 +434,30 @@ export default function DashboardPage() {
             <Plus className="mr-2 h-5 w-5" />
             Order Refill
           </Button>
-          {showGriller ? (
-          <Button
-            variant="outline"
-            className="h-14 rounded-2xl text-base font-bold border-2 border-primary/30 text-primary hover:bg-primary/5 active:scale-[0.98] transition-all"
-            onClick={() => setIsAddGrillerOpen(true)}
-          >
-            <Flame className="mr-2 h-5 w-5" />
-            Add Griller
-          </Button>
-          ) : (
-            loyaltyCard
-          )}
+          {loyaltyCard}
 
-          {/* Row 2 — unchanged, only repositioned */}
+          {/* A menu, not a one-tap alert: calling staff is a deliberate choice, and new requests (bill out…) slot in here. */}
           <Button
             variant="outline"
             className={cn(
               "h-14 rounded-2xl text-base font-bold border-2 border-primary/30 text-primary hover:bg-primary/5 active:scale-[0.98] transition-all",
-              // No griller and no games: nothing shares this row.
-              !showGriller && !hasGames && "col-span-2"
+              !hasGames && "col-span-2"
             )}
-            onClick={handleAssistance}
-            disabled={assistanceBusy || assistanceCooldown}
+            onClick={() => setIsAssistOpen(true)}
           >
-            {assistanceBusy ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Bell className="mr-2 h-5 w-5" />}
-            {assistanceCooldown ? "Staff notified" : "Ask for assistance"}
+            <Bell className="mr-2 h-5 w-5" />
+            Assistance
           </Button>
-          {showGriller ? loyaltyCard : hasGames && funAndGames("col-span-1")}
+          {hasGames && funAndGames("col-span-1")}
 
-          {/*
-            Row 3 spans both columns so the games shelf reads as a different
-            KIND of thing from the four ordering/service actions above it,
-            rather than becoming a fifth equal-weight button competing with
-            "Order Refill" for attention.
-          */}
           {/*
             Only while something is parked in the basket. "Add to order" closes
             the item sheet and the diner looks back up here, so without this
             they read the red button as "sent" when the order is still parked.
-            Shares the row with Fun & Games when both are present.
           */}
-
           {cartSummary.count > 0 && (
           <Button
-            className={cn(
-              "h-14 rounded-2xl font-bold shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all",
-              // Half a 420px row is tight for "Review order (n) · ₱1,234".
-              showGriller && hasGames ? "col-span-1 px-2 text-sm" : "col-span-2 text-base"
-            )}
+            className="col-span-2 h-14 rounded-2xl text-base font-bold shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all"
             onClick={() => setReviewOpenRequest((n) => n + 1)}
             data-basket-target
             aria-label={`Review order, ${cartSummary.count} item${cartSummary.count === 1 ? "" : "s"}, ${pesoLabel(cartSummary.total)}`}
@@ -490,7 +466,6 @@ export default function DashboardPage() {
             Review order ({cartSummary.count}) · {pesoLabel(cartSummary.total)}
           </Button>
           )}
-          {showGriller && hasGames && funAndGames(cartSummary.count > 0 ? "col-span-1" : "col-span-2")}
         </div>
 
         <CustomerCatalog
@@ -504,6 +479,43 @@ export default function DashboardPage() {
       </div>
 
       {/* Sharelebrator card — opens in a bottom drawer */}
+      <Drawer open={isAssistOpen} onOpenChange={setIsAssistOpen}>
+        <DrawerContent>
+          <DrawerHeader className="text-left">
+            <DrawerTitle>How can we help?</DrawerTitle>
+            <DrawerDescription>Pick one and a staff member will come to your table.</DrawerDescription>
+          </DrawerHeader>
+          <div className="grid gap-3 px-4 pb-6">
+            <Button
+              variant="outline"
+              className="h-14 justify-start rounded-2xl border-2 border-primary/30 text-base font-bold text-primary"
+              disabled={assistanceBusy || assistanceCooldown}
+              onClick={async () => {
+                await handleAssistance();
+                setIsAssistOpen(false);
+              }}
+            >
+              {assistanceBusy ? <Loader2 className="mr-3 h-5 w-5 animate-spin" /> : <Bell className="mr-3 h-5 w-5" />}
+              {assistanceCooldown ? "Staff notified" : "Call a staff"}
+            </Button>
+            {/* One stove per 4 guests: only tables at 4, 8 or 12+ guests are offered another. */}
+            {showGriller && (
+              <Button
+                variant="outline"
+                className="h-14 justify-start rounded-2xl border-2 border-primary/30 text-base font-bold text-primary"
+                onClick={() => {
+                  setIsAssistOpen(false);
+                  setIsAddGrillerOpen(true);
+                }}
+              >
+                <Flame className="mr-3 h-5 w-5" />
+                Add griller
+              </Button>
+            )}
+          </div>
+        </DrawerContent>
+      </Drawer>
+
       <Drawer open={isCardOpen} onOpenChange={setIsCardOpen}>
         <DrawerContent className="max-h-[92dvh]">
           <DrawerHeader className="text-left">
