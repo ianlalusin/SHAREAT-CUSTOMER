@@ -132,23 +132,6 @@ export default function AdminGamesPage() {
     }
   };
 
-  // Same subtractive switch a branch manager has (PUT /api/manager/games); an admin passes its store check for every branch.
-  const togglePrinting = async (printingEnabled: boolean) => {
-    try {
-      const res = await fetch("/api/admin/games", {
-        method: "PUT",
-        headers: await authed(),
-        body: JSON.stringify({ gameId: "capture-share", printingEnabled }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not update.");
-      await loadGames();
-      toast({ title: printingEnabled ? "Printing switched on" : "Printing paused", description: "Capture & Share itself keeps running." });
-    } catch (e) {
-      toast({ variant: "destructive", title: "Couldn't update", description: (e as Error)?.message });
-    }
-  };
-
   const togglePrintingAt = async (storeId: string, on: boolean) => {
     try {
       const res = await fetch("/api/admin/games", {
@@ -164,6 +147,7 @@ export default function AdminGamesPage() {
     }
   };
 
+  // Same subtractive switch a branch manager has (PUT /api/manager/games); an admin passes its store check for every branch.
   const toggleBranch = async (gameId: string, storeId: string, enabled: boolean) => {
     try {
       const res = await fetch("/api/manager/games", {
@@ -268,15 +252,6 @@ export default function AdminGamesPage() {
                         {openBranches === g.id ? "Hide branches" : `Branches (${stores.filter((s) => !g.disabledStoreIds.includes(s.storeId)).length}/${stores.length} on)`}
                       </button>
                     )}
-                    {g.id === "capture-share" && g.configured && (
-                      <label className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-zinc-50 px-3 py-2 text-sm">
-                        <span>
-                          <span className="block font-bold">Printing at the cashier</span>
-                          <span className="block text-xs text-muted-foreground">Off: guests can still take, save and share photos.</span>
-                        </span>
-                        <Switch checked={g.printingEnabled !== false} onCheckedChange={(v) => togglePrinting(v)} />
-                      </label>
-                    )}
                     {openBranches === g.id && g.id === "capture-share" && (
                       // One row per branch: is the game on there, and can it print there.
                       <div className="mt-2 grid grid-cols-[1fr_auto_auto] items-center gap-x-4 gap-y-2 text-sm">
@@ -295,8 +270,8 @@ export default function AdminGamesPage() {
                               />
                               <Switch
                                 aria-label={`${s.name} printing`}
-                                checked={available && g.printingEnabled !== false && !(g.printingDisabledStoreIds ?? []).includes(s.storeId)}
-                                disabled={!available || g.printingEnabled === false}
+                                checked={available && !(g.printingDisabledStoreIds ?? []).includes(s.storeId)}
+                                disabled={!available}
                                 onCheckedChange={(v) => togglePrintingAt(s.storeId, v)}
                               />
                             </Fragment>
@@ -319,9 +294,10 @@ export default function AdminGamesPage() {
                     )}
                   </div>
                   {/* Ghost Hunt is switched on and off per branch, on its own settings page. */}
+                  {/* Capture & Share is run from its branch table; its main switch shows only to turn it on in the first place. */}
                   {g.id === "ghost-hunt" ? (
                     <span className="shrink-0 text-xs font-bold text-muted-foreground">Per branch</span>
-                  ) : (
+                  ) : g.id === "capture-share" && g.isActive ? null : (
                     <Switch checked={g.isActive} onCheckedChange={(v) => toggleGame(g.id, v)} />
                   )}
                 </div>
