@@ -667,7 +667,7 @@ function Editor({
 
 function Finished({ blob, layoutId, onEdit, onNew }: { blob: Blob; layoutId: string; onEdit: () => void; onNew: () => void }) {
   const [consent, setConsent] = useState(false);
-  const [sendState, setSendState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const [sendState, setSendState] = useState<"idle" | "sending" | "sent" | "failed" | "removing" | "removed">("idle");
   const [sendError, setSendError] = useState<string | null>(null);
   const [shareFailed, setShareFailed] = useState(false);
   // Remounts per finished photo (phase change), so one id per version the diner saved.
@@ -708,11 +708,27 @@ function Finished({ blob, layoutId, onEdit, onNew }: { blob: Blob; layoutId: str
     setSendState("failed");
   }, [blob, photoId, layoutId]);
 
+  // Unticking takes the photo back out: withdrawing consent must be as easy as giving it.
+  const withdraw = useCallback(async () => {
+    setSendState("removing");
+    setSendError(null);
+    try {
+      const res = await fetch("/api/customer/games/capture-share", { method: "DELETE", headers: { ...(await authHeader()), "X-Photo-Id": photoId } });
+      if (!res.ok) throw new Error(String((await res.json().catch(() => ({})))?.error || `Server said ${res.status}`));
+      setSendState("removed");
+    } catch (e) {
+      // Still stored, so the box goes back to ticked rather than claiming it was removed.
+      setConsent(true);
+      setSendState("sent");
+      setSendError(`Couldn't remove it — ${(e as Error)?.message || "try again"}`);
+    }
+  }, [photoId]);
+
   const onConsent = (v: boolean) => {
-    // Once sent it cannot be unsent from here; the consent text says how to have it removed.
-    if (sendState === "sent" || sendState === "sending") return;
+    if (sendState === "sending" || sendState === "removing") return;
     setConsent(v);
     if (v) void sendConsented();
+    else if (sendState === "sent") void withdraw();
     else setSendState("idle");
   };
 
@@ -721,7 +737,7 @@ function Finished({ blob, layoutId, onEdit, onNew }: { blob: Blob; layoutId: str
   const [asked, setAsked] = useState(false);
   const [pending, setPending] = useState<"save" | "share" | null>(null);
   const askFirst = (action: "save" | "share") => {
-    if (asked || consent || sendState === "sent" || sendState === "sending") return action === "save" ? save() : void share();
+    if (asked || consent || sendState !== "idle") return action === "save" ? save() : void share();
     setPending(action);
   };
   const answer = (yes: boolean) => {
@@ -757,11 +773,22 @@ function Finished({ blob, layoutId, onEdit, onNew }: { blob: Blob; layoutId: str
       <img src={url} alt="Your photo" className="mx-auto max-h-[60vh] rounded-2xl shadow-lg" />
 
       <label className="flex items-start gap-3 rounded-2xl bg-white p-4 text-sm shadow">
-        <Checkbox checked={consent} onCheckedChange={(v) => onConsent(v === true)} className="mt-0.5" />
+        <Checkbox
+          checked={consent}
+          disabled={sendState === "sending" || sendState === "removing"}
+          onCheckedChange={(v) => onConsent(v === true)}
+          className="mt-0.5"
+        />
         <span>{CONSENT_TEXT}</span>
       </label>
       {sendState === "sending" && <p className="-mt-2 text-xs text-muted-foreground">Sending to SharEat…</p>}
-      {sendState === "sent" && <p className="-mt-2 text-xs font-semibold text-emerald-700">Thanks! SharEat has your photo.</p>}
+      {sendState === "sent" && (
+        <p className="-mt-2 text-xs font-semibold text-emerald-700">
+          Thanks! SharEat has your photo.{sendError ? <span className="block text-amber-700">{sendError}</span> : " Untick to take it back."}
+        </p>
+      )}
+      {sendState === "removing" && <p className="-mt-2 text-xs text-muted-foreground">Removing it…</p>}
+      {sendState === "removed" && <p className="-mt-2 text-xs font-semibold text-muted-foreground">Removed. SharEat won&apos;t post this photo.</p>}
       {sendState === "failed" && (
         <p className="-mt-2 text-xs font-semibold text-amber-700">
           Couldn&apos;t send it to SharEat{sendError ? ` — ${sendError}` : ""}.{" "}
