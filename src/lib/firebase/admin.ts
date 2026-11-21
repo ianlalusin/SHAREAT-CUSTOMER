@@ -2,6 +2,7 @@ import { readFileSync } from "fs";
 import { getApps, initializeApp, applicationDefault, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
+import { getStorage } from "firebase-admin/storage";
 
 function loadCredential() {
   // 1. Inline JSON (for cloud deploys like Vercel)
@@ -51,4 +52,10 @@ export function getAdminDb() {
 export function getAdminAuth() {
   ensureAdmin();
   return getAuth();
+}
+
+/** The shared Storage bucket (same one POS uses). */
+export function getAdminBucket() {
+  ensureAdmin();
+  return getStorage().bucket(process.env.FIREBASE_STORAGE_BUCKET || "shareat-hub-v2.firebasestorage.app");
 }

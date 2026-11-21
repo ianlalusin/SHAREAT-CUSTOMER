@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Flame, Gift, Utensils } from "lucide-react";
+import { Camera, Flame, Gift, Utensils } from "lucide-react";
 import type { GameMetricDefinitions } from "@/lib/games/metrics";
 
 /**
@@ -95,6 +95,22 @@ export const GAMES: GameDefinition[] = [
     metrics: {
       view: { label: "Opened the hunt" },
       use: { label: "Opened the camera", signal: "camera", threshold: 1 },
+    },
+  },
+  {
+    id: "capture-share",
+    title: "Capture & Share",
+    tagline: "Snap an Instax-style photo or a photo strip, add stickers, share it.",
+    icon: Camera,
+    accent: "ocean",
+    href: "/play/capture-share",
+    // The caption names the branch, and a consented photo is filed under it.
+    requiresSession: true,
+    metrics: {
+      view: { label: "Opened Capture & Share" },
+      // Saving or sharing the finished photo IS the use; taking shots and
+      // abandoning the editor is only a look.
+      use: { label: "Saved or shared a photo", signal: "export", threshold: 1 },
     },
   },
 ];

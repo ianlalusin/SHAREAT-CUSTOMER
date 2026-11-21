@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
-import { Eye, Gamepad2, KeyRound, LayoutGrid, LogOut, Megaphone, MessageSquare, ShieldCheck } from "lucide-react";
+import { Camera, Eye, Gamepad2, KeyRound, LayoutGrid, LogOut, Megaphone, MessageSquare, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +27,7 @@ const TILES = [
   { href: "/admin/flash-ads", label: "Flash Ads", icon: Megaphone },
   { href: "/admin/preview", label: "Preview", icon: Eye },
   { href: "/admin/games", label: "Games", icon: Gamepad2, badge: "games" as const },
+  { href: "/admin/capture-share", label: "Guest photos", icon: Camera },
   { href: "/admin/categories", label: "Categories", icon: LayoutGrid },
   { href: "/admin/privacy-cleanup", label: "Privacy cleanup", icon: ShieldCheck },
 ];
