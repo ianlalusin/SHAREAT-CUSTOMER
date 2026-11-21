@@ -99,6 +99,7 @@ export default function DashboardPage() {
 
   // Link state (for mini card + conditional rendering)
   const [isLinked, setIsLinked] = useState(false);
+  const [liveGuestCount, setLiveGuestCount] = useState<number | null>(null);
 
   // Flash ad state
   const [flashAds, setFlashAds] = useState<FlashAdItem[]>([]);
@@ -193,6 +194,9 @@ export default function DashboardPage() {
           return;
         }
         setIsLinked(!!data?.linkedCustomerPhone);
+        // Live, so the Add Griller button comes and goes as the cashier changes the head count.
+        const guests = Number(data.guestCountFinal ?? data.guestCountCashierInitial ?? data.guestCount);
+        if (Number.isFinite(guests)) setLiveGuestCount(guests);
       },
       (error) => {
         // permission-denied = cashier disabled customer access (most common cause)
@@ -352,7 +356,7 @@ export default function DashboardPage() {
 `;
 
   // One stove per 4 guests: only tables at 4, 8 or 12+ guests are offered another (lib/griller-visibility.ts).
-  const showGriller = canRequestGriller(Number(session.guestCount || 0));
+  const showGriller = canRequestGriller(liveGuestCount ?? Number(session.guestCount || 0));
 
   const loyaltyCard = (
     <button
