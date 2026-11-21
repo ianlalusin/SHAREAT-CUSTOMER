@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getAuth, onAuthStateChanged } from "firebase/auth";
 import { ArrowLeft, Loader2, RefreshCw, Check, X, Archive, Undo2, Star, StarOff, Pencil } from "lucide-react";
@@ -56,7 +56,6 @@ export default function AdminGamesPage() {
   const [games, setGames] = useState<GameRow[] | null>(null);
   const [stores, setStores] = useState<StoreRow[]>([]);
   const [openBranches, setOpenBranches] = useState<string | null>(null);
-  const [openPrintBranches, setOpenPrintBranches] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [status, setStatus] = useState<(typeof STATUSES)[number]>("pending");
   const [queue, setQueue] = useState<QueueRow[] | null>(null);
@@ -278,33 +277,34 @@ export default function AdminGamesPage() {
                         <Switch checked={g.printingEnabled !== false} onCheckedChange={(v) => togglePrinting(v)} />
                       </label>
                     )}
-                    {g.id === "capture-share" && g.configured && g.printingEnabled !== false && stores.length > 0 && (
-                      <div className="mt-1 rounded-xl bg-zinc-50 px-3 py-2">
-                        <button
-                          type="button"
-                          onClick={() => setOpenPrintBranches((o) => !o)}
-                          className="text-xs font-bold text-primary underline"
-                        >
-                          {openPrintBranches
-                            ? "Hide printing per branch"
-                            : `Printing per branch (${stores.filter((s) => !(g.printingDisabledStoreIds ?? []).includes(s.storeId)).length}/${stores.length} on)`}
-                        </button>
-                        {openPrintBranches && (
-                          <div className="mt-2 space-y-2">
-                            {stores.map((s) => (
-                              <label key={s.storeId} className="flex items-center justify-between gap-3 text-sm">
-                                <span className="truncate">{s.name}</span>
-                                <Switch
-                                  checked={!(g.printingDisabledStoreIds ?? []).includes(s.storeId)}
-                                  onCheckedChange={(v) => togglePrintingAt(s.storeId, v)}
-                                />
-                              </label>
-                            ))}
-                          </div>
-                        )}
+                    {openBranches === g.id && g.id === "capture-share" && (
+                      // One row per branch: is the game on there, and can it print there.
+                      <div className="mt-2 grid grid-cols-[1fr_auto_auto] items-center gap-x-4 gap-y-2 text-sm">
+                        <span className="text-xs font-bold text-muted-foreground">Branch</span>
+                        <span className="text-center text-xs font-bold text-muted-foreground">Available</span>
+                        <span className="text-center text-xs font-bold text-muted-foreground">Printing</span>
+                        {stores.map((s) => {
+                          const available = !g.disabledStoreIds.includes(s.storeId);
+                          return (
+                            <Fragment key={s.storeId}>
+                              <span className="truncate">{s.name}</span>
+                              <Switch
+                                aria-label={`${s.name} available`}
+                                checked={available}
+                                onCheckedChange={(v) => toggleBranch(g.id, s.storeId, v)}
+                              />
+                              <Switch
+                                aria-label={`${s.name} printing`}
+                                checked={available && g.printingEnabled !== false && !(g.printingDisabledStoreIds ?? []).includes(s.storeId)}
+                                disabled={!available || g.printingEnabled === false}
+                                onCheckedChange={(v) => togglePrintingAt(s.storeId, v)}
+                              />
+                            </Fragment>
+                          );
+                        })}
                       </div>
                     )}
-                    {openBranches === g.id && (
+                    {openBranches === g.id && g.id !== "capture-share" && (
                       <div className="mt-2 space-y-2">
                         {stores.map((s) => (
                           <label key={s.storeId} className="flex items-center justify-between gap-3 text-sm">
