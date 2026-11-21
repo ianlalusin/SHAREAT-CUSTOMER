@@ -547,6 +547,145 @@ export function drawReceipt(ctx: CanvasRenderingContext2D, l: Layout, shot: HTML
   centred(ctx, `No. ${digitsFrom(`${info.storeName}|${info.dateText}`, 6)}`, W / 2, 1324, 36, right - left, 24, (px) => `700 ${px}px ${MONO}`, 1, MUTED);
 }
 
+/**
+ * Now Playing: a music-player screen. Thermal-safe by design (owner's call):
+ * black lines and text on white, a black-and-white cover, no large solid
+ * black areas — dark fills smudge and fade on thermal paper.
+ */
+export function drawNowPlaying(ctx: CanvasRenderingContext2D, l: Layout, shot: HTMLCanvasElement | undefined, info: TemplateInfo, logo: HTMLImageElement | null) {
+  const W = l.w;
+  const K = "#111111";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, W, l.h);
+  ctx.strokeStyle = K;
+  ctx.fillStyle = K;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  // Header: chevron, "PLAYING FROM <branch>", menu dots.
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.moveTo(72, 80);
+  ctx.lineTo(96, 104);
+  ctx.lineTo(120, 80);
+  ctx.stroke();
+  for (const dx of [-26, 0, 26]) {
+    ctx.beginPath();
+    ctx.arc(W - 96 + dx, 92, 7, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  centred(ctx, "PLAYING FROM", W / 2, 50, 34, 500, 24, (px) => `700 ${px}px ${FONT}`, 1, K);
+  centred(ctx, info.storeName, W / 2, 84, 46, 640, 36, (px) => `900 ${px}px ${FONT}`, 1, K);
+
+  // Cover: the guest's photo, black and white, with a thin frame.
+  const slot = l.slots[0];
+  ctx.save();
+  ctx.filter = "grayscale(1) contrast(1.1)";
+  photo(ctx, shot, slot);
+  ctx.restore();
+  ctx.lineWidth = 5;
+  ctx.strokeRect(slot.x, slot.y, slot.w, slot.h);
+
+  // Title, artist and the (outlined) heart.
+  aligned(ctx, info.fields.song || "Busog Na Busog", 66, 1132, 76, 820, 64, (px) => `900 ${px}px ${FONT}`, 1, K, "left");
+  aligned(ctx, info.fields.artist || "", 66, 1210, 48, 820, 36, (px) => `600 ${px}px ${FONT}`, 1, K, "left");
+  ctx.save();
+  ctx.translate(970, 1180);
+  ctx.scale(2.6, 2.6);
+  ctx.translate(-12, -12);
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(12, 20);
+  ctx.bezierCurveTo(12, 20, 5, 15.7, 3, 11.4);
+  ctx.bezierCurveTo(1.7, 8.4, 3.6, 5, 7, 5);
+  ctx.bezierCurveTo(9, 5, 10.4, 6.1, 12, 8);
+  ctx.bezierCurveTo(13.6, 6.1, 15, 5, 17, 5);
+  ctx.bezierCurveTo(20.4, 5, 22.3, 8.4, 21, 11.4);
+  ctx.bezierCurveTo(19, 15.7, 12, 20, 12, 20);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
+
+  // Progress bar: outlined track, black filled part, white knob.
+  const barX = 66;
+  const barW = W - 132;
+  const barY = 1296;
+  ctx.lineWidth = 4;
+  roundRect(ctx, barX, barY, barW, 18, 9);
+  ctx.stroke();
+  roundRect(ctx, barX, barY, barW * 0.62, 18, 9);
+  ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(barX + barW * 0.62, barY + 9, 20, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.lineWidth = 6;
+  ctx.stroke();
+  ctx.fillStyle = K;
+  aligned(ctx, "2:26", barX, 1330, 36, 200, 28, (px) => `700 ${px}px ${FONT}`, 1, K, "left");
+  aligned(ctx, "4:00", barX + barW, 1330, 36, 200, 28, (px) => `700 ${px}px ${FONT}`, 1, K, "right");
+
+  // Controls: shuffle, previous, pause (outlined ring), next, repeat.
+  const cy = 1450;
+  ctx.lineWidth = 7;
+  // shuffle
+  ctx.beginPath();
+  ctx.moveTo(70, cy - 26); ctx.lineTo(96, cy - 26); ctx.bezierCurveTo(130, cy - 26, 140, cy + 26, 174, cy + 26); ctx.lineTo(190, cy + 26);
+  ctx.moveTo(70, cy + 26); ctx.lineTo(96, cy + 26); ctx.bezierCurveTo(130, cy + 26, 140, cy - 26, 174, cy - 26); ctx.lineTo(190, cy - 26);
+  ctx.moveTo(176, cy - 40); ctx.lineTo(192, cy - 26); ctx.lineTo(176, cy - 12);
+  ctx.moveTo(176, cy + 12); ctx.lineTo(192, cy + 26); ctx.lineTo(176, cy + 40);
+  ctx.stroke();
+  // previous
+  ctx.beginPath();
+  ctx.moveTo(300, cy - 34); ctx.lineTo(300, cy + 34);
+  ctx.moveTo(372, cy - 34); ctx.lineTo(318, cy); ctx.lineTo(372, cy + 34); ctx.closePath();
+  ctx.stroke();
+  // pause in a ring
+  ctx.lineWidth = 9;
+  ctx.beginPath();
+  ctx.arc(W / 2, cy, 80, 0, Math.PI * 2);
+  ctx.stroke();
+  roundRect(ctx, W / 2 - 30, cy - 38, 20, 76, 5);
+  ctx.fill();
+  roundRect(ctx, W / 2 + 10, cy - 38, 20, 76, 5);
+  ctx.fill();
+  // next
+  ctx.lineWidth = 7;
+  ctx.beginPath();
+  ctx.moveTo(780, cy - 34); ctx.lineTo(780, cy + 34);
+  ctx.moveTo(708, cy - 34); ctx.lineTo(762, cy); ctx.lineTo(708, cy + 34); ctx.closePath();
+  ctx.stroke();
+  // repeat
+  ctx.beginPath();
+  ctx.moveTo(890, cy + 2); ctx.lineTo(890, cy - 10); ctx.arcTo(890, cy - 30, 910, cy - 30, 20); ctx.lineTo(1004, cy - 30);
+  ctx.moveTo(990, cy - 44); ctx.lineTo(1006, cy - 30); ctx.lineTo(990, cy - 16);
+  ctx.moveTo(1010, cy - 2); ctx.lineTo(1010, cy + 10); ctx.arcTo(1010, cy + 30, 990, cy + 30, 20); ctx.lineTo(896, cy + 30);
+  ctx.moveTo(910, cy + 16); ctx.lineTo(894, cy + 30); ctx.lineTo(910, cy + 44);
+  ctx.stroke();
+
+  // Headphones: "Listening on <table>".
+  const hy = 1580;
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.arc(96, hy, 26, Math.PI, 0);
+  ctx.stroke();
+  roundRect(ctx, 66, hy - 4, 16, 26, 4);
+  ctx.stroke();
+  roundRect(ctx, 110, hy - 4, 16, 26, 4);
+  ctx.stroke();
+  aligned(ctx, `LISTENING ON ${(info.tableName || "YOUR TABLE").toUpperCase()}`, 146, hy - 22, 48, 760, 32, (px) => `900 ${px}px ${FONT}`, 1, K, "left");
+
+  // Branding under a dashed rule.
+  ctx.setLineDash([16, 12]);
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(66, 1630);
+  ctx.lineTo(W - 66, 1630);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  branding(ctx, logo, 66, 1656, 84, 170, W - 170 - 66, info, info.dateText, { ink: K, muted: "#333333" });
+}
+
 type Drawer = (ctx: CanvasRenderingContext2D, l: Layout, shot: HTMLCanvasElement | undefined, info: TemplateInfo, logo: HTMLImageElement | null) => void;
 
 export const DRAWERS: Record<NonNullable<Layout["template"]>, Drawer> = {
@@ -558,4 +697,5 @@ export const DRAWERS: Record<NonNullable<Layout["template"]>, Drawer> = {
   certificate: drawCertificate,
   movie: drawMovie,
   receipt: drawReceipt,
+  nowplaying: drawNowPlaying,
 };

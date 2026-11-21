@@ -71,6 +71,7 @@ const THUMB_COLORS: Record<NonNullable<Layout["template"]>, [string, string]> = 
   certificate: ["#fffaf0", "#fffaf0"],
   movie: ["#0b0b0f", "#0b0b0f"],
   receipt: ["#e7e5e4", "#ffffff"],
+  nowplaying: ["#ffffff", "#ffffff"],
 };
 
 /** A small sketch of a template for the picker. */
