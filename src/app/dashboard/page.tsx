@@ -354,6 +354,45 @@ export default function DashboardPage() {
   // One stove per 4 guests: only tables at 4, 8 or 12+ guests are offered another (lib/griller-visibility.ts).
   const showGriller = canRequestGriller(Number(session.guestCount || 0));
 
+  const loyaltyCard = (
+    <button
+      type="button"
+      onClick={() => setIsCardOpen(true)}
+      className="relative h-14 rounded-2xl overflow-hidden border border-zinc-700 bg-black shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary"
+      aria-label="Open Loyalty Card"
+    >
+      <span className="absolute inset-0 pointer-events-none">
+        <span
+          className="absolute top-0 bottom-0 w-[30%] -skew-x-12"
+          style={{
+            left: "-30%",
+            background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%)",
+            animation: "loyaltyCardShine 3.5s ease-in-out infinite",
+          }}
+        />
+      </span>
+      <span className="relative flex items-center justify-center gap-2 text-base font-bold text-white">
+        <Star className="h-5 w-5 drop-shadow" strokeWidth={2.5} fill="currentColor" />
+        Loyalty Card
+      </span>
+    </button>
+  );
+
+  const funAndGames = (gamesSpan: string) => (
+    <button
+      type="button"
+      onClick={() => router.push("/play")}
+      className={cn(
+        "h-14 rounded-2xl border-2 border-dashed border-primary/30 bg-white text-primary font-bold text-base flex items-center justify-center gap-2 hover:bg-primary/5 active:scale-[0.98] transition-all",
+        gamesSpan
+      )}
+      aria-label="Open Fun and Games"
+    >
+      <Gamepad2 className="h-5 w-5" />
+      Fun &amp; Games
+    </button>
+  );
+
   return (
     <main className="min-h-screen pb-24 flex flex-col bg-zinc-50">
       <DashboardHeader
@@ -364,12 +403,14 @@ export default function DashboardPage() {
 
       <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 mt-6 relative z-10">
         <div className="w-full sm:w-[420px] mx-auto grid grid-cols-2 gap-3">
-          {/* Row 1 — Order Refill takes the full row when the table is not offered a griller */}
+          {/*
+            Two layouts. With Add Griller (4, 8, 12+ guests): Refill | Griller,
+            Assistance | Loyalty Card, then Fun & Games below. Without it, the
+            Loyalty Card takes the griller's place and Fun & Games takes the
+            Loyalty Card's: Refill | Loyalty Card, Assistance | Fun & Games.
+          */}
           <Button
-            className={cn(
-              "h-14 rounded-2xl text-base font-bold shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all",
-              !showGriller && "col-span-2"
-            )}
+            className="h-14 rounded-2xl text-base font-bold shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all"
             onClick={() => {
               // Ordering seconds before the first plate lands buries the kitchen
               // and confuses the table about what is still coming. Say so rather
@@ -388,7 +429,7 @@ export default function DashboardPage() {
             <Plus className="mr-2 h-5 w-5" />
             Order Refill
           </Button>
-          {showGriller && (
+          {showGriller ? (
           <Button
             variant="outline"
             className="h-14 rounded-2xl text-base font-bold border-2 border-primary/30 text-primary hover:bg-primary/5 active:scale-[0.98] transition-all"
@@ -397,39 +438,25 @@ export default function DashboardPage() {
             <Flame className="mr-2 h-5 w-5" />
             Add Griller
           </Button>
+          ) : (
+            loyaltyCard
           )}
 
           {/* Row 2 — unchanged, only repositioned */}
           <Button
             variant="outline"
-            className="h-14 rounded-2xl text-base font-bold border-2 border-primary/30 text-primary hover:bg-primary/5 active:scale-[0.98] transition-all"
+            className={cn(
+              "h-14 rounded-2xl text-base font-bold border-2 border-primary/30 text-primary hover:bg-primary/5 active:scale-[0.98] transition-all",
+              // No griller and no games: nothing shares this row.
+              !showGriller && !hasGames && "col-span-2"
+            )}
             onClick={handleAssistance}
             disabled={assistanceBusy || assistanceCooldown}
           >
             {assistanceBusy ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Bell className="mr-2 h-5 w-5" />}
             {assistanceCooldown ? "Staff notified" : "Ask for assistance"}
           </Button>
-          <button
-            type="button"
-            onClick={() => setIsCardOpen(true)}
-            className="relative h-14 rounded-2xl overflow-hidden border border-zinc-700 bg-black shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-primary"
-            aria-label="Open Loyalty Card"
-          >
-            <span className="absolute inset-0 pointer-events-none">
-              <span
-                className="absolute top-0 bottom-0 w-[30%] -skew-x-12"
-                style={{
-                  left: "-30%",
-                  background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%)",
-                  animation: "loyaltyCardShine 3.5s ease-in-out infinite",
-                }}
-              />
-            </span>
-            <span className="relative flex items-center justify-center gap-2 text-base font-bold text-white">
-              <Star className="h-5 w-5 drop-shadow" strokeWidth={2.5} fill="currentColor" />
-              Loyalty Card
-            </span>
-          </button>
+          {showGriller ? loyaltyCard : hasGames && funAndGames("col-span-1")}
 
           {/*
             Row 3 spans both columns so the games shelf reads as a different
@@ -443,12 +470,13 @@ export default function DashboardPage() {
             they read the red button as "sent" when the order is still parked.
             Shares the row with Fun & Games when both are present.
           */}
+
           {cartSummary.count > 0 && (
           <Button
             className={cn(
               "h-14 rounded-2xl font-bold shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all",
               // Half a 420px row is tight for "Review order (n) · ₱1,234".
-              hasGames ? "col-span-1 px-2 text-sm" : "col-span-2 text-base"
+              showGriller && hasGames ? "col-span-1 px-2 text-sm" : "col-span-2 text-base"
             )}
             onClick={() => setReviewOpenRequest((n) => n + 1)}
             data-basket-target
@@ -458,21 +486,7 @@ export default function DashboardPage() {
             Review order ({cartSummary.count}) · {pesoLabel(cartSummary.total)}
           </Button>
           )}
-
-          {hasGames && (
-          <button
-            type="button"
-            onClick={() => router.push("/play")}
-            className={cn(
-              "h-14 rounded-2xl border-2 border-dashed border-primary/30 bg-white text-primary font-bold text-base flex items-center justify-center gap-2 hover:bg-primary/5 active:scale-[0.98] transition-all",
-              cartSummary.count > 0 ? "col-span-1" : "col-span-2"
-            )}
-            aria-label="Open Fun and Games"
-          >
-            <Gamepad2 className="h-5 w-5" />
-            Fun &amp; Games
-          </button>
-          )}
+          {showGriller && hasGames && funAndGames(cartSummary.count > 0 ? "col-span-1" : "col-span-2")}
         </div>
 
         <CustomerCatalog
