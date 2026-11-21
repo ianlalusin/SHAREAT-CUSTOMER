@@ -1,0 +1,62 @@
+import { NextResponse } from "next/server";
+import { getAdminDb } from "@/lib/firebase/admin";
+import { requirePlayer } from "@/lib/server/games/auth";
+import { isCaptureShareLive, saveConsentedPhoto, validateUpload } from "@/lib/server/games/capture-share-store";
+
+export const runtime = "nodejs";
+
+function bad(msg: string, status = 400) {
+  return NextResponse.json({ ok: false, error: msg }, { status });
+}
+
+const OFF = "Capture & Share isn't running at this branch right now.";
+
+/** Can this diner play here, and the branch name for the photo caption. */
+export async function GET(req: Request) {
+  try {
+    const gate = await requirePlayer(req);
+    if (!gate.ok) return bad(gate.error, gate.status);
+    if (!(await isCaptureShareLive(getAdminDb(), gate.player.storeId))) return bad(OFF, 403);
+    return NextResponse.json({ ok: true, storeName: gate.player.storeName });
+  } catch (e) {
+    return bad((e as Error)?.message || "Could not open Capture & Share.", 500);
+  }
+}
+
+/**
+ * Keep a photo the diner agreed we may post. Body is the raw JPEG; nothing is
+ * called here unless they ticked the consent box.
+ */
+export async function POST(req: Request) {
+  try {
+    const gate = await requirePlayer(req);
+    if (!gate.ok) return bad(gate.error, gate.status);
+    const db = getAdminDb();
+    if (!(await isCaptureShareLive(db, gate.player.storeId))) return bad(OFF, 403);
+
+    const photoId = String(req.headers.get("x-photo-id") || "");
+    const layout = String(req.headers.get("x-layout") || "").replace(/[^a-z0-9-]/gi, "");
+    const declared = Number(req.headers.get("content-length") || 0);
+    if (declared > 5 * 1024 * 1024) return bad("Photo is too large.", 413);
+
+    const bytes = new Uint8Array(await req.arrayBuffer());
+    const invalid = validateUpload(bytes, photoId);
+    if (invalid) return bad(invalid);
+
+    const p = gate.player;
+    const r = await saveConsentedPhoto(db, {
+      storeId: p.storeId,
+      storeName: p.storeName,
+      sessionId: p.sessionId,
+      identityKey: p.identityKey,
+      tableDisplayName: p.tableDisplayName,
+      photoId,
+      layout,
+      bytes,
+    });
+    if (!r.ok) return bad(r.error, r.status);
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return bad((e as Error)?.message || "Could not save the photo.", 500);
+  }
+}

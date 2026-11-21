@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { getAuth, signOut } from "firebase/auth";
-import { Eye, Gamepad2, Gift, Image as ImageIcon, KeyRound, LogOut, MessageSquare } from "lucide-react";
+import { Camera, Eye, Gamepad2, Gift, Image as ImageIcon, KeyRound, LogOut, MessageSquare } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ManagerHeader } from "@/components/admin/ManagerHeader";
@@ -22,6 +22,7 @@ const TILES = [
   { href: "/manager/ads", label: "Flash Ads", hint: "What shows on the hub", icon: ImageIcon },
   { href: "/manager/games", label: "Games", hint: "On or off, here", icon: Gamepad2 },
   { href: "/manager/ghost-hunt", label: "Christmas Hunt", hint: "Winners & cashier PIN", icon: Gift },
+  { href: "/manager/capture-share", label: "Guest photos", hint: "OK'd for social posts", icon: Camera },
   { href: "/manager/preview", label: "Preview", hint: "What a diner sees", icon: Eye },
 ];
 

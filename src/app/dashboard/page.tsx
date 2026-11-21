@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { collection, doc, getDocs, onSnapshot, query, where } from "firebase/firestore";
-import { Loader2, Plus, Bell, Star, Flame, Gamepad2, ShoppingBag } from "lucide-react";
+import { Loader2, Plus, Bell, Star, Flame, Gamepad2, ShoppingBag, Camera } from "lucide-react";
 
 import { DashboardHeader } from "@/components/dashboard/Header";
 import { cn } from "@/lib/utils";
@@ -212,6 +212,7 @@ export default function DashboardPage() {
    * in Firestore and the client has no read access to it.
    */
   const [hasGames, setHasGames] = useState(false);
+  const [hasCamera, setHasCamera] = useState(false);
 
   // Parked basket summary from the menu, so the action grid can offer a
   // second "Review order" button where the diner is actually looking.
@@ -231,7 +232,11 @@ export default function DashboardPage() {
           cache: "no-store",
         });
         const json = await res.json().catch(() => ({}));
-        if (!cancelled && res.ok && json?.ok) setHasGames((json.games || []).length > 0);
+        if (!cancelled && res.ok && json?.ok) {
+          const games: { id: string }[] = json.games || [];
+          setHasGames(games.length > 0);
+          setHasCamera(games.some((g) => g.id === "capture-share"));
+        }
       } catch {
         // A shelf that fails to load is simply not offered. Never a blocker on
         // the screen people order food from.
@@ -482,6 +487,18 @@ export default function DashboardPage() {
           </div>
         </DrawerContent>
       </Drawer>
+
+      {/* Floating Capture & Share shortcut — bottom-left, the feedback bubble owns bottom-right */}
+      {hasCamera && (
+        <button
+          type="button"
+          onClick={() => router.push("/play/capture-share")}
+          aria-label="Open Capture & Share camera"
+          className="fixed bottom-5 left-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-white text-primary shadow-xl ring-2 ring-primary/30 transition-all hover:scale-105 active:scale-95"
+        >
+          <Camera className="h-6 w-6" strokeWidth={2.5} />
+        </button>
+      )}
 
       {/* Floating Feedback bubble */}
       {!feedbackSubmitted && (

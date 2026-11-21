@@ -24,6 +24,8 @@ export async function GET(req: Request) {
     // rather than rendering it as "off", which reads as a deliberate choice.
     configured: !!configs[g.id],
     isActive: configs[g.id]?.isActive !== false && !!configs[g.id],
+    // For the per-branch switches; written only through PUT /api/manager/games.
+    disabledStoreIds: Array.isArray(configs[g.id]?.disabledStoreIds) ? configs[g.id]?.disabledStoreIds : [],
   }));
 
   return NextResponse.json({ ok: true, games, pendingCount: await countPending(db) });
