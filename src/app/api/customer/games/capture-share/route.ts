@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requirePlayer } from "@/lib/server/games/auth";
-import { deleteConsentedPhoto, isCaptureShareLive, saveConsentedPhoto, validateUpload } from "@/lib/server/games/capture-share-store";
+import { deleteConsentedPhoto, isCaptureShareLive, readPaperWidth, saveConsentedPhoto, validateUpload } from "@/lib/server/games/capture-share-store";
 
 export const runtime = "nodejs";
 
@@ -16,10 +16,17 @@ export async function GET(req: Request) {
   try {
     const gate = await requirePlayer(req);
     if (!gate.ok) return bad(gate.error, gate.status);
-    if (!(await isCaptureShareLive(getAdminDb(), gate.player.storeId))) return bad(OFF, 403);
+    const db = getAdminDb();
+    if (!(await isCaptureShareLive(db, gate.player.storeId))) return bad(OFF, 403);
     const p = gate.player;
-    // Name and table prefill the templates (ID card name, ticket stub).
-    return NextResponse.json({ ok: true, storeName: p.storeName, customerName: p.customerName, tableName: p.tableDisplayName });
+    // Name and table prefill the templates (ID card name, ticket stub); paper decides which layouts can print.
+    return NextResponse.json({
+      ok: true,
+      storeName: p.storeName,
+      customerName: p.customerName,
+      tableName: p.tableDisplayName,
+      paperWidth: await readPaperWidth(db, p.storeId),
+    });
   } catch (e) {
     return bad((e as Error)?.message || "Could not open Capture & Share.", 500);
   }

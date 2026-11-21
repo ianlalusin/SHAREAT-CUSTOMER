@@ -123,3 +123,86 @@ export async function deleteConsentedPhoto(db: Firestore, storeId: string, id: s
   await ref.delete();
   return true;
 }
+
+/* ─── Thermal print requests (POS "Photo prints" tab reads these) ─────────── */
+
+/**
+ * The contract with POS (`stores/{storeId}/photoPrintRequests/{id}`), read by
+ * POS/src/components/pins/photo-prints.tsx. POS staff may read and update these
+ * through its store catch-all rule; only this route creates them.
+ *
+ *   status: "queued" | "printed" | "declined"
+ *   dayKey: Manila "YYYY-MM-DD" — POS lists one day at a time by it
+ *   imageUrl: signed read link to the JPEG, valid PRINT_URL_DAYS
+ *   printCount / reprintCount: set by POS when the cashier prints
+ *
+ * Fees are not added to the bill (owner, 2026-11-21): POS only counts prints,
+ * the first per table session being the free one.
+ */
+export const PRINT_COLLECTION = "photoPrintRequests";
+const PRINT_URL_DAYS = 7;
+/** Per table session, so a stuck button or a prankster cannot flood the cashier's queue. */
+export const MAX_PRINT_REQUESTS_PER_SESSION = 6;
+
+export type PrintRequestInput = {
+  storeId: string;
+  sessionId: string;
+  identityKey: string;
+  tableDisplayName: string;
+  customerName: string;
+  photoId: string;
+  layout: string;
+  dayKey: string;
+  bytes: Uint8Array;
+};
+
+export async function savePrintRequest(
+  db: Firestore,
+  p: PrintRequestInput
+): Promise<{ ok: true; id: string; already: boolean } | { ok: false; error: string; status: number }> {
+  const id = `${p.sessionId}_${p.photoId}`;
+  const col = db.collection(`stores/${p.storeId}/${PRINT_COLLECTION}`);
+  const ref = col.doc(id);
+  if ((await ref.get()).exists) return { ok: true, id, already: true };
+
+  const used = (await col.where("sessionId", "==", p.sessionId).count().get()).data().count;
+  if (used >= MAX_PRINT_REQUESTS_PER_SESSION) {
+    return { ok: false, status: 429, error: "This table has sent the most print requests allowed. Ask the cashier for help." };
+  }
+
+  const path = `captureSharePrints/${p.storeId}/${id}.jpg`;
+  const file = getAdminBucket().file(path);
+  await file.save(Buffer.from(p.bytes), { contentType: "image/jpeg", resumable: false });
+  const [imageUrl] = await file.getSignedUrl({ action: "read", expires: Date.now() + PRINT_URL_DAYS * 24 * 60 * 60 * 1000 });
+
+  try {
+    await ref.create({
+      status: "queued",
+      storeId: p.storeId,
+      sessionId: p.sessionId,
+      identityKey: p.identityKey,
+      tableDisplayName: p.tableDisplayName,
+      customerName: p.customerName,
+      layout: p.layout.slice(0, 20),
+      path,
+      imageUrl,
+      dayKey: p.dayKey,
+      printCount: 0,
+      reprintCount: 0,
+      createdAtMs: Date.now(),
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  } catch (e) {
+    if ((e as { code?: number })?.code !== 6) {
+      await file.delete({ ignoreNotFound: true }).catch(() => {});
+      throw e;
+    }
+  }
+  return { ok: true, id, already: false };
+}
+
+/** The branch's thermal paper, from POS receipt settings. Unknown means the common 80mm. */
+export async function readPaperWidth(db: Firestore, storeId: string): Promise<"58mm" | "80mm"> {
+  const snap = await db.doc(`stores/${storeId}/receiptSettings/main`).get();
+  return snap.data()?.paperWidth === "58mm" ? "58mm" : "80mm";
+}
