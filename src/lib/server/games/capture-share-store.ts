@@ -42,7 +42,40 @@ export function validateUpload(bytes: Uint8Array, photoId: string): string | nul
   if (bytes.length < 1024) return "Photo is empty.";
   if (bytes.length > MAX_BYTES) return "Photo is too large.";
   if (bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) return "Only JPEG photos are accepted.";
+  // A complete JPEG also ends with the End-Of-Image marker (canvas.toBlob always writes it).
+  // Together with the start marker this rejects truncated uploads and most non-image
+  // payloads that only borrow the first three bytes (audit CUSTOMER-03).
+  if (bytes[bytes.length - 2] !== 0xff || bytes[bytes.length - 1] !== 0xd9) return "Only complete JPEG photos are accepted.";
   return null;
+}
+
+/**
+ * Read a request body but stop as soon as it passes `limit` bytes, so a missing or
+ * false Content-Length cannot make the server buffer an oversized body before the
+ * size check (audit CUSTOMER-03). Returns null when the body is too large.
+ */
+export async function readBodyLimited(req: Request, limit = MAX_BYTES): Promise<Uint8Array | null> {
+  if (!req.body) return new Uint8Array(0);
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel().catch(() => {});
+      return null;
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const c of chunks) {
+    out.set(c, at);
+    at += c.byteLength;
+  }
+  return out;
 }
 
 export type ConsentedPhotoInput = {
@@ -125,14 +158,25 @@ export async function listConsentedPhotos(db: Firestore, storeId: string, limit 
   );
 }
 
-/** Remove a photo (consent withdrawn, or not fit to post). The path scopes it to one store. */
-export async function deleteConsentedPhoto(db: Firestore, storeId: string, id: string): Promise<boolean> {
+/**
+ * Remove a photo (consent withdrawn, or not fit to post). The path scopes it to one store.
+ * With `ownerKey`, only the diner who gave consent may remove it: everyone at a table
+ * shares the session id, so the id alone is not enough (audit CUSTOMER-04). Staff
+ * (manager / admin route) omit it.
+ */
+export async function deleteConsentedPhoto(
+  db: Firestore,
+  storeId: string,
+  id: string,
+  ownerKey?: string
+): Promise<"deleted" | "missing" | "not-owner"> {
   const ref = col(db, storeId).doc(id);
   const snap = await ref.get();
-  if (!snap.exists) return false;
+  if (!snap.exists) return "missing";
+  if (ownerKey !== undefined && snap.data()?.identityKey !== ownerKey) return "not-owner";
   await getAdminBucket().file(String(snap.data()?.path)).delete({ ignoreNotFound: true });
   await ref.delete();
-  return true;
+  return "deleted";
 }
 
 /* ─── Thermal print requests (POS "Photo prints" tab reads these) ─────────── */
