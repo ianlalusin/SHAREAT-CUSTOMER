@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
-import { Camera, Check, Download, Loader2, Minus, Plus, RefreshCw, Share2, SwitchCamera, Trash2, Type } from "lucide-react";
+import { Camera, Check, Download, Loader2, Minus, Plus, Printer, RefreshCw, Share2, SwitchCamera, Trash2, Type } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -106,6 +106,7 @@ export function CaptureShareGame() {
   const [overlays, setOverlays] = useState<Overlay[]>([]);
   const [finalBlob, setFinalBlob] = useState<Blob | null>(null);
   const [guest, setGuest] = useState({ name: "", table: "" });
+  const [paperWidth, setPaperWidth] = useState<"58mm" | "80mm">("80mm");
   // A template's editable lines (ticket title, ID name…); empty for plain layouts.
   const [fields, setFields] = useState<Record<string, string>>({});
   const logoRef = useRef<HTMLImageElement | null | undefined>(undefined);
@@ -119,6 +120,7 @@ export function CaptureShareGame() {
         if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not open Capture & Share.");
         setStoreName(String(json.storeName || "SharEat"));
         setGuest({ name: String(json.customerName || ""), table: String(json.tableName || "") });
+        setPaperWidth(json.paperWidth === "58mm" ? "58mm" : "80mm");
       } catch (e) {
         setGateError((e as Error)?.message || "Could not open Capture & Share.");
       }
@@ -244,7 +246,16 @@ export function CaptureShareGame() {
     );
 
   if (phase === "done" && finalBlob && layout)
-    return <Finished blob={finalBlob} layoutId={layout.id} onEdit={() => setPhase("edit")} onNew={startOver} />;
+    return (
+      <Finished
+        blob={finalBlob}
+        layoutId={layout.id}
+        // 57/58mm paper is too narrow for the 2-photo and 2x2 layouts (owner's call).
+        printable={paperWidth === "80mm" || layout.paper58}
+        onEdit={() => setPhase("edit")}
+        onNew={startOver}
+      />
+    );
 
   return null;
 }
@@ -757,15 +768,35 @@ function Editor({
 
 /* ─── Save, share, consent ────────────────────────────────────────────────── */
 
-function Finished({ blob, layoutId, onEdit, onNew }: { blob: Blob; layoutId: string; onEdit: () => void; onNew: () => void }) {
+function Finished({
+  blob,
+  layoutId,
+  printable,
+  onEdit,
+  onNew,
+}: {
+  blob: Blob;
+  layoutId: string;
+  printable: boolean;
+  onEdit: () => void;
+  onNew: () => void;
+}) {
+  const [printState, setPrintState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const [printError, setPrintError] = useState<string | null>(null);
   const [consent, setConsent] = useState(false);
   const [sendState, setSendState] = useState<"idle" | "sending" | "sent" | "failed" | "removing" | "removed">("idle");
   const [sendError, setSendError] = useState<string | null>(null);
   const [shareFailed, setShareFailed] = useState(false);
   // Remounts per finished photo (phase change), so one id per version the diner saved.
   const [photoId] = useState(() => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
-  const url = useMemo(() => URL.createObjectURL(blob), [blob]);
-  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+  // Made and released inside one effect: a link built in useMemo is revoked by the first
+  // cleanup when React re-runs effects (dev, and some remounts) and the photo shows broken.
+  const [url, setUrl] = useState("");
+  useEffect(() => {
+    const u = URL.createObjectURL(blob);
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [blob]);
 
   const file = useMemo(() => new File([blob], "shareat-capture.jpg", { type: "image/jpeg" }), [blob]);
   const canShareFile = typeof navigator !== "undefined" && !!navigator.canShare?.({ files: [file] });
@@ -841,6 +872,26 @@ function Finished({ blob, layoutId, onEdit, onNew }: { blob: Blob; layoutId: str
     if (action === "share") void share();
   };
 
+  // Same photo id as the consent upload: tapping again is a no-op on the server, never a second print request.
+  const sendToPrinter = async () => {
+    setPrintState("sending");
+    setPrintError(null);
+    try {
+      const res = await fetch("/api/customer/games/capture-share/print", {
+        method: "POST",
+        headers: { ...(await authHeader()), "Content-Type": "image/jpeg", "X-Photo-Id": photoId, "X-Layout": layoutId },
+        body: await blob.arrayBuffer(),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) throw new Error(String(json?.error || `Server said ${res.status}`));
+      signalUse(GAME_ID);
+      setPrintState("sent");
+    } catch (e) {
+      setPrintError((e as Error)?.message || null);
+      setPrintState("failed");
+    }
+  };
+
   const save = () => {
     signalUse(GAME_ID);
     const a = document.createElement("a");
@@ -862,7 +913,7 @@ function Finished({ blob, layoutId, onEdit, onNew }: { blob: Blob; layoutId: str
   return (
     <div className="space-y-4">
       {/* eslint-disable-next-line @next/next/no-img-element -- blob / signed URL, nothing for next/image to optimise */}
-      <img src={url} alt="Your photo" className="mx-auto max-h-[60vh] rounded-2xl shadow-lg" />
+      {url && <img src={url} alt="Your photo" className="mx-auto max-h-[60vh] rounded-2xl shadow-lg" />}
 
       <label className="flex items-start gap-3 rounded-2xl bg-white p-4 text-sm shadow">
         <Checkbox
@@ -906,6 +957,27 @@ function Finished({ blob, layoutId, onEdit, onNew }: { blob: Blob; layoutId: str
           <Button variant="outline" className="h-12 rounded-2xl" onClick={onNew}>New photo</Button>
         )}
       </div>
+      {printable ? (
+        <div className="space-y-2 rounded-2xl bg-white p-4 shadow">
+          <Button
+            variant="outline"
+            className="h-12 w-full rounded-2xl border-2 border-primary/40 font-bold text-primary"
+            disabled={printState === "sending" || printState === "sent"}
+            onClick={() => void sendToPrinter()}
+          >
+            {printState === "sending" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+            {printState === "sent" ? "Sent to the cashier" : "Print at the cashier"}
+          </Button>
+          {printState === "sent" && <p className="text-xs font-semibold text-emerald-700">Got it! Your print will be brought to your table.</p>}
+          {printState === "failed" && <p className="text-xs font-semibold text-amber-700">Couldn&apos;t send it{printError ? ` — ${printError}` : ""}. Tap to try again.</p>}
+          <p className="text-xs text-muted-foreground">
+            Your table&apos;s first print is free; extra prints are ₱20, paid at the cashier. Thermal prints fade over time, so keep your digital copy too.
+          </p>
+        </div>
+      ) : (
+        <p className="text-center text-xs text-muted-foreground">This layout is too small for this branch&apos;s printer. Save or share it instead.</p>
+      )}
+
       <div className="flex justify-center gap-6 text-sm">
         <button type="button" className="text-muted-foreground underline" onClick={onEdit}>Edit stickers</button>
         {canShareFile && (
