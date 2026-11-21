@@ -11,6 +11,10 @@ export type Overlay = {
   y: number;
   /** Font size in canvas pixels. */
   size: number;
+  /** The size it was added at; pinching and the minus button never go below it. */
+  minSize: number;
+  /** Rotation in radians, about the sticker's centre. */
+  rot: number;
   color: string;
 };
 
@@ -145,18 +149,22 @@ export function drawOverlays(ctx: CanvasRenderingContext2D, overlays: Overlay[])
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   for (const o of overlays) {
+    ctx.save();
+    ctx.translate(o.x, o.y);
+    ctx.rotate(o.rot || 0);
     if (o.kind === "emoji") {
       ctx.font = emojiFont(o.size);
-      ctx.fillText(o.text, o.x, o.y);
+      ctx.fillText(o.text, 0, 0);
     } else {
       ctx.font = textFont(o.size);
       ctx.lineJoin = "round";
       ctx.lineWidth = Math.max(2, o.size * 0.16);
       ctx.strokeStyle = o.color === "#ffffff" ? "#000000" : "#ffffff";
-      ctx.strokeText(o.text, o.x, o.y);
+      ctx.strokeText(o.text, 0, 0);
       ctx.fillStyle = o.color;
-      ctx.fillText(o.text, o.x, o.y);
+      ctx.fillText(o.text, 0, 0);
     }
+    ctx.restore();
   }
   ctx.textAlign = "start";
 }
