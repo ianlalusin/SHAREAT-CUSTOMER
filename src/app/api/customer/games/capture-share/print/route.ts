@@ -21,7 +21,7 @@ export async function POST(req: Request) {
     if (!gate.ok) return bad(gate.error, gate.status);
     const db = getAdminDb();
     if (!(await isCaptureShareLive(db, gate.player.storeId))) return bad("Capture & Share isn't running at this branch right now.", 403);
-    if (!(await isPrintingEnabled(db))) return bad("Printing isn't available right now. Save or share your photo instead.", 403);
+    if (!(await isPrintingEnabled(db, gate.player.storeId))) return bad("Printing isn't available right now. Save or share your photo instead.", 403);
 
     const photoId = String(req.headers.get("x-photo-id") || "");
     const layout = String(req.headers.get("x-layout") || "").replace(/[^a-z0-9-]/gi, "");

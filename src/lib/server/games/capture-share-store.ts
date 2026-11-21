@@ -26,9 +26,20 @@ export const MAX_PER_SESSION = 20;
  * on/off: printing can be paused (printer down, out of paper) while the photo
  * booth keeps running. Absent means on.
  */
-export async function isPrintingEnabled(db: Firestore): Promise<boolean> {
+export async function isPrintingEnabled(db: Firestore, storeId: string): Promise<boolean> {
   const snap = await db.doc(`miniGames/${GAME_ID}`).get();
-  return snap.data()?.printingEnabled !== false;
+  return printingOnAt(snap.data(), storeId);
+}
+
+/**
+ * Printing at one branch: the chain-wide switch must be on, and the branch must not
+ * be in `printingDisabledStoreIds` (per-branch off: no printer, out of paper…).
+ * Subtractive like the game's own disabledStoreIds, so a new branch prints by default.
+ */
+export function printingOnAt(cfg: { printingEnabled?: unknown; printingDisabledStoreIds?: unknown } | undefined, storeId: string): boolean {
+  if (cfg?.printingEnabled === false) return false;
+  const off = Array.isArray(cfg?.printingDisabledStoreIds) ? cfg.printingDisabledStoreIds : [];
+  return !off.includes(storeId);
 }
 
 export async function isCaptureShareLive(db: Firestore, storeId: string): Promise<boolean> {

@@ -78,3 +78,20 @@ describe("deleteConsentedPhoto ownership (audit CUSTOMER-04)", () => {
     expect(await deleteConsentedPhoto(fakeDb(null).db, "s", "id", "p_me")).toBe("missing");
   });
 });
+
+import { printingOnAt } from "./capture-share-store";
+
+describe("printingOnAt (per-branch printing switch)", () => {
+  it("is on by default, for every branch", () => {
+    expect(printingOnAt(undefined, "lipa")).toBe(true);
+    expect(printingOnAt({}, "lipa")).toBe(true);
+  });
+  it("the chain-wide switch turns every branch off", () => {
+    expect(printingOnAt({ printingEnabled: false, printingDisabledStoreIds: [] }, "lipa")).toBe(false);
+  });
+  it("a branch in printingDisabledStoreIds is off; the others stay on", () => {
+    const cfg = { printingEnabled: true, printingDisabledStoreIds: ["malvar"] };
+    expect(printingOnAt(cfg, "malvar")).toBe(false);
+    expect(printingOnAt(cfg, "lipa")).toBe(true);
+  });
+});
