@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { collection, doc, getDocs, onSnapshot, query, where } from "firebase/firestore";
-import { Loader2, Plus, Bell, Star, Flame, Gamepad2, ShoppingBag, Camera } from "lucide-react";
+import { Loader2, Plus, Bell, Star, Flame, Gamepad2, ShoppingBag } from "lucide-react";
 
 import { DashboardHeader } from "@/components/dashboard/Header";
 import { cn } from "@/lib/utils";
@@ -23,6 +23,7 @@ import { CustomerFeedbackModal } from "@/components/customer/CustomerFeedbackMod
 import { SharelebratorCardView } from "@/components/customer/SharelebratorCardView";
 import { FlashAdOverlay, type FlashAdItem } from "@/components/customer/FlashAdOverlay";
 import { FlashAdBadge } from "@/components/customer/FlashAdBadge";
+import { CaptureShareShortcut } from "@/components/customer/CaptureShareShortcut";
 import { getAuth } from "firebase/auth";
 import { useFirestore } from "@/firebase/provider";
 
@@ -529,16 +530,7 @@ export default function DashboardPage() {
       </Drawer>
 
       {/* Floating Capture & Share shortcut — bottom-left, the feedback bubble owns bottom-right */}
-      {hasCamera && (
-        <button
-          type="button"
-          onClick={() => router.push("/play/capture-share")}
-          aria-label="Open Capture & Share camera"
-          className="fixed bottom-5 left-5 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-white text-primary shadow-xl ring-2 ring-primary/30 transition-all hover:scale-105 active:scale-95"
-        >
-          <Camera className="h-6 w-6" strokeWidth={2.5} />
-        </button>
-      )}
+      {hasCamera && <CaptureShareShortcut />}
 
       {/* Floating Feedback bubble */}
       {!feedbackSubmitted && (
