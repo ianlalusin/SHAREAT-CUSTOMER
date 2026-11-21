@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LAYOUTS, captionLine, coverCrop, outerSize } from "./layouts";
+import { LAYOUTS, captionLine, coverCrop, footerBox, keepClear, outerSize, rotatedExtents } from "./layouts";
 
 const inside = (a: { x: number; y: number; w: number; h: number }, W: number, H: number) =>
   a.x >= 0 && a.y >= 0 && a.x + a.w <= W && a.y + a.h <= H;
@@ -42,5 +42,41 @@ describe("capture-share layouts", () => {
   it("caption uses the store name", () => {
     expect(captionLine("SharEat Davao")).toBe("We sharelebrated at SharEat Davao");
     expect(captionLine("  ")).toBe("We sharelebrated at SharEat");
+  });
+});
+
+const ALL = LAYOUTS;
+
+describe("stickers stay off the logo + caption", () => {
+  const instax = ALL.find((l) => l.id === "instax")!;
+  const canvas = { w: instax.w, h: instax.h };
+  const block = footerBox(instax);
+
+  it("a sticker dropped on the caption is pushed up above it", () => {
+    const p = keepClear(540, 1150, 60, 60, canvas, block);
+    expect(p.y + 60).toBeLessThanOrEqual(block.y);
+    expect(p.x).toBe(540);
+  });
+
+  it("a sticker clear of the caption does not move", () => {
+    expect(keepClear(400, 400, 60, 60, canvas, block)).toEqual({ x: 400, y: 400 });
+  });
+
+  it("stays inside the canvas", () => {
+    const p = keepClear(-50, -50, 60, 60, canvas, block);
+    expect(p).toEqual({ x: 60, y: 60 });
+  });
+
+  it("tilted card's caption box covers the rotated strip", () => {
+    const t = ALL.find((l) => l.tiltDeg)!;
+    const b = footerBox(t, 0);
+    expect(b.w).toBeGreaterThan(t.footer.w);
+    expect(b.h).toBeGreaterThan(t.footer.h);
+  });
+
+  it("rotated extents grow to the box around the turned sticker", () => {
+    const e = rotatedExtents(100, 20, Math.PI / 2);
+    expect(e.ex).toBeCloseTo(20);
+    expect(e.ey).toBeCloseTo(100);
   });
 });

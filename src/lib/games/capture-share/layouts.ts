@@ -118,3 +118,62 @@ export function captionLine(storeName: string): string {
 /** Shown beside the checkbox and saved word-for-word with each consented photo. */
 export const CONSENT_TEXT =
   "SharEat may post this photo on its Facebook, Instagram, TikTok, YouTube and X pages. Message our page anytime to have it removed.";
+
+export type Box = { x: number; y: number; w: number; h: number };
+
+/**
+ * The logo + caption strip in finished-canvas pixels, as an upright box. On the
+ * tilted Instax the strip is rotated, so this is the box around it (a little
+ * larger) — erring on keeping stickers clear of the branding.
+ */
+export function footerBox(l: Layout, margin = 12): Box {
+  const f = l.footer;
+  if (!l.tiltDeg) return { x: f.x - margin, y: f.y - margin, w: f.w + margin * 2, h: f.h + margin * 2 };
+  const o = outerSize(l);
+  const r = (l.tiltDeg * Math.PI) / 180;
+  const cos = Math.cos(r);
+  const sin = Math.sin(r);
+  const pts = [
+    [f.x, f.y],
+    [f.x + f.w, f.y],
+    [f.x, f.y + f.h],
+    [f.x + f.w, f.y + f.h],
+  ].map(([x, y]) => {
+    const dx = x - l.w / 2;
+    const dy = y - l.h / 2;
+    return [o.w / 2 + dx * cos - dy * sin, o.h / 2 + dx * sin + dy * cos];
+  });
+  const xs = pts.map((p) => p[0]);
+  const ys = pts.map((p) => p[1]);
+  const x = Math.min(...xs) - margin;
+  const y = Math.min(...ys) - margin;
+  return { x, y, w: Math.max(...xs) + margin - x, h: Math.max(...ys) + margin - y };
+}
+
+/** Half-extents of the upright box around a rotated sticker. */
+export function rotatedExtents(halfW: number, halfH: number, rot: number) {
+  const c = Math.abs(Math.cos(rot));
+  const s = Math.abs(Math.sin(rot));
+  return { ex: c * halfW + s * halfH, ey: s * halfW + c * halfH };
+}
+
+/**
+ * Where a sticker centred at (x, y) with half-extents (ex, ey) may sit: inside
+ * the canvas and never over `block` (the logo + caption). When it would
+ * overlap, it is pushed out by the shortest way that still fits the canvas.
+ */
+export function keepClear(x: number, y: number, ex: number, ey: number, canvas: { w: number; h: number }, block: Box) {
+  const inside = (v: number, e: number, max: number) => Math.min(Math.max(v, Math.min(e, max / 2)), Math.max(max - e, max / 2));
+  x = inside(x, ex, canvas.w);
+  y = inside(y, ey, canvas.h);
+  const overlaps = x + ex > block.x && x - ex < block.x + block.w && y + ey > block.y && y - ey < block.y + block.h;
+  if (!overlaps) return { x, y };
+  const options = [
+    { x, y: block.y - ey },
+    { x, y: block.y + block.h + ey },
+    { x: block.x - ex, y },
+    { x: block.x + block.w + ex, y },
+  ].filter((p) => p.x - ex >= 0 && p.x + ex <= canvas.w && p.y - ey >= 0 && p.y + ey <= canvas.h);
+  if (!options.length) return { x, y: inside(block.y - ey, ey, canvas.h) };
+  return options.reduce((best, p) => (Math.hypot(p.x - x, p.y - y) < Math.hypot(best.x - x, best.y - y) ? p : best));
+}

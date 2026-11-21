@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { waitForAuthUser } from "@/lib/auth-ready";
 import { markView, signalUse } from "@/lib/games/trackGame";
-import { CONSENT_TEXT, LAYOUTS, type Layout } from "@/lib/games/capture-share/layouts";
+import { CONSENT_TEXT, LAYOUTS, footerBox, keepClear, rotatedExtents, type Layout } from "@/lib/games/capture-share/layouts";
 import { drawOverlays, grabFrame, loadImage, overlayBox, renderBase, renderFinal, type Overlay, type Shot } from "@/lib/games/capture-share/render";
 
 const GAME_ID = "capture-share";
@@ -144,9 +144,10 @@ export function CaptureShareGame() {
       />
     );
 
-  if (phase === "edit" && base)
+  if (phase === "edit" && base && layout)
     return (
       <Editor
+        layout={layout}
         base={base}
         overlays={overlays}
         setOverlays={setOverlays}
@@ -302,12 +303,14 @@ function Shooter({
 /* ─── Stickers & text ─────────────────────────────────────────────────────── */
 
 function Editor({
+  layout,
   base,
   overlays,
   setOverlays,
   onRetake,
   onFinish,
 }: {
+  layout: Layout;
   base: HTMLCanvasElement;
   overlays: Overlay[];
   setOverlays: React.Dispatch<React.SetStateAction<Overlay[]>>;
@@ -316,11 +319,40 @@ function Editor({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const selectedRef = useRef<string | null>(null);
+  selectedRef.current = selected;
   const [textDraft, setTextDraft] = useState<string | null>(null);
   const [textColor, setTextColor] = useState(TEXT_COLORS[0]);
-  const drag = useRef<{ id: string; px: number; py: number } | null>(null);
-  // Latest pointer position; applied once per animation frame so a drag does not redraw the full canvas per event.
-  const pending = useRef<{ x: number; y: number } | null>(null);
+
+  // The logo + caption strip. No sticker may sit on it (owner's call: the branding stays readable).
+  const block = useMemo(() => footerBox(layout), [layout]);
+  const maxSize = base.width * 0.6;
+
+  /** Keep a sticker inside the picture and off the logo + caption, however it was moved, sized or turned. */
+  const constrain = useCallback(
+    (o: Overlay): Overlay => {
+      const { halfW, halfH } = overlayBox(o);
+      const { ex, ey } = rotatedExtents(halfW, halfH, o.rot);
+      return { ...o, ...keepClear(o.x, o.y, ex, ey, { w: base.width, h: base.height }, block) };
+    },
+    [base, block]
+  );
+
+  // Rotate handle: a dot above the sticker that turns with it.
+  const handleR = base.width * 0.035;
+  const handleAt = (o: Overlay) => {
+    const d = overlayBox(o).halfH + handleR * 2.2;
+    return { x: o.x + Math.sin(o.rot) * d, y: o.y - Math.cos(o.rot) * d };
+  };
+
+  // Every finger on the canvas, and what the current gesture started from.
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  type Gesture =
+    | { mode: "move"; id: string; dx: number; dy: number }
+    | { mode: "rotate"; id: string; startAngle: number; startRot: number }
+    | { mode: "pinch"; id: string; startDist: number; startAngle: number; startSize: number; startRot: number };
+  const gesture = useRef<Gesture | null>(null);
+  // Applied once per animation frame so a drag does not redraw the full canvas per event.
   const frame = useRef<number | null>(null);
   useEffect(() => () => {
     if (frame.current !== null) cancelAnimationFrame(frame.current);
@@ -336,15 +368,32 @@ function Editor({
     ctx.drawImage(base, 0, 0);
     drawOverlays(ctx, overlays);
     const sel = overlays.find((o) => o.id === selected);
-    if (sel) {
-      ctx.strokeStyle = "#3b82f6";
-      ctx.lineWidth = Math.max(4, base.width / 250);
-      ctx.setLineDash([16, 10]);
-      const { halfW, halfH } = overlayBox(sel);
-      ctx.strokeRect(sel.x - halfW, sel.y - halfH, halfW * 2, halfH * 2);
-      ctx.setLineDash([]);
-    }
-  }, [base, overlays, selected]);
+    if (!sel) return;
+    const { halfW, halfH } = overlayBox(sel);
+    const d = halfH + handleR * 2.2;
+    ctx.save();
+    ctx.translate(sel.x, sel.y);
+    ctx.rotate(sel.rot);
+    ctx.strokeStyle = "#3b82f6";
+    ctx.lineWidth = Math.max(4, base.width / 250);
+    ctx.setLineDash([16, 10]);
+    ctx.strokeRect(-halfW, -halfH, halfW * 2, halfH * 2);
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(0, -halfH);
+    ctx.lineTo(0, -d + handleR);
+    ctx.stroke();
+    ctx.fillStyle = "#3b82f6";
+    ctx.beginPath();
+    ctx.arc(0, -d, handleR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 " + Math.round(handleR * 1.3) + "px Arial, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("↻", 0, -d);
+    ctx.restore();
+  }, [base, overlays, selected, handleR]);
 
   const toCanvas = (e: React.PointerEvent) => {
     const r = canvasRef.current!.getBoundingClientRect();
@@ -353,19 +402,68 @@ function Editor({
 
   const hit = (x: number, y: number) =>
     [...overlays].reverse().find((o) => {
+      // Into the sticker's own (unrotated) frame, then a plain box test.
+      const dx = x - o.x;
+      const dy = y - o.y;
+      const lx = dx * Math.cos(-o.rot) - dy * Math.sin(-o.rot);
+      const ly = dx * Math.sin(-o.rot) + dy * Math.cos(-o.rot);
       const { halfW, halfH } = overlayBox(o);
-      return Math.abs(x - o.x) <= halfW && Math.abs(y - o.y) <= halfH;
+      return Math.abs(lx) <= halfW && Math.abs(ly) <= halfH;
     });
 
   const add = (kind: Overlay["kind"], text: string, color = "#000000") => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const size = Math.round(base.width * (kind === "emoji" ? 0.14 : 0.08));
-    setOverlays((o) => [...o, { id, kind, text, x: base.width / 2, y: base.height / 2, size, color }]);
+    setOverlays((o) => [...o, constrain({ id, kind, text, x: base.width / 2, y: base.height / 2, size, minSize: size, rot: 0, color })]);
     setSelected(id);
   };
 
   const resize = (k: number) =>
-    setOverlays((os) => os.map((o) => (o.id === selected ? { ...o, size: Math.max(20, Math.min(base.width * 0.6, o.size * k)) } : o)));
+    setOverlays((os) => os.map((o) => (o.id === selected ? constrain({ ...o, size: Math.max(o.minSize, Math.min(maxSize, o.size * k)) }) : o)));
+
+  const startPinch = (id: string) => {
+    const [a, b] = [...pointers.current.values()];
+    const o = overlays.find((x) => x.id === id);
+    if (!o || !a || !b) return;
+    gesture.current = {
+      mode: "pinch",
+      id,
+      startDist: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)),
+      startAngle: Math.atan2(b.y - a.y, b.x - a.x),
+      startSize: o.size,
+      startRot: o.rot,
+    };
+  };
+
+  const applyGesture = () => {
+    frame.current = null;
+    const g = gesture.current;
+    if (!g) return;
+    const pts = [...pointers.current.values()];
+    setOverlays((os) =>
+      os.map((o) => {
+        if (o.id !== g.id) return o;
+        if (g.mode === "move" && pts[0]) return constrain({ ...o, x: pts[0].x - g.dx, y: pts[0].y - g.dy });
+        if (g.mode === "rotate" && pts[0]) {
+          const angle = Math.atan2(pts[0].y - o.y, pts[0].x - o.x);
+          return constrain({ ...o, rot: g.startRot + angle - g.startAngle });
+        }
+        if (g.mode === "pinch" && pts.length >= 2) {
+          const [a, b] = pts;
+          const size = Math.max(o.minSize, Math.min(maxSize, (g.startSize * Math.hypot(b.x - a.x, b.y - a.y)) / g.startDist));
+          return constrain({ ...o, size, rot: g.startRot + Math.atan2(b.y - a.y, b.x - a.x) - g.startAngle });
+        }
+        return o;
+      })
+    );
+  };
+
+  const endPointer = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId);
+    // Lifting one finger of a pinch ends it, so the sticker does not jump to the remaining finger.
+    if (pointers.current.size < 2 && gesture.current?.mode === "pinch") gesture.current = null;
+    if (pointers.current.size === 0) gesture.current = null;
+  };
 
   return (
     <div className="space-y-4">
@@ -374,27 +472,42 @@ function Editor({
         className="mx-auto block max-h-[60vh] w-auto max-w-full touch-none rounded-2xl shadow-lg"
         onPointerDown={(e) => {
           const p = toCanvas(e);
-          const o = hit(p.x, p.y);
-          setSelected(o?.id ?? null);
-          if (o) {
-            drag.current = { id: o.id, px: p.x - o.x, py: p.y - o.y };
+          try {
             (e.target as HTMLElement).setPointerCapture(e.pointerId);
+          } catch {
+            /* capture is a nicety (keeps a drag alive past the edge); the gesture works without it */
           }
+          pointers.current.set(e.pointerId, p);
+
+          // Second finger while a sticker is selected: pinch to size (and twist to turn).
+          if (pointers.current.size === 2 && selectedRef.current) return startPinch(selectedRef.current);
+          if (pointers.current.size !== 1) return;
+
+          const sel = overlays.find((o) => o.id === selectedRef.current);
+          if (sel) {
+            const h = handleAt(sel);
+            if (Math.hypot(p.x - h.x, p.y - h.y) <= handleR * 1.8) {
+              gesture.current = { mode: "rotate", id: sel.id, startAngle: Math.atan2(p.y - sel.y, p.x - sel.x), startRot: sel.rot };
+              return;
+            }
+          }
+          const o = hit(p.x, p.y);
+          if (o) {
+            setSelected(o.id);
+            gesture.current = { mode: "move", id: o.id, dx: p.x - o.x, dy: p.y - o.y };
+            return;
+          }
+          // A touch off every sticker keeps the current one selected (a pinch often starts with
+          // one finger beside it); the Done button deselects.
+          gesture.current = null;
         }}
         onPointerMove={(e) => {
-          if (!drag.current) return;
-          pending.current = toCanvas(e);
-          if (frame.current !== null) return;
-          frame.current = requestAnimationFrame(() => {
-            frame.current = null;
-            const d = drag.current;
-            const p = pending.current;
-            if (!d || !p) return;
-            setOverlays((os) => os.map((o) => (o.id === d.id ? { ...o, x: p.x - d.px, y: p.y - d.py } : o)));
-          });
+          if (!pointers.current.has(e.pointerId)) return;
+          pointers.current.set(e.pointerId, toCanvas(e));
+          if (gesture.current && frame.current === null) frame.current = requestAnimationFrame(applyGesture);
         }}
-        onPointerUp={() => (drag.current = null)}
-        onPointerCancel={() => (drag.current = null)}
+        onPointerUp={endPointer}
+        onPointerCancel={endPointer}
       />
 
       {selected ? (
@@ -415,7 +528,7 @@ function Editor({
           <Button variant="ghost" onClick={() => setSelected(null)}>Done</Button>
         </div>
       ) : (
-        <p className="text-center text-xs text-muted-foreground">Tap a sticker to add it. Drag to move, tap it to resize.</p>
+        <p className="text-center text-xs text-muted-foreground">Tap a sticker to add it. Drag to move. With one selected: pinch to resize, drag the blue ↻ dot to rotate.</p>
       )}
 
       <div className="grid grid-cols-8 gap-1">
@@ -489,6 +602,7 @@ function Editor({
 function Finished({ blob, layoutId, onEdit, onNew }: { blob: Blob; layoutId: string; onEdit: () => void; onNew: () => void }) {
   const [consent, setConsent] = useState(false);
   const [sendState, setSendState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const [sendError, setSendError] = useState<string | null>(null);
   const [shareFailed, setShareFailed] = useState(false);
   // Remounts per finished photo (phase change), so one id per version the diner saved.
   const [photoId] = useState(() => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
@@ -501,18 +615,31 @@ function Finished({ blob, layoutId, onEdit, onNew }: { blob: Blob; layoutId: str
   // Only a photo the diner agreed we may post is ever stored. Sent the moment
   // they tick the box (not tied to Save/Share), and the result is shown, so a
   // guest never believes they consented when nothing reached us.
+  // Retried a few times: a phone on mobile data can drop a ~0.5MB upload that small requests survive.
+  // The server treats a repeat of the same photo id as a no-op, so a retry never stores it twice.
   const sendConsented = useCallback(async () => {
     setSendState("sending");
-    try {
-      const res = await fetch("/api/customer/games/capture-share", {
-        method: "POST",
-        headers: { ...(await authHeader()), "Content-Type": "image/jpeg", "X-Photo-Id": photoId, "X-Layout": layoutId },
-        body: blob,
-      });
-      setSendState(res.ok ? "sent" : "failed");
-    } catch {
-      setSendState("failed");
+    setSendError(null);
+    const body = await blob.arrayBuffer();
+    let reason = "";
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt) await new Promise((r) => setTimeout(r, attempt * 1500));
+      try {
+        const res = await fetch("/api/customer/games/capture-share", {
+          method: "POST",
+          headers: { ...(await authHeader()), "Content-Type": "image/jpeg", "X-Photo-Id": photoId, "X-Layout": layoutId },
+          body,
+        });
+        if (res.ok) return setSendState("sent");
+        const json = await res.json().catch(() => ({}));
+        reason = String(json?.error || `Server said ${res.status}`);
+        if (res.status < 500 && res.status !== 429) break; // a refusal, not a hiccup: retrying will not change it
+      } catch (e) {
+        reason = `No connection (${(e as Error)?.message || "network error"})`;
+      }
     }
+    setSendError(reason);
+    setSendState("failed");
   }, [blob, photoId, layoutId]);
 
   const onConsent = (v: boolean) => {
@@ -554,7 +681,7 @@ function Finished({ blob, layoutId, onEdit, onNew }: { blob: Blob; layoutId: str
       {sendState === "sent" && <p className="-mt-2 text-xs font-semibold text-emerald-700">Thanks! SharEat has your photo.</p>}
       {sendState === "failed" && (
         <p className="-mt-2 text-xs font-semibold text-amber-700">
-          Couldn&apos;t send it to SharEat.{" "}
+          Couldn&apos;t send it to SharEat{sendError ? ` — ${sendError}` : ""}.{" "}
           <button type="button" className="underline" onClick={() => void sendConsented()}>
             Try again
           </button>
