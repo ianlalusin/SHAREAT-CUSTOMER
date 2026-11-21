@@ -54,6 +54,8 @@ export async function GET(req: Request) {
         tableId: String(s.tableId || ""),
         tableNumber: String(s.tableNumber || ""),
         tableDisplayName: String(s.tableDisplayName || ""),
+        // Same order POS uses for the table's guest limit.
+        guestCount: Number(s.guestCountFinal ?? s.guestCountCashierInitial ?? s.guestCount ?? 0) || 0,
         packageOfferingId: String(s.packageOfferingId || ""),
         packageName: String(s.packageName || s.packageSnapshot?.name || ""),
         initialFlavorIds: Array.isArray(s.initialFlavorIds) ? s.initialFlavorIds : [],

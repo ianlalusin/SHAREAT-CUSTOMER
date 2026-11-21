@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { CustomerRefillModal, type RefillCooldowns } from "@/components/customer/CustomerRefillModal";
 import { AddGrillerModal } from "@/components/customer/AddGrillerModal";
+import { canRequestGriller } from "@/lib/griller-visibility";
 import { CustomerCatalog } from "@/components/customer/CustomerCatalog";
 import { SessionOrdersPanel } from "@/components/customer/SessionOrdersPanel";
 import { hasPendingFirstServing, useSessionOrders } from "@/hooks/use-session-orders";
@@ -32,6 +33,7 @@ type SessionDTO = {
   tableId: string;
   tableNumber: string;
   tableDisplayName: string;
+  guestCount?: number;
   packageOfferingId: string;
   packageName: string;
   initialFlavorIds: string[];
@@ -349,6 +351,9 @@ export default function DashboardPage() {
 }
 `;
 
+  // One stove per 4 guests: only tables at 4, 8 or 12+ guests are offered another (lib/griller-visibility.ts).
+  const showGriller = canRequestGriller(Number(session.guestCount || 0));
+
   return (
     <main className="min-h-screen pb-24 flex flex-col bg-zinc-50">
       <DashboardHeader
@@ -359,9 +364,12 @@ export default function DashboardPage() {
 
       <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 mt-6 relative z-10">
         <div className="w-full sm:w-[420px] mx-auto grid grid-cols-2 gap-3">
-          {/* Row 1 */}
+          {/* Row 1 — Order Refill takes the full row when the table is not offered a griller */}
           <Button
-            className="h-14 rounded-2xl text-base font-bold shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all"
+            className={cn(
+              "h-14 rounded-2xl text-base font-bold shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all",
+              !showGriller && "col-span-2"
+            )}
             onClick={() => {
               // Ordering seconds before the first plate lands buries the kitchen
               // and confuses the table about what is still coming. Say so rather
@@ -380,6 +388,7 @@ export default function DashboardPage() {
             <Plus className="mr-2 h-5 w-5" />
             Order Refill
           </Button>
+          {showGriller && (
           <Button
             variant="outline"
             className="h-14 rounded-2xl text-base font-bold border-2 border-primary/30 text-primary hover:bg-primary/5 active:scale-[0.98] transition-all"
@@ -388,6 +397,7 @@ export default function DashboardPage() {
             <Flame className="mr-2 h-5 w-5" />
             Add Griller
           </Button>
+          )}
 
           {/* Row 2 — unchanged, only repositioned */}
           <Button
