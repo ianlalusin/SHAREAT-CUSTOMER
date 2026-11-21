@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
-import { Camera, Download, Loader2, Minus, Plus, RefreshCw, Share2, SwitchCamera, Trash2, Type } from "lucide-react";
+import { Camera, Check, Download, Loader2, Minus, Plus, RefreshCw, Share2, SwitchCamera, Trash2, Type } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -362,6 +362,20 @@ function Editor({
     | { mode: "rotate"; id: string; startAngle: number; startRot: number }
     | { mode: "pinch"; id: string; startDist: number; startAngle: number; startSize: number; startRot: number };
   const gesture = useRef<Gesture | null>(null);
+  // A touch that landed off every sticker; if no second finger joins (a pinch), lifting it deselects.
+  const tapOutside = useRef(false);
+
+  // On-screen size of the canvas, to float the toolbar beside the selected sticker.
+  const [view, setView] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const measure = () => setView({ w: c.clientWidth, h: c.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, []);
   // Applied once per animation frame so a drag does not redraw the full canvas per event.
   const frame = useRef<number | null>(null);
   useEffect(() => () => {
@@ -424,7 +438,7 @@ function Editor({
   const add = (kind: Overlay["kind"], text: string, color = "#000000") => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const size = Math.round(base.width * (kind === "emoji" ? 0.14 : 0.08));
-    setOverlays((o) => [...o, constrain({ id, kind, text, x: base.width / 2, y: base.height / 2, size, minSize: size, rot: 0, color })]);
+    setOverlays((o) => [...o, constrain({ id, kind, text, x: base.width / 2, y: base.height / 2, size, minSize: Math.round(size * 0.5), rot: 0, color })]);
     setSelected(id);
   };
 
@@ -472,14 +486,37 @@ function Editor({
     pointers.current.delete(e.pointerId);
     // Lifting one finger of a pinch ends it, so the sticker does not jump to the remaining finger.
     if (pointers.current.size < 2 && gesture.current?.mode === "pinch") gesture.current = null;
-    if (pointers.current.size === 0) gesture.current = null;
+    if (pointers.current.size === 0) {
+      gesture.current = null;
+      if (tapOutside.current) setSelected(null);
+      tapOutside.current = false;
+    }
   };
 
+  // Where the toolbar floats: just under the selected sticker, or above its rotate dot when there is no room below.
+  const sel = overlays.find((o) => o.id === selected);
+  let toolbar: { left: number; top: number } | null = null;
+  if (sel && view.w) {
+    const k = view.w / base.width;
+    const { halfW, halfH } = overlayBox(sel);
+    const { ey } = rotatedExtents(halfW, halfH, sel.rot);
+    const below = (sel.y + ey) * k + 10;
+    const above = (handleAt(sel).y - handleR) * k - 92;
+    const left = Math.min(Math.max(sel.x * k, 120), Math.max(view.w - 120, 120));
+    toolbar = { left, top: below + 84 <= view.h + 40 || above < -40 ? below : above };
+  }
+
   return (
-    <div className="space-y-4">
+    <div
+      className="space-y-4"
+      onPointerDown={(e) => {
+        if (!(e.target as HTMLElement).closest("[data-sticker-zone]")) setSelected(null);
+      }}
+    >
+      <div className="relative mx-auto w-fit" data-sticker-zone>
       <canvas
         ref={canvasRef}
-        className="mx-auto block max-h-[60vh] w-auto max-w-full touch-none rounded-2xl shadow-lg"
+        className="block max-h-[60vh] w-auto max-w-full touch-none rounded-2xl shadow-lg"
         onPointerDown={(e) => {
           const p = toCanvas(e);
           try {
@@ -490,7 +527,10 @@ function Editor({
           pointers.current.set(e.pointerId, p);
 
           // Second finger while a sticker is selected: pinch to size (and twist to turn).
-          if (pointers.current.size === 2 && selectedRef.current) return startPinch(selectedRef.current);
+          if (pointers.current.size === 2 && selectedRef.current) {
+            tapOutside.current = false;
+            return startPinch(selectedRef.current);
+          }
           if (pointers.current.size !== 1) return;
 
           const sel = overlays.find((o) => o.id === selectedRef.current);
@@ -507,9 +547,8 @@ function Editor({
             gesture.current = { mode: "move", id: o.id, dx: p.x - o.x, dy: p.y - o.y };
             return;
           }
-          // A touch off every sticker keeps the current one selected (a pinch often starts with
-          // one finger beside it); the Done button deselects.
           gesture.current = null;
+          tapOutside.current = !!sel;
         }}
         onPointerMove={(e) => {
           if (!pointers.current.has(e.pointerId)) return;
@@ -519,26 +558,43 @@ function Editor({
         onPointerUp={endPointer}
         onPointerCancel={endPointer}
       />
-
-      {selected ? (
-        <div className="flex items-center justify-center gap-2">
-          <Button variant="outline" size="icon" onClick={() => resize(0.85)} aria-label="Smaller"><Minus className="h-4 w-4" /></Button>
-          <Button variant="outline" size="icon" onClick={() => resize(1.18)} aria-label="Bigger"><Plus className="h-4 w-4" /></Button>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => {
-              setOverlays((os) => os.filter((o) => o.id !== selected));
-              setSelected(null);
-            }}
-            aria-label="Remove"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" onClick={() => setSelected(null)}>Done</Button>
+      {sel && toolbar && (
+        <div
+          className="absolute z-10 -translate-x-1/2 rounded-2xl bg-zinc-900/90 p-1.5 text-white shadow-xl ring-2 ring-primary"
+          style={{ left: toolbar.left, top: toolbar.top }}
+        >
+          <div className="flex items-stretch gap-1">
+            {[
+              { label: "Smaller", icon: <Minus className="h-5 w-5" />, run: () => resize(0.85) },
+              { label: "Bigger", icon: <Plus className="h-5 w-5" />, run: () => resize(1.18) },
+              {
+                label: "Delete",
+                icon: <Trash2 className="h-5 w-5" />,
+                run: () => {
+                  setOverlays((os) => os.filter((o) => o.id !== sel.id));
+                  setSelected(null);
+                },
+              },
+              { label: "Done", icon: <Check className="h-5 w-5" />, run: () => setSelected(null) },
+            ].map((b) => (
+              <button
+                key={b.label}
+                type="button"
+                onClick={b.run}
+                className="flex w-14 flex-col items-center gap-0.5 rounded-xl py-1.5 text-[11px] font-bold hover:bg-white/15 active:scale-95"
+              >
+                {b.icon}
+                {b.label}
+              </button>
+            ))}
+          </div>
+          <p className="px-1 pt-1 text-center text-[10px] text-white/75">Drag to move · pinch to resize · ↻ to rotate</p>
         </div>
-      ) : (
-        <p className="text-center text-xs text-muted-foreground">Tap a sticker to add it. Drag to move. With one selected: pinch to resize, drag the blue ↻ dot to rotate.</p>
+      )}
+      </div>
+
+      {!selected && (
+        <p className="text-center text-xs text-muted-foreground">Tap a sticker below to add it, then tap it on the photo to edit.</p>
       )}
 
       <div className="grid grid-cols-8 gap-1">
