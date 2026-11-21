@@ -16,7 +16,8 @@ import { RecipeEditDialog, type EditableRecipe } from "@/components/games/recipe
 import { GamePlayStats } from "@/components/games/admin/GamePlayStats";
 import { RecipeScoreLine } from "@/components/games/recipe/RecipeScoreLine";
 
-type GameRow = { id: string; title: string; tagline: string; configured: boolean; isActive: boolean };
+type GameRow = { id: string; title: string; tagline: string; configured: boolean; isActive: boolean; disabledStoreIds: string[]; printingEnabled?: boolean };
+type StoreRow = { storeId: string; name: string };
 type QueueRow = {
   id: string;
   title: string;
@@ -53,6 +54,8 @@ export default function AdminGamesPage() {
   const { toast } = useToast();
 
   const [games, setGames] = useState<GameRow[] | null>(null);
+  const [stores, setStores] = useState<StoreRow[]>([]);
+  const [openBranches, setOpenBranches] = useState<string | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
   const [status, setStatus] = useState<(typeof STATUSES)[number]>("pending");
   const [queue, setQueue] = useState<QueueRow[] | null>(null);
@@ -72,6 +75,12 @@ export default function AdminGamesPage() {
     if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not load games.");
     setGames(json.games || []);
     setPendingCount(Number(json.pendingCount || 0));
+  }, [authed]);
+
+  const loadStores = useCallback(async () => {
+    const res = await fetch("/api/admin/my-stores", { headers: await authed(), cache: "no-store" });
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && json?.ok) setStores(json.stores || []);
   }, [authed]);
 
   const loadQueue = useCallback(
@@ -94,6 +103,7 @@ export default function AdminGamesPage() {
         router.push("/admin/login");
         return;
       }
+      loadStores().catch(() => {});
       loadGames().catch((e: any) =>
         toast({ variant: "destructive", title: "Couldn't load", description: e?.message })
       );
@@ -119,6 +129,38 @@ export default function AdminGamesPage() {
       toast({ title: isActive ? "Game switched on" : "Game switched off" });
     } catch (e: any) {
       toast({ variant: "destructive", title: "Couldn't update", description: e?.message });
+    }
+  };
+
+  // Same subtractive switch a branch manager has (PUT /api/manager/games); an admin passes its store check for every branch.
+  const togglePrinting = async (printingEnabled: boolean) => {
+    try {
+      const res = await fetch("/api/admin/games", {
+        method: "PUT",
+        headers: await authed(),
+        body: JSON.stringify({ gameId: "capture-share", printingEnabled }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not update.");
+      await loadGames();
+      toast({ title: printingEnabled ? "Printing switched on" : "Printing paused", description: "Capture & Share itself keeps running." });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Couldn't update", description: (e as Error)?.message });
+    }
+  };
+
+  const toggleBranch = async (gameId: string, storeId: string, enabled: boolean) => {
+    try {
+      const res = await fetch("/api/manager/games", {
+        method: "PUT",
+        headers: await authed(),
+        body: JSON.stringify({ gameId, storeId, enabled }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not update.");
+      await loadGames();
+    } catch (e) {
+      toast({ variant: "destructive", title: "Couldn't update", description: (e as Error)?.message });
     }
   };
 
@@ -201,6 +243,37 @@ export default function AdminGamesPage() {
                       >
                         Settings per branch
                       </button>
+                    )}
+                    {g.id !== "ghost-hunt" && g.isActive && stores.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setOpenBranches(openBranches === g.id ? null : g.id)}
+                        className="mt-1 text-xs font-bold text-primary underline"
+                      >
+                        {openBranches === g.id ? "Hide branches" : `Branches (${stores.filter((s) => !g.disabledStoreIds.includes(s.storeId)).length}/${stores.length} on)`}
+                      </button>
+                    )}
+                    {g.id === "capture-share" && g.configured && (
+                      <label className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-zinc-50 px-3 py-2 text-sm">
+                        <span>
+                          <span className="block font-bold">Printing at the cashier</span>
+                          <span className="block text-xs text-muted-foreground">Off: guests can still take, save and share photos.</span>
+                        </span>
+                        <Switch checked={g.printingEnabled !== false} onCheckedChange={(v) => togglePrinting(v)} />
+                      </label>
+                    )}
+                    {openBranches === g.id && (
+                      <div className="mt-2 space-y-2">
+                        {stores.map((s) => (
+                          <label key={s.storeId} className="flex items-center justify-between gap-3 text-sm">
+                            <span className="truncate">{s.name}</span>
+                            <Switch
+                              checked={!g.disabledStoreIds.includes(s.storeId)}
+                              onCheckedChange={(v) => toggleBranch(g.id, s.storeId, v)}
+                            />
+                          </label>
+                        ))}
+                      </div>
                     )}
                   </div>
                   {/* Ghost Hunt is switched on and off per branch, on its own settings page. */}
