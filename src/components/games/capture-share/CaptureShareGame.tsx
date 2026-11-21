@@ -6,6 +6,16 @@ import { Camera, Download, Loader2, Minus, Plus, RefreshCw, Share2, SwitchCamera
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { waitForAuthUser } from "@/lib/auth-ready";
 import { markView, signalUse } from "@/lib/games/trackGame";
@@ -650,6 +660,23 @@ function Finished({ blob, layoutId, onEdit, onNew }: { blob: Blob; layoutId: str
     else setSendState("idle");
   };
 
+  // Asked once per photo, on the first Save or Share, if the box is not already ticked. Either answer
+  // carries on with what they tapped: the photo is theirs regardless, so consent stays a free choice.
+  const [asked, setAsked] = useState(false);
+  const [pending, setPending] = useState<"save" | "share" | null>(null);
+  const askFirst = (action: "save" | "share") => {
+    if (asked || consent || sendState === "sent" || sendState === "sending") return action === "save" ? save() : void share();
+    setPending(action);
+  };
+  const answer = (yes: boolean) => {
+    const action = pending;
+    setPending(null);
+    setAsked(true);
+    if (yes) onConsent(true);
+    if (action === "save") save();
+    if (action === "share") void share();
+  };
+
   const save = () => {
     signalUse(GAME_ID);
     const a = document.createElement("a");
@@ -693,11 +720,11 @@ function Finished({ blob, layoutId, onEdit, onNew }: { blob: Blob; layoutId: str
       )}
 
       <div className="grid grid-cols-2 gap-2">
-        <Button variant="outline" className="h-12 rounded-2xl font-bold" onClick={save}>
+        <Button variant="outline" className="h-12 rounded-2xl font-bold" onClick={() => askFirst("save")}>
           <Download className="mr-2 h-4 w-4" /> Save
         </Button>
         {canShareFile ? (
-          <Button className="h-12 rounded-2xl font-black" onClick={share}>
+          <Button className="h-12 rounded-2xl font-black" onClick={() => askFirst("share")}>
             <Share2 className="mr-2 h-4 w-4" /> Share
           </Button>
         ) : (
@@ -710,6 +737,21 @@ function Finished({ blob, layoutId, onEdit, onNew }: { blob: Blob; layoutId: str
           <button type="button" className="text-muted-foreground underline" onClick={onNew}>New photo</button>
         )}
       </div>
+      <AlertDialog open={pending !== null} onOpenChange={(o) => !o && setPending(null)}>
+        <AlertDialogContent className="rounded-3xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Can SharEat feature your photo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {/* Same wording as the checkbox: it is what the server stores as the consent given. */}
+              {CONSENT_TEXT} Your photo saves either way.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel onClick={() => answer(false)}>No thanks</AlertDialogCancel>
+            <AlertDialogAction onClick={() => answer(true)}>Yes, feature me!</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
