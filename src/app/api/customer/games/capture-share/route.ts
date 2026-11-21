@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requirePlayer } from "@/lib/server/games/auth";
-import { deleteConsentedPhoto, isCaptureShareLive, isPrintingEnabled, readPaperWidth, saveConsentedPhoto, validateUpload } from "@/lib/server/games/capture-share-store";
+import { deleteConsentedPhoto, isCaptureShareLive, isPrintingEnabled, readBodyLimited, readPaperWidth, saveConsentedPhoto, validateUpload } from "@/lib/server/games/capture-share-store";
 
 export const runtime = "nodejs";
 
@@ -49,7 +49,8 @@ export async function POST(req: Request) {
     const declared = Number(req.headers.get("content-length") || 0);
     if (declared > 5 * 1024 * 1024) return bad("Photo is too large.", 413);
 
-    const bytes = new Uint8Array(await req.arrayBuffer());
+    const bytes = await readBodyLimited(req);
+    if (!bytes) return bad("Photo is too large.", 413);
     const invalid = validateUpload(bytes, photoId);
     if (invalid) return bad(invalid);
 
@@ -82,8 +83,10 @@ export async function DELETE(req: Request) {
     if (!gate.ok) return bad(gate.error, gate.status);
     const photoId = String(req.headers.get("x-photo-id") || "");
     if (!/^[A-Za-z0-9-]{6,40}$/.test(photoId)) return bad("Bad photo id.");
-    const { storeId, sessionId } = gate.player;
-    await deleteConsentedPhoto(getAdminDb(), storeId, `${sessionId}_${photoId}`);
+    const { storeId, sessionId, identityKey } = gate.player;
+    // Only the diner who consented may withdraw; an already-gone photo is still a success.
+    const r = await deleteConsentedPhoto(getAdminDb(), storeId, `${sessionId}_${photoId}`, identityKey);
+    if (r === "not-owner") return bad("Photo not found.", 404);
     return NextResponse.json({ ok: true });
   } catch (e) {
     return bad((e as Error)?.message || "Could not remove the photo.", 500);

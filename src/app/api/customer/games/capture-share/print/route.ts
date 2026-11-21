@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requirePlayer } from "@/lib/server/games/auth";
-import { isCaptureShareLive, isPrintingEnabled, savePrintRequest, validateUpload } from "@/lib/server/games/capture-share-store";
+import { isCaptureShareLive, isPrintingEnabled, readBodyLimited, savePrintRequest, validateUpload } from "@/lib/server/games/capture-share-store";
 import { manilaDayKey } from "@/lib/games/ghost-hunt/rules";
 
 export const runtime = "nodejs";
@@ -26,7 +26,8 @@ export async function POST(req: Request) {
     const photoId = String(req.headers.get("x-photo-id") || "");
     const layout = String(req.headers.get("x-layout") || "").replace(/[^a-z0-9-]/gi, "");
     if (Number(req.headers.get("content-length") || 0) > 5 * 1024 * 1024) return bad("Photo is too large.", 413);
-    const bytes = new Uint8Array(await req.arrayBuffer());
+    const bytes = await readBodyLimited(req);
+    if (!bytes) return bad("Photo is too large.", 413);
     const invalid = validateUpload(bytes, photoId);
     if (invalid) return bad(invalid);
 

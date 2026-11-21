@@ -34,7 +34,7 @@ export async function DELETE(req: Request) {
   if (!/^[A-Za-z0-9_-]{6,120}$/.test(id)) return bad("Bad photo id.");
   try {
     const removed = await deleteConsentedPhoto(getAdminDb(), storeId, id);
-    return removed ? NextResponse.json({ ok: true }) : bad("Photo not found.", 404);
+    return removed === "deleted" ? NextResponse.json({ ok: true }) : bad("Photo not found.", 404);
   } catch (e) {
     return bad((e as Error)?.message || "Could not delete the photo.", 500);
   }
