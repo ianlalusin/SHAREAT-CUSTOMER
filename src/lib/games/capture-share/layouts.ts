@@ -12,6 +12,8 @@
 
 export type Slot = { x: number; y: number; w: number; h: number };
 
+export type TemplateKind = "ticket" | "idcard" | "boarding" | "magazine" | "wanted" | "certificate" | "movie" | "receipt";
+
 /** A line of text the guest may change on a template. Everything else on it is locked. */
 export type TemplateField = {
   id: string;
@@ -33,7 +35,7 @@ export type Layout = {
   tiltDeg?: number;
   paper58: boolean;
   /** A designed template drawn by render.ts instead of the plain white card. */
-  template?: "ticket" | "idcard";
+  template?: TemplateKind;
   fields?: TemplateField[];
 };
 
@@ -130,6 +132,94 @@ export const TEMPLATES: Layout[] = [
       { id: "course", label: "Course", maxLength: 28, defaultValue: "BS Samgyupsal" },
       { id: "motto", label: "Motto", maxLength: 50, defaultValue: "Eat. Grill. Repeat." },
     ],
+  },
+  {
+    id: "boarding",
+    label: "Boarding pass",
+    shots: 1,
+    w: 1080,
+    h: 1500,
+    slots: [{ x: 96, y: 370, w: 888, h: 588 }],
+    footer: { x: 54, y: 1220, w: 972, h: 226 },
+    paper58: true,
+    template: "boarding",
+    fields: [
+      { id: "name", label: "Passenger name", maxLength: 24, defaultValue: "{name}" },
+      { id: "to", label: "Destination", maxLength: 16, defaultValue: "Busog City" },
+    ],
+  },
+  {
+    id: "magazine",
+    label: "Magazine cover",
+    shots: 1,
+    w: 1080,
+    h: 1500,
+    slots: [{ x: 0, y: 0, w: 1080, h: 1362 }],
+    footer: { x: 0, y: 1362, w: 1080, h: 138 },
+    paper58: true,
+    template: "magazine",
+    fields: [
+      { id: "headline", label: "Headline", maxLength: 32, defaultValue: "Grill Master of the Year" },
+      { id: "name", label: "Your name", maxLength: 24, defaultValue: "{name}" },
+    ],
+  },
+  {
+    id: "wanted",
+    label: "Wanted poster",
+    shots: 1,
+    w: 1080,
+    h: 1500,
+    slots: [{ x: 210, y: 350, w: 660, h: 570 }],
+    footer: { x: 42, y: 1250, w: 996, h: 208 },
+    paper58: true,
+    template: "wanted",
+    fields: [
+      { id: "name", label: "Name", maxLength: 24, defaultValue: "{name}" },
+      { id: "crime", label: "Wanted for", maxLength: 44, defaultValue: "Eating 12 rounds of pork belly" },
+    ],
+  },
+  {
+    id: "certificate",
+    label: "Certificate",
+    shots: 1,
+    w: 1080,
+    h: 1500,
+    slots: [{ x: 315, y: 330, w: 450, h: 450 }],
+    footer: { x: 36, y: 1250, w: 1008, h: 214 },
+    paper58: true,
+    template: "certificate",
+    fields: [
+      { id: "name", label: "Name", maxLength: 26, defaultValue: "{name}" },
+      { id: "award", label: "Award", maxLength: 24, defaultValue: "Grill Master" },
+    ],
+  },
+  {
+    id: "movie",
+    label: "Movie poster",
+    shots: 1,
+    w: 1080,
+    h: 1500,
+    slots: [{ x: 0, y: 0, w: 1080, h: 990 }],
+    footer: { x: 0, y: 1340, w: 1080, h: 160 },
+    paper58: true,
+    template: "movie",
+    fields: [
+      { id: "title", label: "Movie title", maxLength: 22, defaultValue: "The Last Round" },
+      { id: "tagline", label: "Tagline", maxLength: 40, defaultValue: "One grill. Unlimited pork. No regrets." },
+    ],
+  },
+  {
+    id: "receipt",
+    label: "Receipt",
+    shots: 1,
+    w: 1080,
+    h: 1500,
+    slots: [{ x: 237, y: 300, w: 606, h: 360 }],
+    // Everything under the "Celebrating" line is the locked receipt.
+    footer: { x: 195, y: 760, w: 690, h: 698 },
+    paper58: true,
+    template: "receipt",
+    fields: [{ id: "celebrating", label: "Celebrating", maxLength: 28, defaultValue: "Samgyup night" }],
   },
 ];
 

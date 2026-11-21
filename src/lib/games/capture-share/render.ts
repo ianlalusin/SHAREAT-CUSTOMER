@@ -1,7 +1,7 @@
 "use client";
 
 import { captionLine, coverCrop, outerSize, type Layout } from "./layouts";
-import { drawIdCard, drawTicket } from "./templates";
+import { DRAWERS } from "./templates";
 
 /** A sticker or a line of text the diner placed, in finished-canvas pixels. */
 export type Overlay = {
@@ -126,7 +126,7 @@ export function renderBase(
     c.width = layout.w;
     c.height = layout.h;
     const info = { storeName, dateText, tableName: extra.tableName ?? "", fields: extra.fields ?? {} };
-    (layout.template === "ticket" ? drawTicket : drawIdCard)(c.getContext("2d")!, layout, shots[0], info, logo);
+    DRAWERS[layout.template](c.getContext("2d")!, layout, shots[0], info, logo);
     return c;
   }
   const card = drawCard(layout, shots, storeName, dateText, logo);

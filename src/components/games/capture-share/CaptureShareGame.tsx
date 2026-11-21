@@ -62,17 +62,27 @@ function LayoutThumb({ layout, height = 112, progress }: { layout: Layout; heigh
   );
 }
 
+const THUMB_COLORS: Record<NonNullable<Layout["template"]>, [string, string]> = {
+  ticket: ["#d62828", "#fff8ec"],
+  idcard: ["#e4e4e7", "#ffffff"],
+  boarding: ["#0f3d5e", "#ffffff"],
+  magazine: ["#a1a1aa", "#a1a1aa"],
+  wanted: ["#3b2412", "#ecd9b0"],
+  certificate: ["#fffaf0", "#fffaf0"],
+  movie: ["#0b0b0f", "#0b0b0f"],
+  receipt: ["#e7e5e4", "#ffffff"],
+};
+
 /** A small sketch of a template for the picker. */
 function TemplateThumb({ layout }: { layout: Layout }) {
   const H = 112;
   const k = H / layout.h;
   const s = layout.slots[0];
+  // Outer and inner colours of each design, so the sketch reads like the real thing.
+  const [outer, inner] = THUMB_COLORS[layout.template ?? "ticket"];
   return (
-    <div
-      className={cn("relative mx-auto overflow-hidden rounded-md shadow ring-1 ring-zinc-200", layout.template === "ticket" ? "bg-primary" : "bg-zinc-200")}
-      style={{ width: layout.w * k, height: H }}
-    >
-      <div className={cn("absolute inset-[4px] rounded", layout.template === "ticket" ? "bg-amber-50" : "bg-white")} />
+    <div className="relative mx-auto overflow-hidden rounded-md shadow ring-1 ring-zinc-200" style={{ width: layout.w * k, height: H, background: outer }}>
+      <div className="absolute inset-[4px] rounded" style={{ background: inner }} />
       {layout.template === "idcard" && <div className="absolute inset-x-[4px] top-[4px] h-[19px] rounded-t bg-primary" />}
       {layout.template === "ticket" && <div className="absolute inset-x-[10px] top-[11px] h-[6px] rounded-sm bg-zinc-800" />}
       <div className="absolute bg-zinc-300" style={{ left: s.x * k, top: s.y * k, width: s.w * k, height: s.h * k }} />

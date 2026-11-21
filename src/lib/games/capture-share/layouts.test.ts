@@ -95,3 +95,14 @@ describe("templates", () => {
     expect(defaultFields(id, "A".repeat(40)).name.length).toBe(24);
   });
 });
+
+import { airportCode } from "./templates";
+
+describe("boarding pass airport code", () => {
+  it("takes the first letter then consonants", () => {
+    expect(airportCode("Busog City")).toBe("BSG");
+    expect(airportCode("Gutom")).toBe("GTM");
+    expect(airportCode("Ua")).toBe("UAX");
+    expect(airportCode("")).toBe("BSG");
+  });
+});
