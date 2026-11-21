@@ -23,9 +23,9 @@ async function authHeader(): Promise<Record<string, string>> {
   return user ? { Authorization: `Bearer ${await user.getIdToken()}` } : {};
 }
 
-/** A small to-scale drawing of the layout, for the picker. */
-function LayoutThumb({ layout }: { layout: Layout }) {
-  const H = 112;
+/** A small to-scale drawing of the layout. With `progress`, shows shots taken (green) and the next one (pulsing). */
+function LayoutThumb({ layout, height = 112, progress }: { layout: Layout; height?: number; progress?: number }) {
+  const H = height;
   const k = H / layout.h;
   return (
     <div
@@ -35,7 +35,12 @@ function LayoutThumb({ layout }: { layout: Layout }) {
       {layout.slots.map((s, i) => (
         <div
           key={i}
-          className={cn("absolute bg-zinc-300", i > 0 && layout.id === "duo" && "bg-zinc-400 ring-2 ring-white")}
+          className={cn(
+            "absolute bg-zinc-300",
+            i > 0 && layout.id === "duo" && "bg-zinc-400 ring-2 ring-white",
+            progress !== undefined && i < progress && "bg-emerald-400",
+            progress === i && "animate-pulse bg-primary"
+          )}
           style={{ left: s.x * k, top: s.y * k, width: s.w * k, height: s.h * k }}
         />
       ))}
@@ -132,8 +137,7 @@ export function CaptureShareGame() {
   if (phase === "shoot" && layout)
     return (
       <Shooter
-        total={layout.shots}
-        aspect={layout.slots[shots.length]?.w / layout.slots[shots.length]?.h || 1}
+        layout={layout}
         taken={shots.length}
         onShot={(s) => setShots((prev) => (prev.length < layout.shots ? [...prev, s] : prev))}
         onCancel={startOver}
@@ -171,18 +175,22 @@ export function CaptureShareGame() {
 /* ─── Camera ──────────────────────────────────────────────────────────────── */
 
 function Shooter({
-  total,
+  layout,
   taken,
-  aspect,
   onShot,
   onCancel,
 }: {
-  total: number;
+  layout: Layout;
   taken: number;
-  aspect: number;
   onShot: (s: Shot) => void;
   onCancel: () => void;
 }) {
+  const total = layout.shots;
+  // The preview box has the exact shape of the slot being filled, and the
+  // collage crops the frame the same way (centre, cover), so what is inside
+  // the white frame is exactly what ends up in the photo.
+  const slot = layout.slots[Math.min(taken, total - 1)];
+  const aspect = slot.w / slot.h;
   const videoRef = useRef<HTMLVideoElement>(null);
   const [front, setFront] = useState(true);
   const [camError, setCamError] = useState<string | null>(null);
@@ -246,7 +254,15 @@ function Shooter({
         <span>Photo {Math.min(taken + 1, total)} of {total}</span>
         <button type="button" className="text-muted-foreground underline" onClick={onCancel}>Change layout</button>
       </div>
-      <div className="relative mx-auto w-full max-w-md overflow-hidden rounded-3xl bg-black" style={{ aspectRatio: String(aspect) }}>
+      <div className="flex items-center gap-3 rounded-2xl bg-white px-3 py-2 shadow-sm">
+        <LayoutThumb layout={{ ...layout, tiltDeg: undefined }} height={56} progress={taken} />
+        <p className="text-xs text-muted-foreground">Only what&apos;s inside the white frame goes in your photo.</p>
+      </div>
+      <div
+        className="mx-auto rounded-md bg-white p-3 pb-10 shadow-xl ring-1 ring-zinc-200"
+        style={{ width: `min(100%, calc(55vh * ${aspect}) + 1.5rem)` }}
+      >
+      <div className="relative w-full overflow-hidden bg-black" style={{ aspectRatio: String(aspect) }}>
         <video
           ref={videoRef}
           playsInline
@@ -257,7 +273,12 @@ function Shooter({
         {count !== null && count > 0 && (
           <div className="absolute inset-0 flex items-center justify-center text-8xl font-black text-white drop-shadow-lg">{count}</div>
         )}
+        {/* Corner marks: the frame edge, even against a dark or busy background. */}
+        {["left-2 top-2 border-l-4 border-t-4", "right-2 top-2 border-r-4 border-t-4", "bottom-2 left-2 border-b-4 border-l-4", "bottom-2 right-2 border-b-4 border-r-4"].map((c) => (
+          <span key={c} className={cn("pointer-events-none absolute h-7 w-7 border-white/90", c)} />
+        ))}
         {flash && <div className="absolute inset-0 bg-white" />}
+      </div>
       </div>
       <div className="flex items-center justify-center gap-6">
         <Button variant="outline" size="icon" className="h-12 w-12 rounded-full" onClick={() => setFront((f) => !f)} aria-label="Switch camera">
