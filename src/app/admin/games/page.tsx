@@ -16,7 +16,7 @@ import { RecipeEditDialog, type EditableRecipe } from "@/components/games/recipe
 import { GamePlayStats } from "@/components/games/admin/GamePlayStats";
 import { RecipeScoreLine } from "@/components/games/recipe/RecipeScoreLine";
 
-type GameRow = { id: string; title: string; tagline: string; configured: boolean; isActive: boolean; disabledStoreIds: string[] };
+type GameRow = { id: string; title: string; tagline: string; configured: boolean; isActive: boolean; disabledStoreIds: string[]; printingEnabled?: boolean };
 type StoreRow = { storeId: string; name: string };
 type QueueRow = {
   id: string;
@@ -133,6 +133,22 @@ export default function AdminGamesPage() {
   };
 
   // Same subtractive switch a branch manager has (PUT /api/manager/games); an admin passes its store check for every branch.
+  const togglePrinting = async (printingEnabled: boolean) => {
+    try {
+      const res = await fetch("/api/admin/games", {
+        method: "PUT",
+        headers: await authed(),
+        body: JSON.stringify({ gameId: "capture-share", printingEnabled }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "Could not update.");
+      await loadGames();
+      toast({ title: printingEnabled ? "Printing switched on" : "Printing paused", description: "Capture & Share itself keeps running." });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Couldn't update", description: (e as Error)?.message });
+    }
+  };
+
   const toggleBranch = async (gameId: string, storeId: string, enabled: boolean) => {
     try {
       const res = await fetch("/api/manager/games", {
@@ -236,6 +252,15 @@ export default function AdminGamesPage() {
                       >
                         {openBranches === g.id ? "Hide branches" : `Branches (${stores.filter((s) => !g.disabledStoreIds.includes(s.storeId)).length}/${stores.length} on)`}
                       </button>
+                    )}
+                    {g.id === "capture-share" && g.configured && (
+                      <label className="mt-2 flex items-center justify-between gap-3 rounded-xl bg-zinc-50 px-3 py-2 text-sm">
+                        <span>
+                          <span className="block font-bold">Printing at the cashier</span>
+                          <span className="block text-xs text-muted-foreground">Off: guests can still take, save and share photos.</span>
+                        </span>
+                        <Switch checked={g.printingEnabled !== false} onCheckedChange={(v) => togglePrinting(v)} />
+                      </label>
                     )}
                     {openBranches === g.id && (
                       <div className="mt-2 space-y-2">

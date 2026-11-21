@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebase/admin";
 import { requirePlayer } from "@/lib/server/games/auth";
-import { deleteConsentedPhoto, isCaptureShareLive, readPaperWidth, saveConsentedPhoto, validateUpload } from "@/lib/server/games/capture-share-store";
+import { deleteConsentedPhoto, isCaptureShareLive, isPrintingEnabled, readPaperWidth, saveConsentedPhoto, validateUpload } from "@/lib/server/games/capture-share-store";
 
 export const runtime = "nodejs";
 
@@ -26,6 +26,7 @@ export async function GET(req: Request) {
       customerName: p.customerName,
       tableName: p.tableDisplayName,
       paperWidth: await readPaperWidth(db, p.storeId),
+      printing: await isPrintingEnabled(db),
     });
   } catch (e) {
     return bad((e as Error)?.message || "Could not open Capture & Share.", 500);
