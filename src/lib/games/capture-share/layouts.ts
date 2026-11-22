@@ -278,7 +278,7 @@ export function captionLine(storeName: string): string {
 
 /** Shown beside the checkbox and saved word-for-word with each consented photo. */
 export const CONSENT_TEXT =
-  "SharEat may post this photo on its Facebook, Instagram, TikTok, YouTube and X pages. Message our page anytime to have it removed.";
+  "Send us your photo. We pick our favorites to post on SharEat's Facebook, Instagram, TikTok, YouTube and X.";
 
 export type Box = { x: number; y: number; w: number; h: number };
 
