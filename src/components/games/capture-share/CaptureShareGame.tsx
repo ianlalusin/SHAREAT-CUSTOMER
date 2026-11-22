@@ -934,16 +934,19 @@ function Finished({
           onCheckedChange={(v) => onConsent(v === true)}
           className="mt-0.5"
         />
-        <span>{CONSENT_TEXT}</span>
+        <span>
+          <span className="block font-black">⭐ Be featured!</span>
+          {CONSENT_TEXT}
+        </span>
       </label>
       {sendState === "sending" && <p className="-mt-2 text-xs text-muted-foreground">Sending to SharEat…</p>}
       {sendState === "sent" && (
         <p className="-mt-2 text-xs font-semibold text-emerald-700">
-          Thanks! SharEat has your photo.{sendError ? <span className="block text-amber-700">{sendError}</span> : " Untick to take it back."}
+          You&apos;re in! If we pick your photo, you&apos;ll see it on our pages.{sendError ? <span className="block text-amber-700">{sendError}</span> : " Untick to take it back."}
         </p>
       )}
       {sendState === "removing" && <p className="-mt-2 text-xs text-muted-foreground">Removing it…</p>}
-      {sendState === "removed" && <p className="-mt-2 text-xs font-semibold text-muted-foreground">Removed. SharEat won&apos;t post this photo.</p>}
+      {sendState === "removed" && <p className="-mt-2 text-xs font-semibold text-muted-foreground">Removed. We won&apos;t post this photo.</p>}
       {sendState === "failed" && (
         <p className="-mt-2 text-xs font-semibold text-amber-700">
           Couldn&apos;t send it to SharEat{sendError ? ` — ${sendError}` : ""}.{" "}
@@ -1001,7 +1004,7 @@ function Finished({
       <AlertDialog open={pending !== null} onOpenChange={(o) => !o && setPending(null)}>
         <AlertDialogContent className="rounded-3xl">
           <AlertDialogHeader>
-            <AlertDialogTitle>Can SharEat feature your photo?</AlertDialogTitle>
+            <AlertDialogTitle>Want to be featured? ⭐</AlertDialogTitle>
             <AlertDialogDescription>
               {/* Same wording as the checkbox: it is what the server stores as the consent given. */}
               {CONSENT_TEXT} Your photo saves either way.
@@ -1009,7 +1012,7 @@ function Finished({
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2">
             <AlertDialogCancel onClick={() => answer(false)}>No thanks</AlertDialogCancel>
-            <AlertDialogAction onClick={() => answer(true)}>Yes, feature me!</AlertDialogAction>
+            <AlertDialogAction onClick={() => answer(true)}>Yes, send my photo!</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
