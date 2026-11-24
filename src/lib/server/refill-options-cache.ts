@@ -87,7 +87,14 @@ export async function buildRefillOptionsMenu(db: Firestore, storeId: string): Pr
     .where("isEnabled", "==", true)
     .get();
 
-  const storeFlavors: CachedStoreFlavor[] = flavorsSnap.docs.map((d) => {
+  // Global flavor deactivation/archive is a chain-wide gate; store rows stay
+  // untouched so reactivating the global flavor brings them back.
+  const globalFlavorsSnap = await db.collection("flavors").get();
+  const globalInactiveFlavors = new Set(
+    globalFlavorsSnap.docs.filter((d) => d.data().isActive === false).map((d) => d.id)
+  );
+
+  const storeFlavors: CachedStoreFlavor[] = flavorsSnap.docs.filter((d) => !globalInactiveFlavors.has(d.id)).map((d) => {
     const x = d.data() as any;
     return {
       id: d.id,
